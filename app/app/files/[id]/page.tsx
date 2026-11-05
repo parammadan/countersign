@@ -66,7 +66,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
             <span className="min-w-0 break-words">{f.title}</span> <StatusBadge status={f.status} />
           </h1>
           <p className="mt-1 text-sm text-muted">
-            {tpl.name} · version {v.version} · created {fmt(f.created_at)} via {f.source === "ui" ? "the app" : f.source}
+            {tpl.name} · version {v.version} · created {fmt(f.created_at)} via {({ user: "the app", api: "the API", inbound: "inbound webhook", system: "automation" } as Record<string, string>)[f.source] ?? f.source}
           </p>
         </div>
       </div>

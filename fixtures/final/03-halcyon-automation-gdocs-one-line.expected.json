@@ -1,0 +1,104 @@
+{
+  "firmName": "Halcyon Automation Partners LLC",
+  "description": "Google-Docs-style export, Helvetica(Arial) 10.5, A4. AI workflow-automation consulting agreement; Halcyon Automation Partners LLC (\"Halcyon\", \"we\") and \"Client\"/\"you\". Fee schedule as a bullet list with $____ blanks. Signature: client lines are single text runs 'Client Signature ______  Date ______', 'Client Name (print) ______', 'Client Company ______' (no colons); firm block 'For and on behalf of Halcyon Automation Partners LLC:' then a bare underscore line with caption 'Authorized Signatory' under it, a PRE-PRINTED 'Name: Rowan Fakerly' (no field) and 'Date: ____'.",
+  "pages": 3,
+  "pageSize": [
+    595.3,
+    841.9
+  ],
+  "fields": [
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 324.9,
+      "y": 388.4,
+      "w": 70.1,
+      "h": 14,
+      "note": "workshop fee $____",
+      "acceptRoles": [
+        "client"
+      ]
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 318,
+      "y": 405.1,
+      "w": 70.1,
+      "h": 14,
+      "note": "build fee $____",
+      "acceptRoles": [
+        "client"
+      ]
+    },
+    {
+      "page": 2,
+      "type": "signature",
+      "role": "client",
+      "x": 149.6,
+      "y": 162.4,
+      "w": 175.1,
+      "h": 24,
+      "note": "Client Signature"
+    },
+    {
+      "page": 2,
+      "type": "date",
+      "role": "client",
+      "x": 358.6,
+      "y": 172.4,
+      "w": 81.7,
+      "h": 14,
+      "note": "client Date"
+    },
+    {
+      "page": 2,
+      "type": "name",
+      "role": "client",
+      "x": 163.2,
+      "y": 202.4,
+      "w": 210.2,
+      "h": 14,
+      "note": "Client Name (print)"
+    },
+    {
+      "page": 2,
+      "type": "company",
+      "role": "client",
+      "x": 149.4,
+      "y": 232.4,
+      "w": 221.8,
+      "h": 14,
+      "note": "Client Company",
+      "acceptRoles": [
+        "prefill"
+      ],
+      "acceptTypes": [
+        "name"
+      ]
+    },
+    {
+      "page": 2,
+      "type": "signature",
+      "role": "firm",
+      "x": 72,
+      "y": 306.4,
+      "w": 221.8,
+      "h": 24,
+      "note": "Authorized Signatory line"
+    },
+    {
+      "page": 2,
+      "type": "date",
+      "role": "firm",
+      "x": 99.5,
+      "y": 378.4,
+      "w": 151.8,
+      "h": 14,
+      "note": "firm Date"
+    }
+  ],
+  "warnings": []
+}

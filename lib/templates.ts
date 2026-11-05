@@ -62,7 +62,13 @@ export async function ingestAgreement(
     } else {
       const tid = id("tpl_");
       const isFirst = !one("SELECT 1 FROM templates WHERE workspace_id = ? AND archived = 0", ws.id);
-      const nm = (opts.name || path.parse(upload.filename).name).replace(/[_-]+/g, " ").trim().slice(0, 120) || "Client agreement";
+      const nm =
+        (opts.name || path.parse(upload.filename).name)
+          .replace(/[_-]+/g, " ")
+          .replace(/^\s*\d+\s+/, "")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 120) || "Client agreement";
       run("INSERT INTO templates (id, workspace_id, name, is_default, created_at) VALUES (?,?,?,?,?)", tid, ws.id, nm, isFirst ? 1 : 0, now());
       template = one<Template>("SELECT * FROM templates WHERE id = ?", tid)!;
     }

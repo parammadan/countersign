@@ -1,0 +1,132 @@
+{
+  "firmName": "Verdant Loop AI Consulting, LLC",
+  "description": "Word-style export, Helvetica(Arial) 10, Letter. AI strategy + LLM-assistant implementation engagement; \"Consultant\" (Verdant Loop AI Consulting, LLC, \"Verdant\") and \"Client\". Support-plan choice = three drawn checkbox squares. Inline 'Client initials: ______' at the end of the liability section. Signature: two side-by-side columns under headings 'VERDANT LOOP AI CONSULTING, LLC' | 'CLIENT'; each field is a stroked vector line with an 8pt caption UNDER it ('Signature', 'Name', 'Title', 'Date'); no colons, no underscores.",
+  "pages": 3,
+  "pageSize": [
+    612,
+    792
+  ],
+  "fields": [
+    {
+      "page": 0,
+      "type": "checkbox",
+      "role": "client",
+      "x": 91,
+      "y": 530.4,
+      "w": 11,
+      "h": 11,
+      "note": "Support plan: Standard support - busin"
+    },
+    {
+      "page": 0,
+      "type": "checkbox",
+      "role": "client",
+      "x": 91,
+      "y": 548.4,
+      "w": 11,
+      "h": 11,
+      "note": "Support plan: Priority support - four-"
+    },
+    {
+      "page": 0,
+      "type": "checkbox",
+      "role": "client",
+      "x": 91,
+      "y": 566.4,
+      "w": 11,
+      "h": 11,
+      "note": "Support plan: No ongoing support - Con"
+    },
+    {
+      "page": 1,
+      "type": "initials",
+      "role": "client",
+      "x": 458,
+      "y": 393,
+      "w": 83.4,
+      "h": 18,
+      "note": "inline initials after liability"
+    },
+    {
+      "page": 2,
+      "type": "signature",
+      "role": "firm",
+      "x": 72,
+      "y": 141,
+      "w": 216,
+      "h": 24,
+      "note": "VERDANT LOOP AI CONSULTING, LLC / Signature"
+    },
+    {
+      "page": 2,
+      "type": "signature",
+      "role": "client",
+      "x": 324,
+      "y": 141,
+      "w": 216,
+      "h": 24,
+      "note": "CLIENT / Signature"
+    },
+    {
+      "page": 2,
+      "type": "name",
+      "role": "firm",
+      "x": 72,
+      "y": 191,
+      "w": 216,
+      "h": 14,
+      "note": "VERDANT LOOP AI CONSULTING, LLC / Name"
+    },
+    {
+      "page": 2,
+      "type": "name",
+      "role": "client",
+      "x": 324,
+      "y": 191,
+      "w": 216,
+      "h": 14,
+      "note": "CLIENT / Name"
+    },
+    {
+      "page": 2,
+      "type": "title",
+      "role": "firm",
+      "x": 72,
+      "y": 225,
+      "w": 216,
+      "h": 14,
+      "note": "VERDANT LOOP AI CONSULTING, LLC / Title"
+    },
+    {
+      "page": 2,
+      "type": "title",
+      "role": "client",
+      "x": 324,
+      "y": 225,
+      "w": 216,
+      "h": 14,
+      "note": "CLIENT / Title"
+    },
+    {
+      "page": 2,
+      "type": "date",
+      "role": "firm",
+      "x": 72,
+      "y": 259,
+      "w": 216,
+      "h": 14,
+      "note": "VERDANT LOOP AI CONSULTING, LLC / Date"
+    },
+    {
+      "page": 2,
+      "type": "date",
+      "role": "client",
+      "x": 324,
+      "y": 259,
+      "w": 216,
+      "h": 14,
+      "note": "CLIENT / Date"
+    }
+  ],
+  "warnings": []
+}

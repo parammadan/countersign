@@ -173,7 +173,7 @@ export function SigningRoom(p: Props) {
                 if (f.role === "firm")
                   return (
                     <div key={f.id} className="pointer-events-none absolute flex items-center justify-center overflow-hidden rounded-sm border border-dashed border-violet-300 bg-violet-50/60 text-violet-700" style={{ ...style, fontSize: Math.max(7, fontSize * 0.7) }}>
-                      <span className="truncate px-1">{f.type === "signature" ? `${p.firm} signs after you` : "Filled by " + p.firm}</span>
+                      {f.type === "signature" && <span className="truncate px-1">{p.firm} signs after you</span>}
                     </div>
                   );
                 const done = isDone(f);

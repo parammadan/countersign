@@ -1,0 +1,150 @@
+{
+  "firmName": "Fakeview Property Management, Inc.",
+  "description": "Residential property management agreement, TimesRoman 11, Letter, 2-3 pages. Manager = Fakeview Property Management, Inc. (\"Manager\"); client = \"Owner\". Property / fee blanks in the body ('Property address: ____', '____% of gross rents', 'Commencement date: ____'). Signature: 'OWNER:' block = bare underscore line + 'Date: ____' on the same line, caption 'Owner Signature' under it, then bare line + caption 'Print Name', then 'Email: ____'. 'MANAGER:' block: 'Fakeview Property Management, Inc.' then 'By: ____  Date: ____' and 'Its: ____' (title).",
+  "pages": 2,
+  "pageSize": [
+    612,
+    792
+  ],
+  "fields": [
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 169.4,
+      "y": 196.2,
+      "w": 341,
+      "h": 14,
+      "note": "Property address",
+      "acceptRoles": [
+        "client"
+      ]
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 167.9,
+      "y": 220.2,
+      "w": 104.5,
+      "h": 14,
+      "note": "Number of units",
+      "acceptRoles": [
+        "client"
+      ]
+    },
+    {
+      "page": 0,
+      "type": "date",
+      "role": "prefill",
+      "x": 190.4,
+      "y": 267.5,
+      "w": 110,
+      "h": 14,
+      "note": "Commencement date",
+      "acceptRoles": [
+        "client"
+      ]
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 345.1,
+      "y": 345,
+      "w": 33,
+      "h": 14,
+      "note": "management fee ____%",
+      "acceptRoles": [
+        "client"
+      ]
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 139.5,
+      "y": 360.3,
+      "w": 71.5,
+      "h": 14,
+      "note": "leasing fee $____",
+      "acceptRoles": [
+        "client"
+      ]
+    },
+    {
+      "page": 1,
+      "type": "signature",
+      "role": "client",
+      "x": 72,
+      "y": 475.3,
+      "w": 247.5,
+      "h": 24,
+      "note": "Owner Signature"
+    },
+    {
+      "page": 1,
+      "type": "date",
+      "role": "client",
+      "x": 388.6,
+      "y": 485.3,
+      "w": 121,
+      "h": 14,
+      "note": "Owner Date"
+    },
+    {
+      "page": 1,
+      "type": "name",
+      "role": "client",
+      "x": 72,
+      "y": 525.3,
+      "w": 247.5,
+      "h": 14,
+      "note": "Print Name"
+    },
+    {
+      "page": 1,
+      "type": "email",
+      "role": "client",
+      "x": 104.1,
+      "y": 559.3,
+      "w": 220,
+      "h": 14,
+      "note": "Owner Email",
+      "acceptRoles": [
+        "prefill"
+      ]
+    },
+    {
+      "page": 1,
+      "type": "signature",
+      "role": "firm",
+      "x": 90.6,
+      "y": 643.3,
+      "w": 231,
+      "h": 24,
+      "note": "Manager By"
+    },
+    {
+      "page": 1,
+      "type": "date",
+      "role": "firm",
+      "x": 388.6,
+      "y": 653.3,
+      "w": 121,
+      "h": 14,
+      "note": "Manager Date"
+    },
+    {
+      "page": 1,
+      "type": "title",
+      "role": "firm",
+      "x": 88.8,
+      "y": 683.3,
+      "w": 231,
+      "h": 14,
+      "note": "Manager Its (title)"
+    }
+  ],
+  "warnings": []
+}

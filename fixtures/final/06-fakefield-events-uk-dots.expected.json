@@ -1,0 +1,114 @@
+{
+  "firmName": "Fakefield Events Ltd",
+  "description": "Event planning booking contract, UK style, Helvetica 9.5, A4, 2 pages. Booking details with dot leaders ('Event date', 'Venue', 'Estimated guests', 'Deposit (30%) £'). Signature lines: 'Signed ........ (Client)   Date ......', 'Print name ........', then 'Signed ........ (for and on behalf of Fakefield Events Ltd)' with 'Date ......' on the next line. Role is given only by the parenthetical AFTER the dots.",
+  "pages": 2,
+  "pageSize": [
+    595.3,
+    841.9
+  ],
+  "fields": [
+    {
+      "page": 0,
+      "type": "date",
+      "role": "prefill",
+      "x": 164,
+      "y": 195.5,
+      "w": 161.1,
+      "h": 14,
+      "note": "Event date",
+      "acceptRoles": [
+        "client"
+      ]
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 164,
+      "y": 215.5,
+      "w": 301.1,
+      "h": 14,
+      "note": "Venue",
+      "acceptRoles": [
+        "client"
+      ]
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 164,
+      "y": 235.5,
+      "w": 100.4,
+      "h": 14,
+      "note": "Estimated guests",
+      "acceptRoles": [
+        "client"
+      ]
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 164,
+      "y": 255.5,
+      "w": 118.8,
+      "h": 14,
+      "note": "Deposit (30%)  £",
+      "acceptRoles": [
+        "client"
+      ]
+    },
+    {
+      "page": 1,
+      "type": "signature",
+      "role": "client",
+      "x": 96,
+      "y": 74.1,
+      "w": 200.7,
+      "h": 24,
+      "note": "Client Signed"
+    },
+    {
+      "page": 1,
+      "type": "date",
+      "role": "client",
+      "x": 472,
+      "y": 84.1,
+      "w": 68.7,
+      "h": 14,
+      "note": "Client Date"
+    },
+    {
+      "page": 1,
+      "type": "name",
+      "role": "client",
+      "x": 110,
+      "y": 112.1,
+      "w": 184.9,
+      "h": 14,
+      "note": "Client Print name"
+    },
+    {
+      "page": 1,
+      "type": "signature",
+      "role": "firm",
+      "x": 96,
+      "y": 140.1,
+      "w": 200.7,
+      "h": 24,
+      "note": "Firm Signed"
+    },
+    {
+      "page": 1,
+      "type": "date",
+      "role": "firm",
+      "x": 80,
+      "y": 178.1,
+      "w": 118.8,
+      "h": 14,
+      "note": "Firm Date"
+    }
+  ],
+  "warnings": []
+}

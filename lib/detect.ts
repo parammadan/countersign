@@ -20,7 +20,8 @@ export type Detection = {
 const SIG_RE = /\b(signature|signed|sign here|signatory|by)\b/i;
 
 function classify(label: string): FieldType {
-  const l = label.toLowerCase().replace(/[:.\s]+$/, "").trim();
+  const l = label.toLowerCase().replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").replace(/[:.\s]+$/, "").trim();
+  if (/\b(approved|accepted|agreed|acknowledged|executed|witnessed)\s+by$/.test(l)) return "signature";
   if (l === "x") return "signature";
   if (/^on$|^on date$/.test(l)) return "date";
   if (/^dear$/.test(l)) return "name";
@@ -29,7 +30,7 @@ function classify(label: string): FieldType {
   if (/\binitials\b|^initial$|\binitial here\b|\b(client|owner|customer)'?s? initial\b/.test(l)) return "initials";
   if (/\b(signature|signed|sign here|signatory)\b/.test(l) || /^(\w+\s+)?by$/.test(l) || /\bby\s*$/.test(l)) return "signature";
   if (/\be-?mail\b/.test(l)) return "email";
-  if (/\bdate\b|\bdated\b|\bday of\b|\bmade on\b|\bentered into on\b|\bas of\b|\bon this\b|\beffective\b/.test(l)) return "date";
+  if (/\bdate\b|\bdated\b|\bday of\b|\bmade on\b|\bentered into on\b|\bas of\b|\bon this\b|\beffective\b|\bbegins? on\b|\bcommenc\w* on\b|\bstart\w* on\b|\bends? on\b|\bexpires? on\b|\bdue$|\bdue on\b|\bdeadline\b/.test(l)) return "date";
   if (/\btitle\b|\bposition\b|\bcapacity\b|\bits\s*$|\boffice held\b|\bdesignation\b/.test(l)) return "title";
   if (/\b(project|matter|business|trade|file|case|account|product|event|venue|program|campaign|job|property)\s+name\b/.test(l)) return /business|trade/.test(l) ? "company" : "text";
   if (/\b(printed|print|full|legal)?\s*name\b/.test(l)) return "name";
@@ -225,10 +226,22 @@ export function detectFields(ex: Extracted, opts: DetectOptions = {}): Detection
             conf = 0.4;
           }
         }
+        const afterText = line.text.slice(i1, i1 + 70);
+        if (!label) {
+          // "______ Initials" / "______ (Client signature)": label written after the blank
+          const w = cleanLabel(afterText.replace(/[()]/g, " ")).split(" ").slice(0, 4).join(" ");
+          if (w && classify(w) !== "text") {
+            label = w;
+            reason = `blank before "${w}"`;
+            conf = 0.7;
+          }
+        }
         let type = label ? classify(label) : "text";
         let labelParty = partyOf(label, defined);
+        const paren = /^\s*\(([^)]{2,70})\)/.exec(afterText);
+        if (paren && !labelParty) labelParty = partyOf(paren[1], defined);
         // `and ________ ("Client")`: the defined term after the blank names whose name goes there
-        const after = /^\s*,?\s*\(?\s*(?:the\s+|each\s+)?["“]([^"”]{2,40})["”]/.exec(line.text.slice(i1, i1 + 50));
+        const after = /^\s*,?\s*\(?\s*(?:the\s+|each\s+)?["“]([^"”]{2,40})["”]/.exec(afterText);
         if (after && (type === "text" || type === "company")) {
           const p = partyOf(after[1], defined);
           if (p) {
@@ -308,6 +321,7 @@ export function detectFields(ex: Extracted, opts: DetectOptions = {}): Detection
           if (!(endsColon && words <= 6 && (signerish || SIG_RE.test(t))) && !(/^(signature|by)$/i.test(t) && words === 1)) return;
           // caption printed under a drawn line ("____\nSignature"): handled by the drawn-line rule
           if (page.hlines.some((h) => h.y <= line.y + 2 && line.y - h.y < line.size * 1.6 && h.x1 > seg.x0 - 5 && h.x0 < seg.x1 + 5)) return;
+          if (raws.some((r) => r.page === page.index && r.lineY < line.y - 1 && line.y - (r.y + r.h) < line.size * 1.2 && r.x < seg.x1 + 5 && r.x + r.w > seg.x0 - 5)) return;
           const next = segs[si + 1];
           const right = next ? next.x0 - 6 : Math.min(page.width - 50, seg.x1 + 220);
           const x0 = seg.x1 + 4;
@@ -554,7 +568,9 @@ function assignRoles(raws: Raw[], allLines: Line[][], d: { firm: string[]; clien
       } else if (dx <= 160 && dy >= -60) {
         // stacked rows: within reach of the anchor, or directly under the block's last row
         const lastY = Math.max(...b.members.filter((m) => Math.abs(m.x - a.x) <= 160).map((m) => m.y));
-        if (dy <= 130 || (r.y - lastY > -5 && r.y - lastY <= 50)) dist = Math.abs(dy) * 0.6 + dx * 0.8;
+        const gap = r.y - lastY;
+        if (gap > -5 && gap <= 50) dist = gap * 0.6 + dx * 0.8;
+        else if (dy <= 130) dist = (dy < 0 ? -dy * 3 : dy * 0.6) + dx * 0.8;
       }
       if (dist < bestD) {
         bestD = dist;

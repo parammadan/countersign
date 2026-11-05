@@ -1,0 +1,145 @@
+{
+  "firmName": "Brightpath Fake Tutoring LLC",
+  "description": "Tutoring enrollment agreement, Helvetica 11, Letter, 2 pages. Client = parent/guardian. Student information (label item + separate underscore item): 'Student name', 'Grade', 'Parent/Guardian email'. Session package = 3 drawn checkbox squares. Leading initials blank '_______ I have read and agree to the cancellation and refund policy.' Signature: 'Parent/Guardian Signature: ____  Date: ____' (label and underscores separate items), 'Parent/Guardian Printed Name: ____'; firm: 'Approved by (Program Director): ____  Date: ____'.",
+  "pages": 2,
+  "pageSize": [
+    612,
+    792
+  ],
+  "fields": [
+    {
+      "page": 0,
+      "type": "text",
+      "role": "client",
+      "x": 216,
+      "y": 179.4,
+      "w": 263,
+      "h": 14,
+      "note": "Student name:",
+      "acceptRoles": [
+        "prefill"
+      ],
+      "acceptTypes": [
+        "name"
+      ]
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "client",
+      "x": 216,
+      "y": 203.4,
+      "w": 79.5,
+      "h": 14,
+      "note": "Grade (2026-27):",
+      "acceptRoles": [
+        "prefill"
+      ]
+    },
+    {
+      "page": 0,
+      "type": "email",
+      "role": "client",
+      "x": 216,
+      "y": 227.4,
+      "w": 263,
+      "h": 14,
+      "note": "Parent/Guardian email:",
+      "acceptRoles": [
+        "prefill"
+      ]
+    },
+    {
+      "page": 0,
+      "type": "checkbox",
+      "role": "client",
+      "x": 79,
+      "y": 281.3,
+      "w": 12,
+      "h": 12,
+      "note": "8 sessions - $480"
+    },
+    {
+      "page": 0,
+      "type": "checkbox",
+      "role": "client",
+      "x": 79,
+      "y": 303.3,
+      "w": 12,
+      "h": 12,
+      "note": "16 sessions - $920"
+    },
+    {
+      "page": 0,
+      "type": "checkbox",
+      "role": "client",
+      "x": 79,
+      "y": 325.3,
+      "w": 12,
+      "h": 12,
+      "note": "24 sessions - $1,320"
+    },
+    {
+      "page": 0,
+      "type": "initials",
+      "role": "client",
+      "x": 66,
+      "y": 663.6,
+      "w": 61.2,
+      "h": 18,
+      "note": "leading initials (refund policy)"
+    },
+    {
+      "page": 1,
+      "type": "signature",
+      "role": "client",
+      "x": 202,
+      "y": 115.9,
+      "w": 189.6,
+      "h": 24,
+      "note": "Parent/Guardian Signature"
+    },
+    {
+      "page": 1,
+      "type": "date",
+      "role": "client",
+      "x": 474.8,
+      "y": 125.9,
+      "w": 73.4,
+      "h": 14,
+      "note": "Parent Date"
+    },
+    {
+      "page": 1,
+      "type": "name",
+      "role": "client",
+      "x": 222.3,
+      "y": 157.9,
+      "w": 171.2,
+      "h": 14,
+      "note": "Parent/Guardian Printed Name"
+    },
+    {
+      "page": 1,
+      "type": "signature",
+      "role": "firm",
+      "x": 226.6,
+      "y": 195.9,
+      "w": 152.9,
+      "h": 24,
+      "note": "Program Director approval"
+    },
+    {
+      "page": 1,
+      "type": "date",
+      "role": "firm",
+      "x": 474.8,
+      "y": 205.9,
+      "w": 73.4,
+      "h": 14,
+      "note": "Director Date"
+    }
+  ],
+  "warnings": [],
+  "note": "Student fields are filled by the parent at signing or prefilled from the enrolment file."
+}

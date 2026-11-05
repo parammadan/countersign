@@ -1,0 +1,250 @@
+{
+  "firmName": "Brightloom Graph Labs, Inc.",
+  "description": "Word-style export, Helvetica(Arial) 10, Letter. Knowledge-graph platform subscription + services agreement. Provider = Brightloom Graph Labs, Inc. (\"Brightloom\" or \"Provider\"), Customer. Order Form = bordered table (cell borders as thin filled rects) with EMPTY value cells. Footer on every page: 'Customer Initials: ____   Provider Initials: ____'. Last page: stacked 'AGREED AND ACCEPTED:' block, CUSTOMER first then BRIGHTLOOM GRAPH LABS, INC.; 'Company:'/'By:'/'Name:'/'Title:'/'Date:' labels followed by underlined tabs (thin filled rects, no underscores).",
+  "pages": 3,
+  "pageSize": [
+    612,
+    792
+  ],
+  "fields": [
+    {
+      "page": 0,
+      "type": "company",
+      "role": "prefill",
+      "x": 267,
+      "y": 187.2,
+      "w": 268,
+      "h": 14,
+      "note": "Order Form / Customer legal name",
+      "acceptRoles": [
+        "client"
+      ],
+      "acceptTypes": [
+        "name"
+      ]
+    },
+    {
+      "page": 0,
+      "type": "name",
+      "role": "prefill",
+      "x": 267,
+      "y": 208.2,
+      "w": 268,
+      "h": 14,
+      "note": "Order Form / Customer contact name",
+      "acceptRoles": [
+        "client"
+      ]
+    },
+    {
+      "page": 0,
+      "type": "email",
+      "role": "prefill",
+      "x": 267,
+      "y": 229.2,
+      "w": 268,
+      "h": 14,
+      "note": "Order Form / Customer contact email",
+      "acceptRoles": [
+        "client"
+      ]
+    },
+    {
+      "page": 0,
+      "type": "date",
+      "role": "prefill",
+      "x": 267,
+      "y": 250.2,
+      "w": 268,
+      "h": 14,
+      "note": "Order Form / Subscription start date",
+      "acceptRoles": [
+        "client"
+      ]
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 288.5,
+      "y": 271.2,
+      "w": 246.5,
+      "h": 14,
+      "note": "Order Form / Annual platform subscription fee",
+      "acceptRoles": [
+        "client"
+      ]
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 288.5,
+      "y": 292.2,
+      "w": 246.5,
+      "h": 14,
+      "note": "Order Form / Implementation services fee (one-time)",
+      "acceptRoles": [
+        "client"
+      ]
+    },
+    {
+      "page": 0,
+      "type": "initials",
+      "role": "client",
+      "x": 306.6,
+      "y": 718,
+      "w": 60,
+      "h": 18,
+      "note": "Customer Initials p1"
+    },
+    {
+      "page": 0,
+      "type": "initials",
+      "role": "firm",
+      "x": 465.9,
+      "y": 718,
+      "w": 60,
+      "h": 18,
+      "note": "Provider Initials p1"
+    },
+    {
+      "page": 1,
+      "type": "initials",
+      "role": "client",
+      "x": 306.6,
+      "y": 718,
+      "w": 60,
+      "h": 18,
+      "note": "Customer Initials p2"
+    },
+    {
+      "page": 1,
+      "type": "initials",
+      "role": "firm",
+      "x": 465.9,
+      "y": 718,
+      "w": 60,
+      "h": 18,
+      "note": "Provider Initials p2"
+    },
+    {
+      "page": 2,
+      "type": "company",
+      "role": "client",
+      "x": 134,
+      "y": 227,
+      "w": 238,
+      "h": 14,
+      "note": "CUSTOMER / Company:",
+      "acceptRoles": [
+        "prefill"
+      ],
+      "acceptTypes": [
+        "name"
+      ]
+    },
+    {
+      "page": 2,
+      "type": "signature",
+      "role": "client",
+      "x": 134,
+      "y": 243,
+      "w": 238,
+      "h": 24,
+      "note": "CUSTOMER / By:"
+    },
+    {
+      "page": 2,
+      "type": "name",
+      "role": "client",
+      "x": 134,
+      "y": 279,
+      "w": 238,
+      "h": 14,
+      "note": "CUSTOMER / Name:"
+    },
+    {
+      "page": 2,
+      "type": "title",
+      "role": "client",
+      "x": 134,
+      "y": 305,
+      "w": 238,
+      "h": 14,
+      "note": "CUSTOMER / Title:"
+    },
+    {
+      "page": 2,
+      "type": "date",
+      "role": "client",
+      "x": 134,
+      "y": 331,
+      "w": 238,
+      "h": 14,
+      "note": "CUSTOMER / Date:"
+    },
+    {
+      "page": 2,
+      "type": "signature",
+      "role": "firm",
+      "x": 134,
+      "y": 383,
+      "w": 238,
+      "h": 24,
+      "note": "BRIGHTLOOM GRAPH LABS, INC. / By:"
+    },
+    {
+      "page": 2,
+      "type": "name",
+      "role": "firm",
+      "x": 134,
+      "y": 419,
+      "w": 238,
+      "h": 14,
+      "note": "BRIGHTLOOM GRAPH LABS, INC. / Name:"
+    },
+    {
+      "page": 2,
+      "type": "title",
+      "role": "firm",
+      "x": 134,
+      "y": 445,
+      "w": 238,
+      "h": 14,
+      "note": "BRIGHTLOOM GRAPH LABS, INC. / Title:"
+    },
+    {
+      "page": 2,
+      "type": "date",
+      "role": "firm",
+      "x": 134,
+      "y": 471,
+      "w": 238,
+      "h": 14,
+      "note": "BRIGHTLOOM GRAPH LABS, INC. / Date:"
+    },
+    {
+      "page": 2,
+      "type": "initials",
+      "role": "client",
+      "x": 306.6,
+      "y": 718,
+      "w": 60,
+      "h": 18,
+      "note": "Customer Initials p3"
+    },
+    {
+      "page": 2,
+      "type": "initials",
+      "role": "firm",
+      "x": 465.9,
+      "y": 718,
+      "w": 60,
+      "h": 18,
+      "note": "Provider Initials p3"
+    }
+  ],
+  "warnings": [],
+  "note": "Order-form value cells are empty bordered table cells (no underscores): prefill, client may also fill. Provider initials are the firm's."
+}

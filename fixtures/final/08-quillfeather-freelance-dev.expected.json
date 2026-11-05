@@ -1,0 +1,140 @@
+{
+  "firmName": "Quillfeather Code Studio LLC",
+  "description": "Freelance software development contract, TimesRoman 10.5, A4, 2-3 pages. Quillfeather Code Studio LLC (\"Developer\") and \"Client\". Milestone list with 'due ____' and '$____' blanks. Signature: two columns headed 'DEVELOPER' | 'CLIENT' (defined terms only, firm legal name not in the heading); each field is a bare underscore line with a caption underneath ('Signature', 'Printed name', 'Date'); client column adds 'Company (if any)'.",
+  "pages": 2,
+  "pageSize": [
+    595.3,
+    841.9
+  ],
+  "fields": [
+    {
+      "page": 0,
+      "type": "date",
+      "role": "prefill",
+      "x": 331.9,
+      "y": 185.7,
+      "w": 78.8,
+      "h": 14,
+      "note": "M1 due date",
+      "acceptRoles": [
+        "client"
+      ]
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 436.6,
+      "y": 185.7,
+      "w": 57.8,
+      "h": 14,
+      "note": "M1 fee",
+      "acceptRoles": [
+        "client"
+      ]
+    },
+    {
+      "page": 0,
+      "type": "date",
+      "role": "prefill",
+      "x": 364.7,
+      "y": 204.2,
+      "w": 78.8,
+      "h": 14,
+      "note": "M2 due date",
+      "acceptRoles": [
+        "client"
+      ]
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 469.4,
+      "y": 204.2,
+      "w": 57.8,
+      "h": 14,
+      "note": "M2 fee",
+      "acceptRoles": [
+        "client"
+      ]
+    },
+    {
+      "page": 1,
+      "type": "signature",
+      "role": "firm",
+      "x": 64,
+      "y": 287,
+      "w": 194.3,
+      "h": 24,
+      "note": "DEVELOPER / Signature"
+    },
+    {
+      "page": 1,
+      "type": "signature",
+      "role": "client",
+      "x": 317.6,
+      "y": 287,
+      "w": 194.3,
+      "h": 24,
+      "note": "CLIENT / Signature"
+    },
+    {
+      "page": 1,
+      "type": "name",
+      "role": "firm",
+      "x": 64,
+      "y": 335,
+      "w": 194.3,
+      "h": 14,
+      "note": "DEVELOPER / Printed name"
+    },
+    {
+      "page": 1,
+      "type": "name",
+      "role": "client",
+      "x": 317.6,
+      "y": 335,
+      "w": 194.3,
+      "h": 14,
+      "note": "CLIENT / Printed name"
+    },
+    {
+      "page": 1,
+      "type": "date",
+      "role": "firm",
+      "x": 64,
+      "y": 373,
+      "w": 194.3,
+      "h": 14,
+      "note": "DEVELOPER / Date"
+    },
+    {
+      "page": 1,
+      "type": "date",
+      "role": "client",
+      "x": 317.6,
+      "y": 373,
+      "w": 194.3,
+      "h": 14,
+      "note": "CLIENT / Date"
+    },
+    {
+      "page": 1,
+      "type": "company",
+      "role": "client",
+      "x": 317.6,
+      "y": 411,
+      "w": 194.3,
+      "h": 14,
+      "note": "CLIENT / Company (if any)",
+      "acceptRoles": [
+        "prefill"
+      ],
+      "acceptTypes": [
+        "name"
+      ]
+    }
+  ],
+  "warnings": []
+}
