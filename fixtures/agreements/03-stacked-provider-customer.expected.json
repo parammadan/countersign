@@ -1,0 +1,92 @@
+{
+  "firmName": "Lumen Data Services Ltd",
+  "description": "3-page A4, Helvetica 10. Stacked blocks: 'PROVIDER' block above 'CUSTOMER' block. Labels 'Signature:' 'Name:' 'Title:' 'Date:' followed by drawn vector lines (no underscores).",
+  "pages": 2,
+  "pageSize": [
+    595.3,
+    841.9
+  ],
+  "fields": [
+    {
+      "page": 1,
+      "type": "signature",
+      "role": "firm",
+      "x": 134,
+      "y": 409.5,
+      "w": 240,
+      "h": 24,
+      "note": "PROVIDER / Signature:"
+    },
+    {
+      "page": 1,
+      "type": "name",
+      "role": "firm",
+      "x": 134,
+      "y": 447.5,
+      "w": 240,
+      "h": 14,
+      "note": "PROVIDER / Name:"
+    },
+    {
+      "page": 1,
+      "type": "title",
+      "role": "firm",
+      "x": 134,
+      "y": 475.5,
+      "w": 240,
+      "h": 14,
+      "note": "PROVIDER / Title:"
+    },
+    {
+      "page": 1,
+      "type": "date",
+      "role": "firm",
+      "x": 134,
+      "y": 503.5,
+      "w": 240,
+      "h": 14,
+      "note": "PROVIDER / Date:"
+    },
+    {
+      "page": 1,
+      "type": "signature",
+      "role": "client",
+      "x": 134,
+      "y": 567.5,
+      "w": 240,
+      "h": 24,
+      "note": "CUSTOMER / Signature:"
+    },
+    {
+      "page": 1,
+      "type": "name",
+      "role": "client",
+      "x": 134,
+      "y": 605.5,
+      "w": 240,
+      "h": 14,
+      "note": "CUSTOMER / Name:"
+    },
+    {
+      "page": 1,
+      "type": "title",
+      "role": "client",
+      "x": 134,
+      "y": 633.5,
+      "w": 240,
+      "h": 14,
+      "note": "CUSTOMER / Title:"
+    },
+    {
+      "page": 1,
+      "type": "date",
+      "role": "client",
+      "x": 134,
+      "y": 661.5,
+      "w": 240,
+      "h": 14,
+      "note": "CUSTOMER / Date:"
+    }
+  ],
+  "warnings": []
+}

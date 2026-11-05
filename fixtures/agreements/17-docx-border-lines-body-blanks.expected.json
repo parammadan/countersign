@@ -1,0 +1,41 @@
+{
+  "firmName": "Larkspur Property Management, Inc.",
+  "description": "DOCX, Arial 10. Body blanks ('Client Name: ____', 'Property Address: ____', 'Monthly Fee: $____'). Signature lines are table-cell bottom borders with captions under them ('Signature', 'Date', 'Printed Name'); bold headings 'COMPANY' / 'CLIENT' (defined terms).",
+  "source": "docx",
+  "note": "No coordinates: layout is only known after conversion. Convert to <name>.pdf next to this file (LibreOffice headless); the test then matches by type+role (+page when given).",
+  "fields": [
+    {
+      "type": "name",
+      "role": "prefill"
+    },
+    {
+      "type": "text",
+      "role": "prefill"
+    },
+    {
+      "type": "text",
+      "role": "prefill"
+    },
+    {
+      "type": "signature",
+      "role": "firm"
+    },
+    {
+      "type": "date",
+      "role": "firm"
+    },
+    {
+      "type": "signature",
+      "role": "client"
+    },
+    {
+      "type": "date",
+      "role": "client"
+    },
+    {
+      "type": "name",
+      "role": "client"
+    }
+  ],
+  "warnings": []
+}

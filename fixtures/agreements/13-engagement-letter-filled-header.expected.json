@@ -1,0 +1,52 @@
+{
+  "firmName": "Quill & Ledger CPAs, P.C.",
+  "description": "2-page Letter, TimesRoman 11, letter style. Header 'Date:', 'To:', 'Re:' are ALREADY FILLED with tab-spaced values (traps: no field). Firm signs under 'Very truly yours,' with 'By: ____' and the partner name printed below. Client acknowledgment block 'ACKNOWLEDGED AND AGREED:' with Client Signature / Printed Name / Date.",
+  "pages": 2,
+  "pageSize": [
+    612,
+    792
+  ],
+  "fields": [
+    {
+      "page": 1,
+      "type": "signature",
+      "role": "firm",
+      "x": 90.6,
+      "y": 337.4,
+      "w": 231,
+      "h": 24,
+      "note": "firm By"
+    },
+    {
+      "page": 1,
+      "type": "signature",
+      "role": "client",
+      "x": 149.6,
+      "y": 448.4,
+      "w": 220,
+      "h": 24,
+      "note": "Client Signature"
+    },
+    {
+      "page": 1,
+      "type": "name",
+      "role": "client",
+      "x": 138.6,
+      "y": 486.4,
+      "w": 231,
+      "h": 14,
+      "note": "Printed Name"
+    },
+    {
+      "page": 1,
+      "type": "date",
+      "role": "client",
+      "x": 98.6,
+      "y": 514.4,
+      "w": 275,
+      "h": 14,
+      "note": "client Date"
+    }
+  ],
+  "warnings": []
+}

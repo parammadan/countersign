@@ -1,0 +1,72 @@
+{
+  "firmName": "Harborview Tax Partners LLP",
+  "description": "2-page Letter, Helvetica 10. Signature lines are vector lines with captions printed under them ('Signature', 'Printed Name', 'Date'), no underscores. Party headings 'CLIENT' and 'HARBORVIEW TAX PARTNERS LLP' above each group.",
+  "pages": 2,
+  "pageSize": [
+    612,
+    792
+  ],
+  "fields": [
+    {
+      "page": 1,
+      "type": "signature",
+      "role": "client",
+      "x": 72,
+      "y": 199.5,
+      "w": 250,
+      "h": 24,
+      "note": "CLIENT / Signature"
+    },
+    {
+      "page": 1,
+      "type": "date",
+      "role": "client",
+      "x": 372,
+      "y": 209.5,
+      "w": 150,
+      "h": 14,
+      "note": "CLIENT / Date"
+    },
+    {
+      "page": 1,
+      "type": "name",
+      "role": "client",
+      "x": 72,
+      "y": 251.5,
+      "w": 250,
+      "h": 14,
+      "note": "CLIENT / Printed Name"
+    },
+    {
+      "page": 1,
+      "type": "signature",
+      "role": "firm",
+      "x": 72,
+      "y": 327.5,
+      "w": 250,
+      "h": 24,
+      "note": "HARBORVIEW TAX PARTNERS LLP / Signature"
+    },
+    {
+      "page": 1,
+      "type": "date",
+      "role": "firm",
+      "x": 372,
+      "y": 337.5,
+      "w": 150,
+      "h": 14,
+      "note": "HARBORVIEW TAX PARTNERS LLP / Date"
+    },
+    {
+      "page": 1,
+      "type": "name",
+      "role": "firm",
+      "x": 72,
+      "y": 379.5,
+      "w": 250,
+      "h": 14,
+      "note": "HARBORVIEW TAX PARTNERS LLP / Printed Name"
+    }
+  ],
+  "warnings": []
+}

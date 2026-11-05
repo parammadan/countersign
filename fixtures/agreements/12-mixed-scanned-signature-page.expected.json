@@ -1,0 +1,55 @@
+{
+  "firmName": "Riverbend Engineering Group, LLC",
+  "description": "3-page Letter, TimesRoman 10.5. Pages 1-2 have a text layer; page 3 (signature page) is an image-only scan with a client block (signature/name/date lines) and a firm signature line. Document has plenty of text overall, so the scan warning does not fire.",
+  "pages": 3,
+  "pageSize": [
+    612,
+    792
+  ],
+  "fields": [
+    {
+      "page": 2,
+      "type": "signature",
+      "role": "client",
+      "x": 72,
+      "y": 225.5,
+      "w": 228,
+      "h": 24,
+      "note": "scanned client signature"
+    },
+    {
+      "page": 2,
+      "type": "date",
+      "role": "client",
+      "x": 340,
+      "y": 235.5,
+      "w": 160,
+      "h": 14,
+      "note": "scanned client date"
+    },
+    {
+      "page": 2,
+      "type": "name",
+      "role": "client",
+      "x": 72,
+      "y": 279.5,
+      "w": 228,
+      "h": 14,
+      "note": "scanned client name"
+    },
+    {
+      "page": 2,
+      "type": "signature",
+      "role": "firm",
+      "x": 72,
+      "y": 365.5,
+      "w": 228,
+      "h": 24,
+      "note": "scanned firm signature"
+    }
+  ],
+  "warnings": [
+    "No client signature"
+  ],
+  "note": "Expected fields on page 3 are true ground truth but invisible to a text-layer detector: they should show up as FN. A good detector should at least flag the text-less page."
+}

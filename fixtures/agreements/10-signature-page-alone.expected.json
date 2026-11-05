@@ -1,0 +1,118 @@
+{
+  "firmName": "Granite Peak Advisors, Inc.",
+  "description": "4-page Letter, Helvetica 10.5. Page 3 ends with '[Signature page follows.]'; page 4 holds only the signature page: firm block 'GRANITE PEAK ADVISORS, INC.' then 'CLIENT' block with 'Client Legal Name:', By/Name/Title/Email/Date. Labels and underscores are separate items in aligned columns.",
+  "pages": 4,
+  "pageSize": [
+    612,
+    792
+  ],
+  "fields": [
+    {
+      "page": 3,
+      "type": "signature",
+      "role": "firm",
+      "x": 182,
+      "y": 175.9,
+      "w": 239.4,
+      "h": 24,
+      "note": "GRANITE PEAK ADVISORS, INC. / By:"
+    },
+    {
+      "page": 3,
+      "type": "name",
+      "role": "firm",
+      "x": 182,
+      "y": 215.9,
+      "w": 239.4,
+      "h": 14,
+      "note": "GRANITE PEAK ADVISORS, INC. / Name:"
+    },
+    {
+      "page": 3,
+      "type": "title",
+      "role": "firm",
+      "x": 182,
+      "y": 245.9,
+      "w": 239.4,
+      "h": 14,
+      "note": "GRANITE PEAK ADVISORS, INC. / Title:"
+    },
+    {
+      "page": 3,
+      "type": "date",
+      "role": "firm",
+      "x": 182,
+      "y": 275.9,
+      "w": 239.4,
+      "h": 14,
+      "note": "GRANITE PEAK ADVISORS, INC. / Date:"
+    },
+    {
+      "page": 3,
+      "type": "company",
+      "role": "client",
+      "x": 182,
+      "y": 362.4,
+      "w": 239.4,
+      "h": 14,
+      "note": "CLIENT / Client Legal Name:",
+      "acceptRoles": [
+        "prefill"
+      ],
+      "acceptTypes": [
+        "name"
+      ]
+    },
+    {
+      "page": 3,
+      "type": "signature",
+      "role": "client",
+      "x": 182,
+      "y": 382.4,
+      "w": 239.4,
+      "h": 24,
+      "note": "CLIENT / By:"
+    },
+    {
+      "page": 3,
+      "type": "name",
+      "role": "client",
+      "x": 182,
+      "y": 422.4,
+      "w": 239.4,
+      "h": 14,
+      "note": "CLIENT / Name:"
+    },
+    {
+      "page": 3,
+      "type": "title",
+      "role": "client",
+      "x": 182,
+      "y": 452.4,
+      "w": 239.4,
+      "h": 14,
+      "note": "CLIENT / Title:"
+    },
+    {
+      "page": 3,
+      "type": "email",
+      "role": "client",
+      "x": 182,
+      "y": 482.4,
+      "w": 239.4,
+      "h": 14,
+      "note": "CLIENT / Email:"
+    },
+    {
+      "page": 3,
+      "type": "date",
+      "role": "client",
+      "x": 182,
+      "y": 512.4,
+      "w": 239.4,
+      "h": 14,
+      "note": "CLIENT / Date:"
+    }
+  ],
+  "warnings": []
+}

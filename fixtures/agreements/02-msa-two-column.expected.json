@@ -1,0 +1,92 @@
+{
+  "firmName": "Northwind Advisory, LLC",
+  "description": "5-page MSA, TimesRoman 11, Letter. Last page: IN WITNESS WHEREOF + two columns side by side; left heading = firm legal name 'NORTHWIND ADVISORY, LLC', right heading 'CLIENT'; By:/Name:/Title:/Date: as 'Label: ____' single text items.",
+  "pages": 4,
+  "pageSize": [
+    612,
+    792
+  ],
+  "fields": [
+    {
+      "page": 3,
+      "type": "signature",
+      "role": "firm",
+      "x": 96.6,
+      "y": 151,
+      "w": 192.5,
+      "h": 24,
+      "note": "NORTHWIND ADVISORY, LLC / By:"
+    },
+    {
+      "page": 3,
+      "type": "signature",
+      "role": "client",
+      "x": 342.6,
+      "y": 151,
+      "w": 192.5,
+      "h": 24,
+      "note": "CLIENT / By:"
+    },
+    {
+      "page": 3,
+      "type": "name",
+      "role": "firm",
+      "x": 110.1,
+      "y": 185,
+      "w": 176,
+      "h": 14,
+      "note": "NORTHWIND ADVISORY, LLC / Name:"
+    },
+    {
+      "page": 3,
+      "type": "name",
+      "role": "client",
+      "x": 356.1,
+      "y": 185,
+      "w": 176,
+      "h": 14,
+      "note": "CLIENT / Name:"
+    },
+    {
+      "page": 3,
+      "type": "title",
+      "role": "firm",
+      "x": 104.2,
+      "y": 215,
+      "w": 181.5,
+      "h": 14,
+      "note": "NORTHWIND ADVISORY, LLC / Title:"
+    },
+    {
+      "page": 3,
+      "type": "title",
+      "role": "client",
+      "x": 350.2,
+      "y": 215,
+      "w": 181.5,
+      "h": 14,
+      "note": "CLIENT / Title:"
+    },
+    {
+      "page": 3,
+      "type": "date",
+      "role": "firm",
+      "x": 104.6,
+      "y": 245,
+      "w": 181.5,
+      "h": 14,
+      "note": "NORTHWIND ADVISORY, LLC / Date:"
+    },
+    {
+      "page": 3,
+      "type": "date",
+      "role": "client",
+      "x": 350.6,
+      "y": 245,
+      "w": 181.5,
+      "h": 14,
+      "note": "CLIENT / Date:"
+    }
+  ],
+  "warnings": []
+}

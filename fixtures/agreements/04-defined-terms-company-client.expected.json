@@ -1,0 +1,92 @@
+{
+  "firmName": "Brightline Consulting Group, Inc.",
+  "description": "3-page Letter, TimesRoman 10.5, curly quotes. Preamble: Brightline Consulting Group, Inc. (“Brightline” or the “Company”) and the client named below (“Client”). Side-by-side headings 'COMPANY' / 'CLIENT' using defined terms; rows Signature:/Printed Name:/Title:/Date:.",
+  "pages": 3,
+  "pageSize": [
+    612,
+    792
+  ],
+  "fields": [
+    {
+      "page": 2,
+      "type": "signature",
+      "role": "firm",
+      "x": 117.8,
+      "y": 98.5,
+      "w": 168,
+      "h": 24,
+      "note": "COMPANY / Signature:"
+    },
+    {
+      "page": 2,
+      "type": "signature",
+      "role": "client",
+      "x": 369.8,
+      "y": 98.5,
+      "w": 168,
+      "h": 24,
+      "note": "CLIENT / Signature:"
+    },
+    {
+      "page": 2,
+      "type": "name",
+      "role": "firm",
+      "x": 135.6,
+      "y": 134.5,
+      "w": 152.3,
+      "h": 14,
+      "note": "COMPANY / Printed Name:"
+    },
+    {
+      "page": 2,
+      "type": "name",
+      "role": "client",
+      "x": 387.6,
+      "y": 134.5,
+      "w": 152.3,
+      "h": 14,
+      "note": "CLIENT / Printed Name:"
+    },
+    {
+      "page": 2,
+      "type": "title",
+      "role": "firm",
+      "x": 97,
+      "y": 166.5,
+      "w": 189,
+      "h": 14,
+      "note": "COMPANY / Title:"
+    },
+    {
+      "page": 2,
+      "type": "title",
+      "role": "client",
+      "x": 349,
+      "y": 166.5,
+      "w": 189,
+      "h": 14,
+      "note": "CLIENT / Title:"
+    },
+    {
+      "page": 2,
+      "type": "date",
+      "role": "firm",
+      "x": 97.4,
+      "y": 198.5,
+      "w": 189,
+      "h": 14,
+      "note": "COMPANY / Date:"
+    },
+    {
+      "page": 2,
+      "type": "date",
+      "role": "client",
+      "x": 349.4,
+      "y": 198.5,
+      "w": 189,
+      "h": 14,
+      "note": "CLIENT / Date:"
+    }
+  ],
+  "warnings": []
+}

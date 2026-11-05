@@ -1,0 +1,92 @@
+{
+  "firmName": "Pinecrest Insurance Agency, LLC",
+  "description": "2-page Letter, Helvetica 10. Party = 'Policyholder' (defined as 'the undersigned policyholder'). Three '[ ]' consent checkboxes, then 'Policyholder Signature: ____  Date: ____', 'Printed Name: ____'; firm block under 'FOR THE AGENCY' with 'Licensed Agent Signature: ____'.",
+  "pages": 2,
+  "pageSize": [
+    612,
+    792
+  ],
+  "fields": [
+    {
+      "page": 1,
+      "type": "checkbox",
+      "role": "client",
+      "x": 77,
+      "y": 278,
+      "w": 12,
+      "h": 12,
+      "note": "I agree to receive electronic "
+    },
+    {
+      "page": 1,
+      "type": "checkbox",
+      "role": "client",
+      "x": 77,
+      "y": 298,
+      "w": 12,
+      "h": 12,
+      "note": "I have received and read the A"
+    },
+    {
+      "page": 1,
+      "type": "checkbox",
+      "role": "client",
+      "x": 77,
+      "y": 318,
+      "w": 12,
+      "h": 12,
+      "note": "Opt in: send me renewal remind"
+    },
+    {
+      "page": 1,
+      "type": "signature",
+      "role": "client",
+      "x": 176.6,
+      "y": 343,
+      "w": 194.6,
+      "h": 24,
+      "note": "Policyholder Signature"
+    },
+    {
+      "page": 1,
+      "type": "date",
+      "role": "client",
+      "x": 428.2,
+      "y": 353,
+      "w": 111.2,
+      "h": 14,
+      "note": "Policyholder Date"
+    },
+    {
+      "page": 1,
+      "type": "name",
+      "role": "client",
+      "x": 138.3,
+      "y": 381,
+      "w": 233.5,
+      "h": 14,
+      "note": "Printed Name"
+    },
+    {
+      "page": 1,
+      "type": "signature",
+      "role": "firm",
+      "x": 191.6,
+      "y": 441,
+      "w": 177.9,
+      "h": 24,
+      "note": "Licensed Agent Signature"
+    },
+    {
+      "page": 1,
+      "type": "date",
+      "role": "firm",
+      "x": 428.2,
+      "y": 451,
+      "w": 111.2,
+      "h": 14,
+      "note": "Agency Date"
+    }
+  ],
+  "warnings": []
+}

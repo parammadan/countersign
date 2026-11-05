@@ -1,0 +1,13 @@
+{
+  "firmName": "Bluefield Design Studio LLC",
+  "description": "2-page Letter, TimesRoman 11. Standard terms with no signature line, no blanks (acceptance by conduct). Detector should warn.",
+  "pages": 2,
+  "pageSize": [
+    612,
+    792
+  ],
+  "fields": [],
+  "warnings": [
+    "No client signature"
+  ]
+}

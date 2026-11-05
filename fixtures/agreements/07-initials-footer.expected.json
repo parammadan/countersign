@@ -1,0 +1,122 @@
+{
+  "firmName": "Oakline Staffing Solutions, Inc.",
+  "description": "3-page A4, Helvetica 9.5. Footer on every page: left 'OSS-CSA-2026 | Page n of N', right 'Client Initials: ______'. Stacked underscore blocks on last page: firm (OAKLINE STAFFING SOLUTIONS, INC.) then CLIENT; first row 'Authorized Signature:'.",
+  "pages": 3,
+  "pageSize": [
+    595.3,
+    841.9
+  ],
+  "fields": [
+    {
+      "page": 0,
+      "type": "initials",
+      "role": "client",
+      "x": 440.8,
+      "y": 785.9,
+      "w": 95.1,
+      "h": 18,
+      "note": "initials p1"
+    },
+    {
+      "page": 1,
+      "type": "initials",
+      "role": "client",
+      "x": 440.8,
+      "y": 785.9,
+      "w": 95.1,
+      "h": 18,
+      "note": "initials p2"
+    },
+    {
+      "page": 2,
+      "type": "signature",
+      "role": "firm",
+      "x": 165,
+      "y": 85.5,
+      "w": 211.3,
+      "h": 24,
+      "note": "OAKLINE STAFFING SOLUTIONS, INC. / Authorized Signature:"
+    },
+    {
+      "page": 2,
+      "type": "name",
+      "role": "firm",
+      "x": 165,
+      "y": 121.5,
+      "w": 211.3,
+      "h": 14,
+      "note": "OAKLINE STAFFING SOLUTIONS, INC. / Name:"
+    },
+    {
+      "page": 2,
+      "type": "title",
+      "role": "firm",
+      "x": 165,
+      "y": 147.5,
+      "w": 211.3,
+      "h": 14,
+      "note": "OAKLINE STAFFING SOLUTIONS, INC. / Title:"
+    },
+    {
+      "page": 2,
+      "type": "date",
+      "role": "firm",
+      "x": 165,
+      "y": 173.5,
+      "w": 211.3,
+      "h": 14,
+      "note": "OAKLINE STAFFING SOLUTIONS, INC. / Date:"
+    },
+    {
+      "page": 2,
+      "type": "signature",
+      "role": "client",
+      "x": 165,
+      "y": 235,
+      "w": 211.3,
+      "h": 24,
+      "note": "CLIENT / Authorized Signature:"
+    },
+    {
+      "page": 2,
+      "type": "name",
+      "role": "client",
+      "x": 165,
+      "y": 271,
+      "w": 211.3,
+      "h": 14,
+      "note": "CLIENT / Name:"
+    },
+    {
+      "page": 2,
+      "type": "title",
+      "role": "client",
+      "x": 165,
+      "y": 297,
+      "w": 211.3,
+      "h": 14,
+      "note": "CLIENT / Title:"
+    },
+    {
+      "page": 2,
+      "type": "date",
+      "role": "client",
+      "x": 165,
+      "y": 323,
+      "w": 211.3,
+      "h": 14,
+      "note": "CLIENT / Date:"
+    },
+    {
+      "page": 2,
+      "type": "initials",
+      "role": "client",
+      "x": 440.8,
+      "y": 785.9,
+      "w": 95.1,
+      "h": 18,
+      "note": "initials p3"
+    }
+  ],
+  "warnings": []
+}

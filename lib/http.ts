@@ -1,0 +1,82 @@
+import { NextResponse } from "next/server";
+import { headers } from "next/headers";
+import { z } from "zod";
+import { AppError, getWorkspace, type Ctx } from "./files";
+import { getSession, type Session } from "./auth";
+import { one, run } from "./db";
+import { now, sha256 } from "./util";
+import { clientIp, limited } from "./ratelimit";
+import type { Workspace } from "./types";
+
+export function jsonError(message: string, status = 400, extra: Record<string, unknown> = {}) {
+  return NextResponse.json({ error: message, ...extra }, { status });
+}
+
+export function handle<A extends unknown[]>(fn: (req: Request, ...a: A) => Promise<Response>) {
+  return async (req: Request, ...a: A): Promise<Response> => {
+    try {
+      return await fn(req, ...a);
+    } catch (e) {
+      if (e instanceof AppError) return jsonError(e.message, e.status);
+      if (e instanceof z.ZodError) return jsonError(e.issues.map((i) => `${i.path.join(".") || "body"}: ${i.message}`).join("; "), 422);
+      console.error(e);
+      return jsonError("Something went wrong on our side. Please try again.", 500);
+    }
+  };
+}
+
+export function ctxOf(req: Request): Ctx {
+  return { ip: clientIp(req.headers), ua: req.headers.get("user-agent") ?? undefined };
+}
+
+export async function ctxFromHeaders(): Promise<Ctx> {
+  const h = await headers();
+  return { ip: clientIp(h), ua: h.get("user-agent") ?? undefined };
+}
+
+export function rateLimit(req: Request, bucket: string, max: number, windowMs = 60_000) {
+  if (limited(`${bucket}:${clientIp(req.headers)}`, max, windowMs)) throw new AppError("Too many requests. Slow down and try again in a minute.", 429);
+}
+
+// Same-origin check for cookie-authenticated JSON routes (CSRF).
+export function sameOrigin(req: Request) {
+  const origin = req.headers.get("origin");
+  if (!origin) return;
+  const host = req.headers.get("x-forwarded-host") || req.headers.get("host");
+  try {
+    if (new URL(origin).host !== host) throw new AppError("Cross-site request blocked.", 403);
+  } catch (e) {
+    if (e instanceof AppError) throw e;
+    throw new AppError("Bad origin.", 403);
+  }
+}
+
+export async function sessionOr401(req: Request): Promise<{ s: Session; ws: Workspace }> {
+  sameOrigin(req);
+  const s = await getSession();
+  if (!s) throw new AppError("Sign in again.", 401);
+  return { s, ws: getWorkspace(s.workspaceId) };
+}
+
+export function apiAuth(req: Request): { ws: Workspace; keyName: string } {
+  const h = req.headers.get("authorization") || "";
+  const m = /^Bearer\s+(cs_[A-Za-z0-9_-]+)$/.exec(h.trim());
+  if (!m) throw new AppError("Missing API key. Send Authorization: Bearer cs_live_...", 401);
+  rateLimit(req, "api", 120);
+  const k = one<{ id: string; workspace_id: string; name: string; revoked_at: string | null }>("SELECT id, workspace_id, name, revoked_at FROM api_keys WHERE key_hash = ?", sha256(m[1]));
+  if (!k || k.revoked_at) throw new AppError("Invalid or revoked API key.", 401);
+  run("UPDATE api_keys SET last_used_at = ? WHERE id = ?", now(), k.id);
+  return { ws: getWorkspace(k.workspace_id), keyName: k.name };
+}
+
+export async function readJson(req: Request, max = 2_000_000): Promise<unknown> {
+  const len = Number(req.headers.get("content-length") || 0);
+  if (len > max) throw new AppError("Request too large.", 413);
+  const text = await req.text();
+  if (text.length > max) throw new AppError("Request too large.", 413);
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    throw new AppError("Body must be JSON.", 400);
+  }
+}

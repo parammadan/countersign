@@ -1,0 +1,14 @@
+{
+  "firmName": "Copperleaf Analytics, Inc.",
+  "description": "2-page Letter, image-only (embedded grayscale PNG of a 'scan'), no text layer at all. Page 2 visually has a client and firm signature block.",
+  "pages": 2,
+  "pageSize": [
+    612,
+    792
+  ],
+  "fields": [],
+  "warnings": [
+    "selectable text"
+  ],
+  "note": "No fields expected: the detector cannot see an image-only document; the right behaviour is the scan warning (place by hand / add a signature page)."
+}

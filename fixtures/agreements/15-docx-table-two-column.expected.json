@@ -1,0 +1,41 @@
+{
+  "firmName": "Fernway Marketing Co.",
+  "description": "DOCX, Calibri 11. Two-column borderless signature table: 'FERNWAY MARKETING CO.' | 'CLIENT'; rows By:/Name:/Title:/Date: with underscores.",
+  "source": "docx",
+  "note": "No coordinates: layout is only known after conversion. Convert to <name>.pdf next to this file (LibreOffice headless); the test then matches by type+role (+page when given).",
+  "fields": [
+    {
+      "type": "signature",
+      "role": "firm"
+    },
+    {
+      "type": "signature",
+      "role": "client"
+    },
+    {
+      "type": "name",
+      "role": "firm"
+    },
+    {
+      "type": "name",
+      "role": "client"
+    },
+    {
+      "type": "title",
+      "role": "firm"
+    },
+    {
+      "type": "title",
+      "role": "client"
+    },
+    {
+      "type": "date",
+      "role": "firm"
+    },
+    {
+      "type": "date",
+      "role": "client"
+    }
+  ],
+  "warnings": []
+}

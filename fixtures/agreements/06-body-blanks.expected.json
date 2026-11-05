@@ -1,0 +1,136 @@
+{
+  "firmName": "Cedar & Finch Legal Services, PLLC",
+  "description": "2-page Letter, TimesRoman 11. Body blanks inside running text ('made on ____ between ... and ____ (\"Client\")') and a matter box: Client Name / Client Email / Matter Reference / Effective Date / Fee: $____ / Retainer: $____. Then client + firm signature lines.",
+  "pages": 2,
+  "pageSize": [
+    612,
+    792
+  ],
+  "fields": [
+    {
+      "page": 0,
+      "type": "date",
+      "role": "prefill",
+      "x": 253.4,
+      "y": 99.2,
+      "w": 110,
+      "h": 14,
+      "note": "made on ____"
+    },
+    {
+      "page": 0,
+      "type": "name",
+      "role": "prefill",
+      "x": 160.7,
+      "y": 114.6,
+      "w": 170.5,
+      "h": 14,
+      "note": "and ____ (\"Client\")",
+      "acceptTypes": [
+        "company"
+      ]
+    },
+    {
+      "page": 0,
+      "type": "name",
+      "role": "prefill",
+      "x": 212,
+      "y": 160,
+      "w": 220,
+      "h": 14,
+      "note": "Client Name:"
+    },
+    {
+      "page": 0,
+      "type": "email",
+      "role": "prefill",
+      "x": 212,
+      "y": 182,
+      "w": 220,
+      "h": 14,
+      "note": "Client Email:"
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 212,
+      "y": 204,
+      "w": 220,
+      "h": 14,
+      "note": "Matter Reference:"
+    },
+    {
+      "page": 0,
+      "type": "date",
+      "role": "prefill",
+      "x": 212,
+      "y": 226,
+      "w": 220,
+      "h": 14,
+      "note": "Effective Date:"
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 217.5,
+      "y": 248,
+      "w": 88,
+      "h": 14,
+      "note": "Fee: $____"
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 169.5,
+      "y": 270,
+      "w": 88,
+      "h": 14,
+      "note": "Retainer: $____"
+    },
+    {
+      "page": 1,
+      "type": "signature",
+      "role": "client",
+      "x": 149.6,
+      "y": 231.7,
+      "w": 203.5,
+      "h": 24,
+      "note": "Client Signature"
+    },
+    {
+      "page": 1,
+      "type": "date",
+      "role": "client",
+      "x": 408.6,
+      "y": 241.7,
+      "w": 132,
+      "h": 14,
+      "note": "client Date"
+    },
+    {
+      "page": 1,
+      "type": "signature",
+      "role": "firm",
+      "x": 90.6,
+      "y": 303.7,
+      "w": 264,
+      "h": 24,
+      "note": "firm By"
+    },
+    {
+      "page": 1,
+      "type": "date",
+      "role": "firm",
+      "x": 408.6,
+      "y": 313.7,
+      "w": 132,
+      "h": 14,
+      "note": "firm Date"
+    }
+  ],
+  "warnings": [],
+  "note": "Body blanks are role=prefill (filled from file data before sending). The blank before (\"Client\") is the client's name."
+}

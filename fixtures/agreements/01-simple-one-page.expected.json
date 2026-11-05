@@ -1,0 +1,34 @@
+{
+  "firmName": "Maple Ridge Bookkeeping LLC",
+  "description": "1 page, Helvetica 11, Letter. One line 'Client Signature: ____   Date: ____' (two separate text items). No firm signature line.",
+  "pages": 1,
+  "pageSize": [
+    612,
+    792
+  ],
+  "fields": [
+    {
+      "page": 0,
+      "type": "signature",
+      "role": "client",
+      "x": 155.8,
+      "y": 680.5,
+      "w": 189.6,
+      "h": 24,
+      "note": "Client Signature"
+    },
+    {
+      "page": 0,
+      "type": "date",
+      "role": "client",
+      "x": 420.8,
+      "y": 690.5,
+      "w": 110.1,
+      "h": 14,
+      "note": "Date"
+    }
+  ],
+  "warnings": [
+    "No signature line for your firm"
+  ]
+}

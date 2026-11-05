@@ -1,0 +1,38 @@
+{
+  "name": "countersign",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "copy-worker": "node -e \"require('fs').copyFileSync('node_modules/pdfjs-dist/build/pdf.worker.min.mjs','public/pdf.worker.min.mjs')\"",
+    "predev": "npm run copy-worker",
+    "dev": "next dev",
+    "prebuild": "npm run copy-worker",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "test": "vitest run",
+    "e2e": "playwright test"
+  },
+  "dependencies": {
+    "next": "16.4.5",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^5.4.394",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "server-only": "^0.0.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "@tailwindcss/turbopack": "^4",
+    "@types/node": "^24.19.2",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "docx": "^9.5.1",
+    "eslint": "^9",
+    "eslint-config-next": "16.4.5",
+    "tailwindcss": "^4",
+    "typescript": "^5",
+    "vitest": "^4.1.12"
+  }
+}

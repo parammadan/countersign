@@ -1,0 +1,92 @@
+{
+  "firmName": "Thornbury Digital Ltd",
+  "description": "3-page A4, Helvetica 9. UK style: two columns headed (2 lines each) 'SIGNED for and on behalf of / THORNBURY DIGITAL LTD' and 'SIGNED for and on behalf of / the CLIENT'; rows use dot leaders with no colon: 'Signature ......', 'Name ......', 'Position ......', 'Date ......'.",
+  "pages": 2,
+  "pageSize": [
+    595.3,
+    841.9
+  ],
+  "fields": [
+    {
+      "page": 1,
+      "type": "signature",
+      "role": "firm",
+      "x": 97,
+      "y": 495.1,
+      "w": 185.1,
+      "h": 24,
+      "note": "SIGNED for and on behalf of THORNBURY DIGITAL LTD / Signature"
+    },
+    {
+      "page": 1,
+      "type": "signature",
+      "role": "client",
+      "x": 353.7,
+      "y": 495.1,
+      "w": 185.1,
+      "h": 24,
+      "note": "SIGNED for and on behalf of the CLIENT / Signature"
+    },
+    {
+      "page": 1,
+      "type": "name",
+      "role": "firm",
+      "x": 82.5,
+      "y": 527.1,
+      "w": 200.2,
+      "h": 14,
+      "note": "SIGNED for and on behalf of THORNBURY DIGITAL LTD / Name"
+    },
+    {
+      "page": 1,
+      "type": "name",
+      "role": "client",
+      "x": 339.1,
+      "y": 527.1,
+      "w": 200.2,
+      "h": 14,
+      "note": "SIGNED for and on behalf of the CLIENT / Name"
+    },
+    {
+      "page": 1,
+      "type": "title",
+      "role": "firm",
+      "x": 90.1,
+      "y": 555.1,
+      "w": 192.7,
+      "h": 14,
+      "note": "SIGNED for and on behalf of THORNBURY DIGITAL LTD / Position"
+    },
+    {
+      "page": 1,
+      "type": "title",
+      "role": "client",
+      "x": 346.7,
+      "y": 555.1,
+      "w": 192.7,
+      "h": 14,
+      "note": "SIGNED for and on behalf of the CLIENT / Position"
+    },
+    {
+      "page": 1,
+      "type": "date",
+      "role": "firm",
+      "x": 77.5,
+      "y": 583.1,
+      "w": 205.2,
+      "h": 14,
+      "note": "SIGNED for and on behalf of THORNBURY DIGITAL LTD / Date"
+    },
+    {
+      "page": 1,
+      "type": "date",
+      "role": "client",
+      "x": 334.2,
+      "y": 583.1,
+      "w": 205.2,
+      "h": 14,
+      "note": "SIGNED for and on behalf of the CLIENT / Date"
+    }
+  ],
+  "warnings": []
+}

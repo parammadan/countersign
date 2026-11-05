@@ -1,0 +1,29 @@
+{
+  "firmName": "Hollowell Translation Services LLC",
+  "description": "DOCX, Times New Roman 12. Client line 'Signature: ____<TAB>Date: ____' built with a tab stop; 'Printed Name: ____' under it; firm line 'Hollowell Translation Services LLC, by: ____<TAB>Date: ____'.",
+  "source": "docx",
+  "note": "No coordinates: layout is only known after conversion. Convert to <name>.pdf next to this file (LibreOffice headless); the test then matches by type+role (+page when given).",
+  "fields": [
+    {
+      "type": "signature",
+      "role": "client"
+    },
+    {
+      "type": "date",
+      "role": "client"
+    },
+    {
+      "type": "name",
+      "role": "client"
+    },
+    {
+      "type": "signature",
+      "role": "firm"
+    },
+    {
+      "type": "date",
+      "role": "firm"
+    }
+  ],
+  "warnings": []
+}
