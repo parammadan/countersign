@@ -18,6 +18,8 @@ COPY --from=build /app/.next/static ./.next/static
 COPY --from=build /app/public ./public
 # pdfjs loads its worker module dynamically in Node; ship the whole package
 COPY --from=build /app/node_modules/pdfjs-dist ./node_modules/pdfjs-dist
+# pdfjs needs DOMMatrix in Node, polyfilled from its optional @napi-rs/canvas dependency
+COPY --from=build /app/node_modules/@napi-rs ./node_modules/@napi-rs
 RUN mkdir -p /data && chown node:node /data
 USER node
 EXPOSE 8080
