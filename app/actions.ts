@@ -340,7 +340,7 @@ export async function webhookAction(_: FormState, fd: FormData): Promise<FormSta
     const url = s(fd.get("url"));
     await checkWebhookUrl(url);
     const events = fd.getAll("events").map(String).filter((e) => (WEBHOOK_EVENTS as readonly string[]).includes(e));
-    const secret = `whsec_${token(24)}`;
+    const secret = `cswh_${token(24)}`;
     run("INSERT INTO webhooks (id, workspace_id, url, secret, events, created_at) VALUES (?,?,?,?,?,?)", id("wh_"), sess.workspaceId, url, secret, events.length ? events.join(",") : "*", now());
     audit(sess.workspaceId, null, "webhook.created", sess.userEmail, {}, { url });
     revalidatePath("/app/developers");
