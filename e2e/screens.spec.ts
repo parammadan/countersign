@@ -39,6 +39,10 @@ test("capture key screens", async ({ page, browser }) => {
     await page.goto(url);
     await page.screenshot({ path: `${OUT}/${name}.png`, fullPage: true });
   }
+  await page.goto("/app/outbox");
+  await page.locator('a[href^="/app/outbox/em_"]').first().click();
+  await page.waitForTimeout(800);
+  await page.screenshot({ path: `${OUT}/15-email.png`, fullPage: true });
   const anon = await browser.newContext();
   const a = await anon.newPage();
   await a.goto("/");

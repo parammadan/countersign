@@ -126,12 +126,13 @@ export async function sendFile(f: FileRow, ws: Workspace, kind: "invite" | "rese
   const link = signingLink(file)!;
   const name = templateName(file);
   const first = escapeHtml(file.client_name.split(" ")[0] || file.client_name);
+  const onFile = file.title.startsWith(name) ? "" : ` on <b>${escapeHtml(file.title)}</b>`;
   const subject =
     kind === "reminder" ? `Reminder: your ${name} from ${ws.name} is waiting for your signature` : `${ws.name}: please review and sign your ${name}`;
   const body =
     kind === "reminder"
-      ? `Hi ${first},<br><br>This is a reminder that <b>${escapeHtml(ws.name)}</b> is waiting on your signature on the <b>${escapeHtml(name)}</b> before work can begin on <b>${escapeHtml(file.title)}</b>.`
-      : `Hi ${first},<br><br><b>${escapeHtml(ws.name)}</b> needs your signature on the <b>${escapeHtml(name)}</b> before work can begin on <b>${escapeHtml(file.title)}</b>. It takes about two minutes, and you can sign on your phone. No account needed.`;
+      ? `Hi ${first},<br><br>This is a reminder that <b>${escapeHtml(ws.name)}</b> is waiting on your signature on the <b>${escapeHtml(name)}</b> before work can begin${onFile}.`
+      : `Hi ${first},<br><br><b>${escapeHtml(ws.name)}</b> needs your signature on the <b>${escapeHtml(name)}</b> before work can begin${onFile}. It takes about two minutes, and you can sign on your phone. No account needed.`;
   await sendEmail({
     workspaceId: ws.id,
     fileId: file.id,
