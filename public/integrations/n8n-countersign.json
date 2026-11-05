@@ -1,0 +1,86 @@
+{
+  "name": "Countersign: agreement on every new file",
+  "nodes": [
+    {
+      "parameters": { "httpMethod": "POST", "path": "new-client-file", "responseMode": "onReceived", "options": {} },
+      "name": "New file in CRM",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 260],
+      "notes": "Point your CRM's 'deal won / matter opened' automation here, or swap this node for your CRM's own trigger node."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.COUNTERSIGN_INBOUND_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ client_name: $json.body.client_name || $json.body.name, client_email: $json.body.client_email || $json.body.email, company: $json.body.company, ref: $json.body.id || $json.body.ref, title: $json.body.title }) }}",
+        "options": {}
+      },
+      "name": "Send agreement (Countersign)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 260],
+      "notes": "Set COUNTERSIGN_INBOUND_URL to the inbound webhook URL from Countersign > Integrations & API."
+    },
+    {
+      "parameters": { "httpMethod": "POST", "path": "countersign-events", "responseMode": "onReceived", "options": {} },
+      "name": "Countersign webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 500],
+      "notes": "Add this URL in Countersign > Integrations & API > Webhooks out, with the file.completed and file.declined events."
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            { "conditions": { "conditions": [{ "leftValue": "={{ $json.body.event }}", "rightValue": "file.completed", "operator": { "type": "string", "operation": "equals" } }] }, "renameOutput": true, "outputKey": "completed" },
+            { "conditions": { "conditions": [{ "leftValue": "={{ $json.body.event }}", "rightValue": "file.declined", "operator": { "type": "string", "operation": "equals" } }] }, "renameOutput": true, "outputKey": "declined" }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Which event?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [480, 500]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.CRM_API_URL }}/records/{{ $json.body.data.ref }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ agreement_status: 'signed', agreement_signed_at: $json.body.data.completed_at, agreement_pdf: $json.body.data.document_url }) }}",
+        "options": {}
+      },
+      "name": "Mark file cleared to start (CRM)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [740, 420],
+      "notes": "Replace with your CRM node. document_url needs your Countersign API key (Authorization: Bearer) to download."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: `:warning: ${$json.body.data.client.name} declined the agreement for ${$json.body.data.title}: ${$json.body.data.decline_reason}` }) }}",
+        "options": {}
+      },
+      "name": "Alert team (Slack)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [740, 600]
+    }
+  ],
+  "connections": {
+    "New file in CRM": { "main": [[{ "node": "Send agreement (Countersign)", "type": "main", "index": 0 }]] },
+    "Countersign webhook": { "main": [[{ "node": "Which event?", "type": "main", "index": 0 }]] },
+    "Which event?": { "main": [[{ "node": "Mark file cleared to start (CRM)", "type": "main", "index": 0 }], [{ "node": "Alert team (Slack)", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}

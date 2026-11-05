@@ -45,3 +45,4 @@ next-env.d.ts
 /public/pdf.worker.min.mjs
 /test-results
 /playwright-report
+/.e2e-data

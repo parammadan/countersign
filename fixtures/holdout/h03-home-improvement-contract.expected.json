@@ -1,0 +1,192 @@
+{
+  "firmName": "Ironbark Roofing & Exteriors, Inc.",
+  "description": "Letter, Helvetica 9, dense one-pager + terms. Boxed job-info grid ('Label' + separate underscores, two per row), proposal number blank in body, owner initials next to the right-to-cancel clause, two drawn-square acknowledgment checkboxes, and 'X ________' signature lines with small captions under, firm block 'CONTRACTOR: Ironbark Roofing & Exteriors, Inc.'.",
+  "split": "holdout",
+  "pages": 2,
+  "pageSize": [
+    612,
+    792
+  ],
+  "fields": [
+    {
+      "page": 0,
+      "type": "name",
+      "role": "prefill",
+      "x": 130,
+      "y": 126.2,
+      "w": 170.1,
+      "h": 14,
+      "note": "Owner name(s):"
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 348.5,
+      "y": 126.2,
+      "w": 205.2,
+      "h": 14,
+      "note": "Phone:",
+      "acceptRoles": [
+        "client"
+      ]
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 117.9,
+      "y": 146.2,
+      "w": 180.1,
+      "h": 14,
+      "note": "Job address:"
+    },
+    {
+      "page": 0,
+      "type": "email",
+      "role": "prefill",
+      "x": 345,
+      "y": 146.2,
+      "w": 210.2,
+      "h": 14,
+      "note": "Email:",
+      "acceptRoles": [
+        "client"
+      ]
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 130.2,
+      "y": 166.2,
+      "w": 170.1,
+      "h": 14,
+      "note": "Contract price: $"
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 405.2,
+      "y": 166.2,
+      "w": 150.1,
+      "h": 14,
+      "note": "Deposit (max 10%): $"
+    },
+    {
+      "page": 0,
+      "type": "date",
+      "role": "prefill",
+      "x": 124.3,
+      "y": 186.2,
+      "w": 175.1,
+      "h": 14,
+      "note": "Est. start date:"
+    },
+    {
+      "page": 0,
+      "type": "date",
+      "role": "prefill",
+      "x": 387.7,
+      "y": 186.2,
+      "w": 165.1,
+      "h": 14,
+      "note": "Est. completion:",
+      "acceptTypes": [
+        "text"
+      ]
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 50,
+      "y": 233.4,
+      "w": 60,
+      "h": 14,
+      "note": "Proposal No. ____"
+    },
+    {
+      "page": 0,
+      "type": "initials",
+      "role": "client",
+      "x": 478.7,
+      "y": 547.7,
+      "w": 60,
+      "h": 18,
+      "note": "owner's initials (right to cancel)"
+    },
+    {
+      "page": 1,
+      "type": "checkbox",
+      "role": "client",
+      "x": 51,
+      "y": 54,
+      "w": 10,
+      "h": 10,
+      "note": "Owner acknowledges receipt of a "
+    },
+    {
+      "page": 1,
+      "type": "checkbox",
+      "role": "client",
+      "x": 51,
+      "y": 70,
+      "w": 10,
+      "h": 10,
+      "note": "Owner has received the lead-safe"
+    },
+    {
+      "page": 1,
+      "type": "signature",
+      "role": "client",
+      "x": 62,
+      "y": 122,
+      "w": 250.2,
+      "h": 24,
+      "note": "OWNER X ____"
+    },
+    {
+      "page": 1,
+      "type": "date",
+      "role": "client",
+      "x": 371.5,
+      "y": 132,
+      "w": 120.1,
+      "h": 14,
+      "note": "OWNER Date"
+    },
+    {
+      "page": 1,
+      "type": "name",
+      "role": "client",
+      "x": 108.2,
+      "y": 162,
+      "w": 205.2,
+      "h": 14,
+      "note": "OWNER Print name"
+    },
+    {
+      "page": 1,
+      "type": "signature",
+      "role": "firm",
+      "x": 62,
+      "y": 220,
+      "w": 250.2,
+      "h": 24,
+      "note": "CONTRACTOR X ____"
+    },
+    {
+      "page": 1,
+      "type": "date",
+      "role": "firm",
+      "x": 371.5,
+      "y": 230,
+      "w": 120.1,
+      "h": 14,
+      "note": "CONTRACTOR Date"
+    }
+  ],
+  "warnings": []
+}

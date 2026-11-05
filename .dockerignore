@@ -1,0 +1,7 @@
+node_modules
+.next
+data
+.e2e-data
+test-results
+playwright-report
+.git

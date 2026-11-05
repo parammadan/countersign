@@ -1,0 +1,198 @@
+{
+  "firmName": "Saltmarsh Creative Co., LLC",
+  "description": "Letter, Helvetica 10. Agency SOW under an MSA: preamble blanks (MSA date, client name), a project-summary block of 'Label' + separate underscore items, monthly retainer blank, deliverables table. Two-column sign-off: left 'Saltmarsh Creative Co., LLC', right 'Accepted by:' with an extra 'Client company:' row; rows 'Label: ____' single items.",
+  "split": "holdout",
+  "pages": 2,
+  "pageSize": [
+    612,
+    792
+  ],
+  "fields": [
+    {
+      "page": 0,
+      "type": "date",
+      "role": "prefill",
+      "x": 60,
+      "y": 138.2,
+      "w": 89,
+      "h": 14,
+      "note": "MSA dated ____"
+    },
+    {
+      "page": 0,
+      "type": "company",
+      "role": "prefill",
+      "x": 60,
+      "y": 152.2,
+      "w": 150.1,
+      "h": 14,
+      "note": "and ____ (\"Client\")",
+      "acceptTypes": [
+        "name"
+      ]
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 190,
+      "y": 208.2,
+      "w": 228,
+      "h": 14,
+      "note": "Project name"
+    },
+    {
+      "page": 0,
+      "type": "date",
+      "role": "prefill",
+      "x": 190,
+      "y": 228.2,
+      "w": 228,
+      "h": 14,
+      "note": "SOW start date"
+    },
+    {
+      "page": 0,
+      "type": "date",
+      "role": "prefill",
+      "x": 190,
+      "y": 248.2,
+      "w": 228,
+      "h": 14,
+      "note": "SOW end date"
+    },
+    {
+      "page": 0,
+      "type": "name",
+      "role": "prefill",
+      "x": 190,
+      "y": 268.2,
+      "w": 228,
+      "h": 14,
+      "note": "Client project lead",
+      "acceptRoles": [
+        "client"
+      ]
+    },
+    {
+      "page": 0,
+      "type": "email",
+      "role": "prefill",
+      "x": 190,
+      "y": 288.2,
+      "w": 228,
+      "h": 14,
+      "note": "Lead email",
+      "acceptRoles": [
+        "client"
+      ]
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 223.1,
+      "y": 577.2,
+      "w": 77.8,
+      "h": 14,
+      "note": "monthly retainer $____"
+    },
+    {
+      "page": 1,
+      "type": "company",
+      "role": "client",
+      "x": 399.8,
+      "y": 291.5,
+      "w": 150.1,
+      "h": 14,
+      "note": "Accepted by / Client company",
+      "acceptRoles": [
+        "prefill"
+      ],
+      "acceptTypes": [
+        "name"
+      ]
+    },
+    {
+      "page": 1,
+      "type": "signature",
+      "role": "firm",
+      "x": 76.7,
+      "y": 315.5,
+      "w": 211.3,
+      "h": 24,
+      "note": "Saltmarsh / By:"
+    },
+    {
+      "page": 1,
+      "type": "signature",
+      "role": "client",
+      "x": 342.7,
+      "y": 315.5,
+      "w": 211.3,
+      "h": 24,
+      "note": "Accepted by / By:"
+    },
+    {
+      "page": 1,
+      "type": "name",
+      "role": "firm",
+      "x": 91.7,
+      "y": 351.5,
+      "w": 194.6,
+      "h": 14,
+      "note": "Saltmarsh / Name:"
+    },
+    {
+      "page": 1,
+      "type": "name",
+      "role": "client",
+      "x": 357.7,
+      "y": 351.5,
+      "w": 194.6,
+      "h": 14,
+      "note": "Accepted by / Name:"
+    },
+    {
+      "page": 1,
+      "type": "title",
+      "role": "firm",
+      "x": 84,
+      "y": 377.5,
+      "w": 200.2,
+      "h": 14,
+      "note": "Saltmarsh / Title:"
+    },
+    {
+      "page": 1,
+      "type": "title",
+      "role": "client",
+      "x": 350,
+      "y": 377.5,
+      "w": 200.2,
+      "h": 14,
+      "note": "Accepted by / Title:"
+    },
+    {
+      "page": 1,
+      "type": "date",
+      "role": "firm",
+      "x": 86.2,
+      "y": 403.5,
+      "w": 200.2,
+      "h": 14,
+      "note": "Saltmarsh / Date:"
+    },
+    {
+      "page": 1,
+      "type": "date",
+      "role": "client",
+      "x": 352.2,
+      "y": 403.5,
+      "w": 200.2,
+      "h": 14,
+      "note": "Accepted by / Date:"
+    }
+  ],
+  "warnings": []
+}

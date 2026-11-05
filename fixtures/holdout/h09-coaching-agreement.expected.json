@@ -1,0 +1,113 @@
+{
+  "firmName": "Willowmere Coaching LLC",
+  "description": "Letter, Helvetica 11. Individual executive-coaching agreement ('Coach'/'Client', 'we'/'you'): client name blank in the preamble, start date and investment blanks in a program summary, two '[ ]' payment options on ONE line, then a 'Client acknowledgment' paragraph and two side-by-side columns (COACH left, CLIENT right) of drawn lines with captions under. Coach's printed name is already typed (no field).",
+  "split": "holdout",
+  "pages": 2,
+  "pageSize": [
+    612,
+    792
+  ],
+  "fields": [
+    {
+      "page": 0,
+      "type": "name",
+      "role": "prefill",
+      "x": 72,
+      "y": 117.6,
+      "w": 159,
+      "h": 14,
+      "note": "and ____ (\"Client\")"
+    },
+    {
+      "page": 0,
+      "type": "date",
+      "role": "prefill",
+      "x": 182,
+      "y": 203.3,
+      "w": 122.3,
+      "h": 14,
+      "note": "Start date"
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 188.1,
+      "y": 224.3,
+      "w": 122.3,
+      "h": 14,
+      "note": "Investment $____"
+    },
+    {
+      "page": 0,
+      "type": "checkbox",
+      "role": "client",
+      "x": 81,
+      "y": 271.1,
+      "w": 13,
+      "h": 13,
+      "note": "Paid in full"
+    },
+    {
+      "page": 0,
+      "type": "checkbox",
+      "role": "client",
+      "x": 232.7,
+      "y": 271.1,
+      "w": 13,
+      "h": 13,
+      "note": "Three monthly installments"
+    },
+    {
+      "page": 1,
+      "type": "signature",
+      "role": "firm",
+      "x": 72,
+      "y": 168.3,
+      "w": 214,
+      "h": 24,
+      "note": "COACH Signature"
+    },
+    {
+      "page": 1,
+      "type": "signature",
+      "role": "client",
+      "x": 326,
+      "y": 168.3,
+      "w": 214,
+      "h": 24,
+      "note": "CLIENT Signature"
+    },
+    {
+      "page": 1,
+      "type": "name",
+      "role": "client",
+      "x": 326,
+      "y": 218.3,
+      "w": 214,
+      "h": 14,
+      "note": "CLIENT Printed name"
+    },
+    {
+      "page": 1,
+      "type": "date",
+      "role": "firm",
+      "x": 72,
+      "y": 258.3,
+      "w": 214,
+      "h": 14,
+      "note": "COACH Date"
+    },
+    {
+      "page": 1,
+      "type": "date",
+      "role": "client",
+      "x": 326,
+      "y": 258.3,
+      "w": 214,
+      "h": 14,
+      "note": "CLIENT Date"
+    }
+  ],
+  "warnings": []
+}

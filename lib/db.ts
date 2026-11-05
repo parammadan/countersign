@@ -218,12 +218,17 @@ export function db(): DatabaseSync {
 
 type Param = string | number | null | bigint;
 
+// node:sqlite rows have a null prototype; React won't pass those to client components.
 export function one<T>(sql: string, ...params: Param[]): T | undefined {
-  return db().prepare(sql).get(...params) as T | undefined;
+  const r = db().prepare(sql).get(...params);
+  return r ? ({ ...r } as T) : undefined;
 }
 
 export function all<T>(sql: string, ...params: Param[]): T[] {
-  return db().prepare(sql).all(...params) as T[];
+  return db()
+    .prepare(sql)
+    .all(...params)
+    .map((r) => ({ ...r }) as T);
 }
 
 export function run(sql: string, ...params: Param[]) {

@@ -15,7 +15,8 @@ import { extractPdf } from "@/lib/pdf/extract";
 import { detectFields } from "@/lib/detect";
 import type { Field, FieldType, Role } from "@/lib/fields";
 
-const DIR = path.resolve(__dirname, "..", "fixtures", "agreements");
+// FIXTURE_DIR=fixtures/holdout scores the held-out corpus (scripts/make-holdout.mjs) instead.
+const DIR = path.resolve(__dirname, "..", process.env.FIXTURE_DIR ?? path.join("fixtures", "agreements"));
 const TOL_X = 40;
 const TOL_Y = 25;
 const MIN_RECALL = 0.0; // raise as the detector improves

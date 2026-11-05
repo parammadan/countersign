@@ -1,0 +1,163 @@
+{
+  "firmName": "Juniper Lane Photography LLC",
+  "description": "Letter, Helvetica 10.5. Wedding photography contract: event details as 'Label: ____' single items two per row, two '[ ]' model-release choices, and 'Signed: ________ on ________' lines (signature + date in ONE text item) under CLIENT and PHOTOGRAPHER headings, plus a client 'Print name:' line.",
+  "split": "holdout",
+  "pages": 2,
+  "pageSize": [
+    612,
+    792
+  ],
+  "fields": [
+    {
+      "page": 0,
+      "type": "name",
+      "role": "prefill",
+      "x": 139.6,
+      "y": 214.6,
+      "w": 151.8,
+      "h": 14,
+      "note": "Client name(s):"
+    },
+    {
+      "page": 0,
+      "type": "email",
+      "role": "prefill",
+      "x": 349.6,
+      "y": 214.6,
+      "w": 198.5,
+      "h": 14,
+      "note": "Email:"
+    },
+    {
+      "page": 0,
+      "type": "date",
+      "role": "prefill",
+      "x": 121.3,
+      "y": 238.6,
+      "w": 175.1,
+      "h": 14,
+      "note": "Event date:"
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 352.7,
+      "y": 238.6,
+      "w": 192.7,
+      "h": 14,
+      "note": "Venue:"
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 145.5,
+      "y": 262.6,
+      "w": 146,
+      "h": 14,
+      "note": "Coverage hours:"
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 363.5,
+      "y": 262.6,
+      "w": 181,
+      "h": 14,
+      "note": "Package:"
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 116.4,
+      "y": 286.6,
+      "w": 175.1,
+      "h": 14,
+      "note": "Total fee: $"
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 389.3,
+      "y": 286.6,
+      "w": 157.6,
+      "h": 14,
+      "note": "Retainer due: $"
+    },
+    {
+      "page": 0,
+      "type": "checkbox",
+      "role": "client",
+      "x": 83,
+      "y": 536.7,
+      "w": 12.5,
+      "h": 12.5,
+      "note": "You may use our images for por"
+    },
+    {
+      "page": 0,
+      "type": "checkbox",
+      "role": "client",
+      "x": 83,
+      "y": 556.7,
+      "w": 12.5,
+      "h": 12.5,
+      "note": "Please do not use our images p"
+    },
+    {
+      "page": 1,
+      "type": "signature",
+      "role": "client",
+      "x": 104,
+      "y": 149.7,
+      "w": 227.7,
+      "h": 24,
+      "note": "CLIENT Signed: ____"
+    },
+    {
+      "page": 1,
+      "type": "date",
+      "role": "client",
+      "x": 349.2,
+      "y": 159.7,
+      "w": 110.9,
+      "h": 14,
+      "note": "CLIENT on ____"
+    },
+    {
+      "page": 1,
+      "type": "name",
+      "role": "client",
+      "x": 122.2,
+      "y": 187.7,
+      "w": 221.8,
+      "h": 14,
+      "note": "CLIENT Print name"
+    },
+    {
+      "page": 1,
+      "type": "signature",
+      "role": "firm",
+      "x": 104,
+      "y": 255.7,
+      "w": 227.7,
+      "h": 24,
+      "note": "PHOTOGRAPHER Signed: ____"
+    },
+    {
+      "page": 1,
+      "type": "date",
+      "role": "firm",
+      "x": 349.2,
+      "y": 265.7,
+      "w": 110.9,
+      "h": 14,
+      "note": "PHOTOGRAPHER on ____"
+    }
+  ],
+  "warnings": []
+}

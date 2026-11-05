@@ -287,7 +287,12 @@ export async function completeClientSigning(tok: string, input: SignInput, ctx: 
         values.set(fl.id, { kind: "check", on });
         stored[fl.id] = on;
       } else {
-        const v = typeof raw === "string" ? raw.trim().slice(0, 300) : "";
+        let v = typeof raw === "string" ? raw.trim().slice(0, 300) : "";
+        if (!v && raw === undefined) {
+          if (fl.type === "name") v = f.client_name;
+          else if (fl.type === "email") v = f.client_email;
+          else if (fl.type === "company") v = f.client_company ?? "";
+        }
         if (fl.required && !v) throw new AppError(`Fill in "${fl.label}".`);
         if (fl.type === "email" && v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) throw new AppError(`"${fl.label}" needs a valid email.`);
         if (v) values.set(fl.id, { kind: "text", text: v });
@@ -311,7 +316,7 @@ export async function completeClientSigning(tok: string, input: SignInput, ctx: 
     audit(ws.id, f.id, "file.signed", f.client_email, ctx, { sha256: hash, method: input.method, original_sha256: version.sha256 });
     const signed = getFile(ws.id, f.id);
     emit(ws.id, "file.signed", fileJson(signed));
-    if (ws.auto_countersign) return await countersign(signed, ws, { kind: "system", label: "auto-countersign" }, ctx);
+    if (ws.auto_countersign) return await countersign(signed, ws, { kind: "system", label: "auto-countersign" }, {});
     await notifyFirm(ws, signed, "ready");
     return signed;
   } finally {

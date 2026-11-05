@@ -26,7 +26,12 @@ export async function ingestAgreement(
     if (e instanceof ConvertError) throw new AppError(e.message, 422);
     throw e;
   }
-  let ex = await extractPdf(pdf);
+  let ex: Awaited<ReturnType<typeof extractPdf>>;
+  try {
+    ex = await extractPdf(pdf);
+  } catch {
+    throw new AppError("We couldn't read the text in this PDF. Try exporting it again from Word or Google Docs.", 422);
+  }
   let det = detectFields(ex, { firmName: ws.legal_name });
   let added = false;
   if (!det.fields.some((f) => f.role === "client" && f.type === "signature")) {

@@ -1,0 +1,216 @@
+{
+  "firmName": "Northgate Managed IT Services, LLC",
+  "description": "Letter, Helvetica 9. Page 1 = order form: ruled 4-column grid with EMPTY value cells (no underscores) for customer details, '[ ]' service-tier checkboxes, then the only signature block: two columns, CUSTOMER on the LEFT and the firm on the right, rows 'Authorized Signature:' / 'Printed Name:' / 'Title:' / 'Date:' with drawn lines. Pages 2+ = Managed Services Terms with an SLA table and no blanks.",
+  "split": "holdout",
+  "pages": 3,
+  "pageSize": [
+    612,
+    792
+  ],
+  "fields": [
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 462.8,
+      "y": 60,
+      "w": 53.4,
+      "h": 14,
+      "note": "Order Form No. ____ (office use)"
+    },
+    {
+      "page": 0,
+      "type": "company",
+      "role": "prefill",
+      "x": 162,
+      "y": 171.2,
+      "w": 140,
+      "h": 14,
+      "note": "order form / Customer legal name",
+      "acceptTypes": [
+        "name"
+      ]
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 414,
+      "y": 171.2,
+      "w": 140,
+      "h": 14,
+      "note": "order form / Billing address"
+    },
+    {
+      "page": 0,
+      "type": "name",
+      "role": "prefill",
+      "x": 162,
+      "y": 193.2,
+      "w": 140,
+      "h": 14,
+      "note": "order form / Primary contact"
+    },
+    {
+      "page": 0,
+      "type": "email",
+      "role": "prefill",
+      "x": 414,
+      "y": 193.2,
+      "w": 140,
+      "h": 14,
+      "note": "order form / Contact email"
+    },
+    {
+      "page": 0,
+      "type": "date",
+      "role": "prefill",
+      "x": 162,
+      "y": 215.2,
+      "w": 140,
+      "h": 14,
+      "note": "order form / Service start date"
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 414,
+      "y": 215.2,
+      "w": 140,
+      "h": 14,
+      "note": "order form / Covered users"
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 162,
+      "y": 237.2,
+      "w": 140,
+      "h": 14,
+      "note": "order form / Monthly fee (USD)"
+    },
+    {
+      "page": 0,
+      "type": "checkbox",
+      "role": "client",
+      "x": 59,
+      "y": 287.3,
+      "w": 11,
+      "h": 11,
+      "note": "tier Essentials",
+      "acceptRoles": [
+        "prefill"
+      ]
+    },
+    {
+      "page": 0,
+      "type": "checkbox",
+      "role": "client",
+      "x": 152.5,
+      "y": 287.3,
+      "w": 11,
+      "h": 11,
+      "note": "tier Professional",
+      "acceptRoles": [
+        "prefill"
+      ]
+    },
+    {
+      "page": 0,
+      "type": "checkbox",
+      "role": "client",
+      "x": 254.3,
+      "y": 287.3,
+      "w": 11,
+      "h": 11,
+      "note": "tier Enterprise",
+      "acceptRoles": [
+        "prefill"
+      ]
+    },
+    {
+      "page": 0,
+      "type": "signature",
+      "role": "client",
+      "x": 146,
+      "y": 410.9,
+      "w": 142,
+      "h": 24,
+      "note": "CUSTOMER / Authorized Signature:"
+    },
+    {
+      "page": 0,
+      "type": "signature",
+      "role": "firm",
+      "x": 416,
+      "y": 410.9,
+      "w": 142,
+      "h": 24,
+      "note": "NORTHGATE / Authorized Signature:"
+    },
+    {
+      "page": 0,
+      "type": "name",
+      "role": "client",
+      "x": 146,
+      "y": 444.9,
+      "w": 142,
+      "h": 14,
+      "note": "CUSTOMER / Printed Name:"
+    },
+    {
+      "page": 0,
+      "type": "name",
+      "role": "firm",
+      "x": 416,
+      "y": 444.9,
+      "w": 142,
+      "h": 14,
+      "note": "NORTHGATE / Printed Name:"
+    },
+    {
+      "page": 0,
+      "type": "title",
+      "role": "client",
+      "x": 146,
+      "y": 468.9,
+      "w": 142,
+      "h": 14,
+      "note": "CUSTOMER / Title:"
+    },
+    {
+      "page": 0,
+      "type": "title",
+      "role": "firm",
+      "x": 416,
+      "y": 468.9,
+      "w": 142,
+      "h": 14,
+      "note": "NORTHGATE / Title:"
+    },
+    {
+      "page": 0,
+      "type": "date",
+      "role": "client",
+      "x": 146,
+      "y": 492.9,
+      "w": 142,
+      "h": 14,
+      "note": "CUSTOMER / Date:"
+    },
+    {
+      "page": 0,
+      "type": "date",
+      "role": "firm",
+      "x": 416,
+      "y": 492.9,
+      "w": 142,
+      "h": 14,
+      "note": "NORTHGATE / Date:"
+    }
+  ],
+  "warnings": [],
+  "note": "Value cells in the order-form grid are empty table cells; their field boxes sit on the cell's bottom rule. Tier checkboxes are client-ticked but a firm could pre-tick them (acceptRoles prefill)."
+}

@@ -1,0 +1,119 @@
+{
+  "firmName": "Ashcombe Whitlow LLP",
+  "description": "Letter, TimesRoman 11.5. Law-firm engagement letter: date / salutation / matter blanks, hourly-rate table, trust-deposit blank, 'Client's initials: ____' after the fee-arbitration clause, firm signs 'By: ____' under 'Very truly yours, ASHCOMBE WHITLOW LLP' with partner name printed below, then 'CLIENT ACKNOWLEDGMENT' with drawn lines and captions under ('Signature of Client', 'Date', 'Printed name', 'On behalf of (if an entity)').",
+  "split": "holdout",
+  "pages": 3,
+  "pageSize": [
+    612,
+    792
+  ],
+  "fields": [
+    {
+      "page": 0,
+      "type": "date",
+      "role": "prefill",
+      "x": 72,
+      "y": 143.5,
+      "w": 132.3,
+      "h": 14,
+      "note": "letter date"
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 296,
+      "y": 169.6,
+      "w": 178.3,
+      "h": 14,
+      "note": "Re: matter ____"
+    },
+    {
+      "page": 0,
+      "type": "name",
+      "role": "prefill",
+      "x": 97.2,
+      "y": 195.7,
+      "w": 138,
+      "h": 14,
+      "note": "Dear ____:"
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 376.7,
+      "y": 572.5,
+      "w": 80.5,
+      "h": 14,
+      "note": "deposit $____"
+    },
+    {
+      "page": 1,
+      "type": "initials",
+      "role": "client",
+      "x": 457,
+      "y": 395.3,
+      "w": 57.5,
+      "h": 18,
+      "note": "Client's initials (arbitration)"
+    },
+    {
+      "page": 1,
+      "type": "signature",
+      "role": "firm",
+      "x": 91.5,
+      "y": 525.9,
+      "w": 218.5,
+      "h": 24,
+      "note": "firm By:"
+    },
+    {
+      "page": 2,
+      "type": "signature",
+      "role": "client",
+      "x": 72,
+      "y": 144.5,
+      "w": 260,
+      "h": 24,
+      "note": "Signature of Client"
+    },
+    {
+      "page": 2,
+      "type": "date",
+      "role": "client",
+      "x": 372,
+      "y": 154.5,
+      "w": 150,
+      "h": 14,
+      "note": "Date"
+    },
+    {
+      "page": 2,
+      "type": "name",
+      "role": "client",
+      "x": 72,
+      "y": 198.5,
+      "w": 260,
+      "h": 14,
+      "note": "Printed name"
+    },
+    {
+      "page": 2,
+      "type": "company",
+      "role": "client",
+      "x": 72,
+      "y": 242.5,
+      "w": 260,
+      "h": 14,
+      "note": "On behalf of (if an entity)",
+      "acceptRoles": [
+        "prefill"
+      ],
+      "acceptTypes": [
+        "name"
+      ]
+    }
+  ],
+  "warnings": []
+}

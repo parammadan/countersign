@@ -38,10 +38,20 @@ async function normalize(pdf: Buffer): Promise<Buffer> {
     if (/encrypt/i.test(msg)) throw new ConvertError("This PDF is password-protected or encrypted. Export an unlocked copy and upload that.");
     throw new ConvertError("This file couldn't be read as a PDF. Try exporting it again from Word or Google Docs.");
   }
-  if (doc.getPageCount() === 0) throw new ConvertError("This PDF has no pages.");
-  if (doc.getPageCount() > 100) throw new ConvertError("Agreements over 100 pages aren't supported.");
+  let pages = 0;
+  try {
+    pages = doc.getPageCount();
+  } catch {
+    throw new ConvertError("This file couldn't be read as a PDF. Try exporting it again from Word or Google Docs.");
+  }
+  if (pages === 0) throw new ConvertError("This PDF has no pages.");
+  if (pages > 100) throw new ConvertError("Agreements over 100 pages aren't supported.");
   // Re-save: collapses incremental updates so the stamping base is a single clean revision.
-  return Buffer.from(await doc.save({ useObjectStreams: false }));
+  try {
+    return Buffer.from(await doc.save({ useObjectStreams: false }));
+  } catch {
+    throw new ConvertError("This PDF is damaged and couldn't be processed. Try exporting it again.");
+  }
 }
 
 async function convertWithLibreOffice(data: Buffer, ext: string): Promise<Buffer> {

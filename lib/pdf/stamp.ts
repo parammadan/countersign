@@ -48,7 +48,7 @@ export async function stampFields(pdfBytes: Uint8Array, fields: Field[], values:
       const text = winAnsi(v.text).trim();
       if (!text) continue;
       const size = fitText(font, text, b.w, b.h);
-      page.drawText(text, { x: b.x + 1, y: b.y + Math.max(1.5, (b.h - size) / 2 - 0.5), size, font, color: INK });
+      page.drawText(text, { x: b.x + 1, y: b.y + Math.max(3, (b.h - size) / 2 + 1), size, font, color: INK });
     } else if (v.kind === "check") {
       if (!v.on) continue;
       const size = Math.min(b.w, b.h) * 0.9;

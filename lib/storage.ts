@@ -3,7 +3,7 @@ import path from "node:path";
 import { dataDir } from "./paths";
 
 function abs(rel: string) {
-  const root = path.join(dataDir(), "blobs");
+  const root = path.resolve(dataDir(), "blobs");
   const p = path.resolve(root, rel);
   if (!p.startsWith(root + path.sep)) throw new Error("bad path");
   return p;

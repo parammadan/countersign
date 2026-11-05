@@ -1,0 +1,175 @@
+{
+  "firmName": "Kestrel Ridge Consulting Pty Ltd",
+  "description": "A4, TimesRoman 10. Australian combined confidentiality + consulting engagement deed: 'Parties' block with blanks for client name / ABN / address, Part A (confidentiality) and Part B (engagement), a Schedule with item blanks, then 'EXECUTED as an agreement' with two columns headed 'For and on behalf of / Kestrel Ridge Consulting Pty Ltd' and 'For and on behalf of / the Client'; each line is a row of dot leaders with an italic caption UNDER it ('Signature of authorised person', 'Name of authorised person (print)', 'Office held', 'Date').",
+  "split": "holdout",
+  "pages": 2,
+  "pageSize": [
+    595.3,
+    841.9
+  ],
+  "fields": [
+    {
+      "page": 0,
+      "type": "company",
+      "role": "prefill",
+      "x": 82,
+      "y": 139.1,
+      "w": 150,
+      "h": 14,
+      "note": "Parties 2 / client name",
+      "acceptTypes": [
+        "name"
+      ]
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 257.6,
+      "y": 139.1,
+      "w": 90,
+      "h": 14,
+      "note": "Parties 2 / ABN",
+      "acceptRoles": [
+        "client"
+      ]
+    },
+    {
+      "page": 0,
+      "type": "text",
+      "role": "prefill",
+      "x": 360.9,
+      "y": 139.1,
+      "w": 150,
+      "h": 14,
+      "note": "Parties 2 / address",
+      "acceptRoles": [
+        "client"
+      ]
+    },
+    {
+      "page": 1,
+      "type": "text",
+      "role": "prefill",
+      "x": 399.2,
+      "y": 196.9,
+      "w": 110,
+      "h": 14,
+      "note": "Item 1 proposal ref ____"
+    },
+    {
+      "page": 1,
+      "type": "date",
+      "role": "prefill",
+      "x": 212,
+      "y": 216.9,
+      "w": 130,
+      "h": 14,
+      "note": "Item 2 commencement date"
+    },
+    {
+      "page": 1,
+      "type": "text",
+      "role": "prefill",
+      "x": 225.2,
+      "y": 236.9,
+      "w": 70,
+      "h": 14,
+      "note": "Item 3 fees A$____"
+    },
+    {
+      "page": 1,
+      "type": "name",
+      "role": "prefill",
+      "x": 212,
+      "y": 256.9,
+      "w": 170,
+      "h": 14,
+      "note": "Item 4 client representative",
+      "acceptRoles": [
+        "client"
+      ]
+    },
+    {
+      "page": 1,
+      "type": "signature",
+      "role": "firm",
+      "x": 62,
+      "y": 361.9,
+      "w": 217.5,
+      "h": 24,
+      "note": "Kestrel Ridge Consulting Pty Ltd / Signature of authorised person"
+    },
+    {
+      "page": 1,
+      "type": "signature",
+      "role": "client",
+      "x": 314.6,
+      "y": 361.9,
+      "w": 217.5,
+      "h": 24,
+      "note": "the Client / Signature of authorised person"
+    },
+    {
+      "page": 1,
+      "type": "name",
+      "role": "firm",
+      "x": 62,
+      "y": 405.9,
+      "w": 217.5,
+      "h": 14,
+      "note": "Kestrel Ridge Consulting Pty Ltd / Name of authorised person (print)"
+    },
+    {
+      "page": 1,
+      "type": "name",
+      "role": "client",
+      "x": 314.6,
+      "y": 405.9,
+      "w": 217.5,
+      "h": 14,
+      "note": "the Client / Name of authorised person (print)"
+    },
+    {
+      "page": 1,
+      "type": "title",
+      "role": "firm",
+      "x": 62,
+      "y": 439.9,
+      "w": 217.5,
+      "h": 14,
+      "note": "Kestrel Ridge Consulting Pty Ltd / Office held"
+    },
+    {
+      "page": 1,
+      "type": "title",
+      "role": "client",
+      "x": 314.6,
+      "y": 439.9,
+      "w": 217.5,
+      "h": 14,
+      "note": "the Client / Office held"
+    },
+    {
+      "page": 1,
+      "type": "date",
+      "role": "firm",
+      "x": 62,
+      "y": 473.9,
+      "w": 217.5,
+      "h": 14,
+      "note": "Kestrel Ridge Consulting Pty Ltd / Date"
+    },
+    {
+      "page": 1,
+      "type": "date",
+      "role": "client",
+      "x": 314.6,
+      "y": 473.9,
+      "w": 217.5,
+      "h": 14,
+      "note": "the Client / Date"
+    }
+  ],
+  "warnings": []
+}

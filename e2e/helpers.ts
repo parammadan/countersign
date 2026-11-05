@@ -1,0 +1,76 @@
+import { expect, type Page, type BrowserContext } from "@playwright/test";
+import path from "node:path";
+
+export const uid = () => Math.random().toString(36).slice(2, 8);
+
+export async function signup(page: Page, firm = "Northwind Advisory", legal = "Northwind Advisory, LLC") {
+  const email = `owner-${uid()}@example.com`;
+  await page.goto("/signup");
+  await page.getByLabel("Firm name").fill(firm);
+  await page.getByLabel("Legal entity name").fill(legal);
+  await page.getByLabel("Your name").fill("Avery Tester");
+  await page.getByLabel("Work email").fill(email);
+  await page.getByLabel("Password").fill("correct-horse-42");
+  await page.getByRole("button", { name: "Create workspace" }).click();
+  await expect(page).toHaveURL(/\/app$/);
+  return email;
+}
+
+export async function uploadAndPublish(page: Page, fixture: string) {
+  await page.goto("/app/agreements");
+  await page.locator('input[type="file"]').first().setInputFiles(path.isAbsolute(fixture) ? fixture : path.join(process.cwd(), "fixtures/agreements", fixture));
+  await expect(page).toHaveURL(/\/app\/agreements\/tv_/, { timeout: 90_000 });
+  await expect(page.getByText("found automatically")).toBeVisible();
+  await page.getByRole("button", { name: /publish/i }).click();
+  await expect(page).toHaveURL(/published=1/);
+}
+
+export async function adoptCountersignature(page: Page) {
+  await page.goto("/app/settings");
+  const box = page.locator("#countersign");
+  await box.getByPlaceholder("Full name").fill("Avery Tester");
+  await box.getByPlaceholder("Managing Partner").fill("Managing Partner");
+  await box.getByRole("button", { name: "Adopt signature" }).click();
+  await expect(page.getByText("Countersignature adopted")).toBeVisible();
+}
+
+export async function newFile(page: Page, client: { name: string; email: string; ref?: string }) {
+  await page.goto("/app/files/new");
+  await page.getByLabel("Client full name").fill(client.name);
+  await page.getByLabel("Client email").fill(client.email);
+  if (client.ref) await page.getByLabel("File / matter reference").fill(client.ref);
+  for (const input of await page.locator('input[name^="prefill."]').all()) await input.fill("Test value");
+  await page.getByRole("button", { name: "Create and send for signature" }).click();
+  await expect(page).toHaveURL(/\/app\/files\/file_/);
+  const link = await page.locator('a[href*="/s/"]').first().getAttribute("href");
+  expect(link).toBeTruthy();
+  return { fileUrl: page.url(), link: link! };
+}
+
+export async function signAsClient(ctx: BrowserContext, link: string) {
+  const page = await ctx.newPage();
+  await page.goto(link);
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Review and sign" }).click();
+  for (let i = 0; i < 40; i++) {
+    if (await page.getByRole("button", { name: /^Finish/ }).first().isVisible().catch(() => false)) break;
+    await page.getByRole("button", { name: /^Next field$/ }).click();
+    await page.waitForTimeout(400);
+    await page.locator("[data-fid]:focus").click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible({ timeout: 3000 }).catch(() => {});
+    const adopt = dialog.getByRole("button", { name: /Adopt (signature|initials)/ });
+    const save = dialog.getByRole("button", { name: "Save" });
+    if (await adopt.isVisible().catch(() => false)) await adopt.click();
+    else if (await save.isVisible().catch(() => false)) {
+      const input = dialog.locator("input");
+      if (!(await input.inputValue())) await input.fill("Test entry");
+      await save.click();
+    }
+    await expect(dialog).toBeHidden();
+  }
+  await page.getByRole("button", { name: /^Finish/ }).first().click();
+  await page.getByRole("dialog").getByRole("button", { name: "Sign and finish" }).click();
+  await expect(page.getByRole("heading", { name: "All signed" })).toBeVisible({ timeout: 60_000 });
+  return page;
+}
