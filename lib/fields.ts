@@ -56,7 +56,7 @@ export function customPrefillKeys(fields: Field[]): { key: string; label: string
   const seen = new Map<string, string>();
   for (const f of fields) {
     if (f.role === "prefill" && f.prefillKey?.startsWith("custom.") && !seen.has(f.prefillKey)) {
-      seen.set(f.prefillKey, f.label || f.prefillKey.slice(7));
+      seen.set(f.prefillKey, (f.label || f.prefillKey.slice(7)).replace(/[\s:$#]+$/, "") || f.prefillKey.slice(7));
     }
   }
   return [...seen].map(([key, label]) => ({ key, label }));

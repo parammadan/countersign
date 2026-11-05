@@ -66,6 +66,23 @@ export function UploadAgreement({ templateId, compact }: { templateId?: string; 
             <p className="font-medium">Drop your client agreement here</p>
             <p className="mt-1 text-sm text-muted">PDF or Word (.docx). We find where everyone signs, and you check it.</p>
             <Button className="mt-4" onClick={() => input.current?.click()}>Choose file</Button>
+            <button
+              type="button"
+              className="mt-3 text-sm font-medium text-brand hover:underline"
+              onClick={async () => {
+                setBusy(true);
+                setErr(null);
+                const r = await fetch("/api/agreements/sample", { method: "POST" });
+                const j = (await r.json().catch(() => ({}))) as { versionId?: string; error?: string };
+                if (r.ok && j.versionId) router.push(`/app/agreements/${j.versionId}`);
+                else {
+                  setErr(j.error || "Couldn't load the sample");
+                  setBusy(false);
+                }
+              }}
+            >
+              No agreement handy? Try a sample one
+            </button>
           </>
         )}
       </div>

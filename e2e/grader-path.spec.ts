@@ -35,3 +35,19 @@ for (const fx of FIXTURES) {
     await clientCtx.close();
   });
 }
+
+test("try-a-sample path works for a brand-new workspace", async ({ page, browser }) => {
+  await signup(page);
+  await page.goto("/app/agreements");
+  await page.getByRole("button", { name: /Try a sample/ }).click();
+  await expect(page).toHaveURL(/\/app\/agreements\/tv_/, { timeout: 60_000 });
+  await page.getByRole("button", { name: /publish/i }).click();
+  await expect(page).toHaveURL(/published=1/);
+  await adoptCountersignature(page);
+  await page.goto("/app/files/new");
+  await expect(page.getByLabel("Project Fee")).toBeVisible();
+  const { link } = await newFile(page, { name: "Jordan Sample", email: `client-${uid()}@example.com` });
+  const ctx = await browser.newContext();
+  await signAsClient(ctx, link);
+  await ctx.close();
+});
