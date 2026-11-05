@@ -46,6 +46,13 @@ async function normalize(pdf: Buffer): Promise<Buffer> {
   }
   if (pages === 0) throw new ConvertError("This PDF has no pages.");
   if (pages > 100) throw new ConvertError("Agreements over 100 pages aren't supported.");
+  // Fillable form fields would sit on top of (and hide) our stamps: flatten them into the page.
+  try {
+    const form = doc.getForm();
+    if (form.getFields().length) form.flatten();
+  } catch {
+    /* unusual form structures: keep the document as is */
+  }
   // Re-save: collapses incremental updates so the stamping base is a single clean revision.
   try {
     return Buffer.from(await doc.save({ useObjectStreams: false }));
@@ -54,7 +61,26 @@ async function normalize(pdf: Buffer): Promise<Buffer> {
   }
 }
 
+// At most two conversions at once: LibreOffice is memory-hungry and the box is small.
+let running = 0;
+const waiting: (() => void)[] = [];
+async function slot<T>(fn: () => Promise<T>): Promise<T> {
+  if (running >= 2) await new Promise<void>((r) => waiting.push(r));
+  running++;
+  try {
+    return await fn();
+  } finally {
+    running--;
+    waiting.shift()?.();
+  }
+}
+
 async function convertWithLibreOffice(data: Buffer, ext: string): Promise<Buffer> {
+  if (waiting.length > 10) throw new ConvertError("We're converting a lot of documents right now. Try again in a minute, or upload a PDF.");
+  return slot(() => convertOnce(data, ext));
+}
+
+async function convertOnce(data: Buffer, ext: string): Promise<Buffer> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cs-conv-"));
   const input = path.join(dir, "input" + ext);
   await fs.writeFile(input, data);
@@ -64,11 +90,12 @@ async function convertWithLibreOffice(data: Buffer, ext: string): Promise<Buffer
       execFile(
         /*turbopackIgnore: true*/ soffice(),
         [`-env:UserInstallation=${profile}`, "--headless", "--norestore", "--convert-to", "pdf", "--outdir", dir, input],
-        { timeout: 90_000 },
-        (err, _so, se) => {
+        // No app secrets in LibreOffice's environment; its own profile lives in the temp dir.
+        { timeout: 60_000, killSignal: "SIGKILL", maxBuffer: 1 << 20, env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: dir, LANG: "en_US.UTF-8", SAL_USE_VCLPLUGIN: "svp" } as unknown as NodeJS.ProcessEnv },
+        (err) => {
           if (err) {
             if ((err as NodeJS.ErrnoException).code === "ENOENT") reject(new ConvertError("Word conversion isn't available on this server. Upload a PDF instead."));
-            else reject(new ConvertError("We couldn't convert this Word document. Save it as PDF and upload that. " + (se || "").slice(0, 200)));
+            else reject(new ConvertError("We couldn't convert this Word document. Save it as PDF and upload that."));
           } else resolve();
         },
       );

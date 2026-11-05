@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { ctxOf, handle, rateLimit, readJson } from "@/lib/http";
+import { ctxOf, handle, rateLimit, readForm, readJson } from "@/lib/http";
 import { AppError, createFile, fileJson } from "@/lib/files";
 import { NewFileBody } from "@/lib/schemas";
 import { one } from "@/lib/db";
@@ -16,7 +16,7 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ token: 
   let body: unknown;
   const ct = req.headers.get("content-type") || "";
   if (ct.includes("application/x-www-form-urlencoded") || ct.includes("multipart/form-data")) {
-    const fd = await req.formData();
+    const fd = await readForm(req, 200_000);
     body = Object.fromEntries([...fd.entries()].filter(([, v]) => typeof v === "string"));
   } else body = await readJson(req);
   const b = NewFileBody.parse(body);

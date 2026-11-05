@@ -9,6 +9,7 @@ primary_region = "ewr"
   PORT = "8080"
   DATA_DIR = "/data"
   APP_TZ = "America/New_York"
+  TRUST_PROXY = "fly"
 
 [mounts]
   source = "countersign_data"

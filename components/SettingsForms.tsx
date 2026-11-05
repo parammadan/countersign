@@ -2,13 +2,13 @@
 
 import { useActionState, useState } from "react";
 import { useRouter } from "next/navigation";
-import { inviteAction, settingsAction, type FormState } from "@/app/actions";
+import { inviteAction, memberAction, settingsAction, type FormState } from "@/app/actions";
 import { Button, Field, Input, Notice } from "./ui";
 import { SignaturePad, type Adopted } from "./SignaturePad";
 import { CopyButton } from "./FileActions";
 import type { Workspace } from "@/lib/types";
 
-export function SettingsForm({ ws }: { ws: Workspace }) {
+export function SettingsForm({ ws, emailOn = true }: { ws: Workspace; emailOn?: boolean }) {
   const [st, act, pending] = useActionState<FormState, FormData>(settingsAction, undefined);
   return (
     <form action={act} className="space-y-6">
@@ -37,7 +37,7 @@ export function SettingsForm({ ws }: { ws: Workspace }) {
         </label>
         <label className="flex items-start gap-3 text-sm">
           <input type="checkbox" name="require_otp" defaultChecked={!!ws.require_otp} className="mt-0.5 h-4 w-4" />
-          <span><b>Require an emailed code</b> before the client can open the agreement (stronger proof of identity, one extra step).</span>
+          <span><b>Require an emailed code</b> before the client can open the agreement (stronger proof of identity, one extra step).{!emailOn && <span className="text-warn"> Needs email delivery, which isn&apos;t configured on this server.</span>}</span>
         </label>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Reminder days" hint="Days after sending. 2,5 = reminders on day 2 and day 5."><Input name="reminder_days" defaultValue={ws.reminder_days} /></Field>
@@ -110,5 +110,55 @@ export function InviteForm() {
         <Button disabled={pending}>Invite</Button>
       </div>
     </form>
+  );
+}
+
+export function MemberRow({ m, self }: { m: { user_id: string; name: string; email: string; role: string }; self: boolean }) {
+  const [st, act, pending] = useActionState<FormState, FormData>(memberAction, undefined);
+  return (
+    <li className="flex flex-col gap-2 px-4 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+      <span className="min-w-0 truncate">
+        {m.name} <span className="text-muted">· {m.email}</span>
+        {st?.error && <span className="ml-2 text-xs text-bad">{st.error}</span>}
+      </span>
+      {self || m.role === "owner" ? (
+        <span className="text-xs capitalize text-muted">{m.role}{self ? " (you)" : ""}</span>
+      ) : (
+        <form action={act} className="flex items-center gap-2">
+          <input type="hidden" name="userId" value={m.user_id} />
+          <select name="role" defaultValue={m.role} className="rounded-md border border-line bg-white px-2 py-1 text-xs" onChange={(e) => e.currentTarget.form?.requestSubmit()}>
+            <option value="staff">Staff</option>
+            <option value="admin">Admin</option>
+          </select>
+          <input type="hidden" name="op" value="role" />
+          <button
+            type="submit"
+            formAction={(fd: FormData) => {
+              fd.set("op", "remove");
+              return act(fd);
+            }}
+            disabled={pending}
+            className="text-xs font-medium text-bad"
+            onClick={(e) => !confirm(`Remove ${m.email} from the workspace?`) && e.preventDefault()}
+          >
+            Remove
+          </button>
+        </form>
+      )}
+    </li>
+  );
+}
+
+export function InviteRow({ i }: { i: { id: string; email: string; role: string; expired: boolean } }) {
+  const [, act, pending] = useActionState<FormState, FormData>(memberAction, undefined);
+  return (
+    <li className="flex items-center justify-between px-4 py-2.5 text-muted">
+      <span className="truncate">{i.email}</span>
+      <form action={act} className="flex items-center gap-3 text-xs">
+        <span>{i.expired ? "invite expired" : "invited"} · {i.role}</span>
+        <input type="hidden" name="id" value={i.id} />
+        <button name="op" value="revoke" disabled={pending} className="font-medium text-bad">Revoke</button>
+      </form>
+    </li>
   );
 }

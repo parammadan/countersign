@@ -19,7 +19,7 @@ export async function sendEmail(opts: {
   fromName?: string;
   replyTo?: string | null;
   attachments?: Attachment[];
-  /** stored instead of `html` once delivered by a provider (e.g. to keep one-time codes out of the log) */
+  /** sensitive email (codes, reset/invite links): this is stored instead of `html`, always */
   logHtml?: string;
 }): Promise<{ id: string; delivered: boolean; error?: string }> {
   const eid = id("em_");
@@ -62,8 +62,8 @@ export async function sendEmail(opts: {
     opts.fileId ?? null,
     opts.kind,
     opts.to,
-    status === "sent" && opts.logHtml ? opts.subject.replace(/\d{6}/, "••••••") : opts.subject,
-    status === "sent" && opts.logHtml ? opts.logHtml : opts.html,
+    opts.logHtml ? opts.subject.replace(/\d{6}/, "••••••") : opts.subject,
+    opts.logHtml ?? opts.html,
     status,
     providerId,
     error,

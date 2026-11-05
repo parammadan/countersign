@@ -2,7 +2,7 @@
 // certificate of completion. Coordinates in `Field` are top-left origin points
 // relative to the page's crop box (what pdf.js reports), so convert here.
 
-import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb } from "pdf-lib";
+import { PDFDocument, PDFFont, PDFPage, StandardFonts, degrees, rgb } from "pdf-lib";
 import type { Field } from "../fields";
 
 export type StampValue = { kind: "text"; text: string } | { kind: "image"; png: Uint8Array } | { kind: "check"; on: boolean };
@@ -22,9 +22,25 @@ export function winAnsi(s: string): string {
     });
 }
 
-function box(page: PDFPage, f: Field) {
+// Field coordinates are pdf.js viewport coordinates: top-left origin, crop box applied, and the
+// page's /Rotate applied. Invert that here (same matrices as pdf.js's PageViewport).
+export function viewportMapper(page: PDFPage) {
   const cb = page.getCropBox();
-  return { x: cb.x + f.x, y: cb.y + cb.height - f.y - f.h, w: f.w, h: f.h };
+  const rot = (((page.getRotation().angle ?? 0) % 360) + 360) % 360;
+  const { x: x0, y: y0, width: W, height: H } = cb;
+  const pt = (vx: number, vy: number): [number, number] => {
+    switch (rot) {
+      case 90:
+        return [x0 + vy, y0 + vx];
+      case 180:
+        return [x0 + W - vx, y0 + vy];
+      case 270:
+        return [x0 + W - vy, y0 + H - vx];
+      default:
+        return [x0 + vx, y0 + H - vy];
+    }
+  };
+  return { pt, rotate: degrees(rot) };
 }
 
 function fitText(font: PDFFont, text: string, w: number, h: number) {
@@ -43,26 +59,29 @@ export async function stampFields(pdfBytes: Uint8Array, fields: Field[], values:
     if (!v) continue;
     const page = pages[f.page];
     if (!page) continue;
-    const b = box(page, f);
+    const { pt, rotate } = viewportMapper(page);
     if (v.kind === "text") {
       const text = winAnsi(v.text).trim();
       if (!text) continue;
-      const size = fitText(font, text, b.w, b.h);
-      page.drawText(text, { x: b.x + 1, y: b.y + Math.max(3, (b.h - size) / 2 + 1), size, font, color: INK });
+      const size = fitText(font, text, f.w, f.h);
+      const [x, y] = pt(f.x + 1, f.y + f.h - Math.max(3, (f.h - size) / 2 + 1));
+      page.drawText(text, { x, y, size, font, color: INK, rotate });
     } else if (v.kind === "check") {
       if (!v.on) continue;
-      const size = Math.min(b.w, b.h) * 0.9;
-      page.drawText("X", { x: b.x + (b.w - font.widthOfTextAtSize("X", size)) / 2, y: b.y + (b.h - size * 0.72) / 2, size, font, color: INK });
+      const size = Math.min(f.w, f.h) * 0.9;
+      const [x, y] = pt(f.x + (f.w - font.widthOfTextAtSize("X", size)) / 2, f.y + f.h - (f.h - size * 0.72) / 2);
+      page.drawText("X", { x, y, size, font, color: INK, rotate });
     } else {
       let img = imgCache.get(v.png);
       if (!img) {
         img = await doc.embedPng(v.png);
         imgCache.set(v.png, img);
       }
-      const scale = Math.min(b.w / img.width, b.h / img.height);
+      const scale = Math.min(f.w / img.width, f.h / img.height);
       const w = img.width * scale;
       const h = img.height * scale;
-      page.drawImage(img, { x: b.x + 1, y: b.y + (b.h - h) / 2, width: w, height: h });
+      const [x, y] = pt(f.x + 1, f.y + (f.h + h) / 2);
+      page.drawImage(img, { x, y, width: w, height: h, rotate });
     }
   }
   return doc.save({ useObjectStreams: false });

@@ -49,6 +49,9 @@ export function SigningRoom(p: Props) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const pendingField = useRef<string | null>(null);
+  useEffect(() => {
+    if (stage !== "otp") fetch(`/api/sign/${p.token}/viewed`, { method: "POST" }).catch(() => {});
+  }, [stage, p.token]);
 
   const mine = useMemo(() => p.fields.filter((f) => f.role === "client").sort((a, b) => a.page - b.page || a.y - b.y || a.x - b.x), [p.fields]);
   const isDone = (f: SignerField) => {
@@ -102,7 +105,7 @@ export function SigningRoom(p: Props) {
   }
 
   if (stage === "done") return <Done token={p.token} firm={p.firm} email={p.clientEmail} />;
-  if (stage === "otp") return <Otp token={p.token} email={p.clientEmail} onOk={() => setStage(p.consented ? "sign" : "intro")} />;
+  if (stage === "otp") return <Otp token={p.token} email={p.clientEmail} onOk={() => location.reload()} />;
 
   if (stage === "intro")
     return (

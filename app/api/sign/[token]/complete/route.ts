@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { ctxOf, handle, rateLimit, readJson } from "@/lib/http";
 import { completeClientSigning } from "@/lib/files";
+import { requireSigner, signerOr404 } from "@/lib/signer";
 
 export const runtime = "nodejs";
 
@@ -16,6 +17,8 @@ const Body = z.object({
 export const POST = handle(async (req: Request, ctx: { params: Promise<{ token: string }> }) => {
   rateLimit(req, "complete", 10);
   const { token } = await ctx.params;
+  const { file, ws } = signerOr404(token);
+  await requireSigner(file, ws);
   const body = Body.parse(await readJson(req, 2_500_000));
   const f = await completeClientSigning(token, body, ctxOf(req));
   return NextResponse.json({ ok: true, status: f.status });

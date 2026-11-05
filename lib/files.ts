@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { all, one, run } from "./db";
+import { all, one, run, tx } from "./db";
 import { audit, EVENT_TEXT, fileEvents } from "./audit";
 import { layout, sendEmail } from "./email";
 import { emit } from "./webhooks";
@@ -71,7 +71,11 @@ export type NewFile = {
   prefill?: Record<string, string>;
 };
 
+const DAILY_FILE_CAP = Number(process.env.DAILY_FILE_CAP || 300);
+
 export async function createFile(ws: Workspace, input: NewFile, actor: Actor, ctx: Ctx, send = true): Promise<FileRow> {
+  const today = one<{ n: number }>("SELECT COUNT(*) n FROM files WHERE workspace_id = ? AND created_at > ?", ws.id, new Date(Date.now() - 86400_000).toISOString())?.n ?? 0;
+  if (today >= DAILY_FILE_CAP) throw new AppError(`This workspace has opened ${DAILY_FILE_CAP} files in the last 24 hours, the current limit. Contact support to raise it.`, 429);
   const { template, version } = resolveTemplate(ws.id, input.templateId);
   if (input.ref && one("SELECT 1 FROM files WHERE workspace_id = ? AND ref = ?", ws.id, input.ref)) {
     throw new AppError(`A file with reference "${input.ref}" already exists.`, 409);
@@ -112,7 +116,8 @@ export async function sendFile(f: FileRow, ws: Workspace, kind: "invite" | "rese
   if (["completed", "declined", "voided", "signed"].includes(f.status)) throw new AppError(`This file is ${f.status}; it can't be sent again.`, 409);
   const t = now();
   if (f.status === "draft" || f.status === "expired") {
-    run("UPDATE files SET status = 'sent', sent_at = COALESCE(sent_at, ?), expires_at = ? WHERE id = ?", t, addDays(t, ws.expiry_days), f.id);
+    // (re)starting the clock: reminders count from now
+    run("UPDATE files SET status = 'sent', sent_at = ?, reminders_sent = 0, expires_at = ? WHERE id = ?", t, addDays(t, ws.expiry_days), f.id);
   } else if (kind === "resend") {
     run("UPDATE files SET expires_at = ? WHERE id = ?", addDays(t, ws.expiry_days), f.id);
   }
@@ -237,7 +242,10 @@ function parsePng(dataUrl: string | undefined, what: string): Uint8Array {
   if (!m) throw new AppError(`Add your ${what} first.`);
   const buf = Buffer.from(m[1], "base64");
   if (buf.length > 600_000) throw new AppError(`Your ${what} image is too large.`);
-  if (buf.subarray(1, 4).toString("latin1") !== "PNG") throw new AppError(`Your ${what} image is invalid.`);
+  if (buf.subarray(1, 4).toString("latin1") !== "PNG" || buf.length < 24) throw new AppError(`Your ${what} image is invalid.`);
+  const w = buf.readUInt32BE(16),
+    h = buf.readUInt32BE(20);
+  if (!w || !h || w > 4000 || h > 2000) throw new AppError(`Your ${what} image is too large.`);
   return new Uint8Array(buf);
 }
 
@@ -256,7 +264,6 @@ export async function completeClientSigning(tok: string, input: SignInput, ctx: 
   const f = expireIfDue(loaded.file, ws);
   if (f.status === "expired") throw new AppError("This signing link has expired. Ask the sender for a new one.", 410);
   if (f.status !== "sent" && f.status !== "viewed") throw new AppError("This agreement has already been completed or is no longer available.", 409);
-  if (ws.require_otp && !f.otp_verified_at) throw new AppError("Verify your email code first.", 403);
   if (!input.consent) throw new AppError("You need to agree to sign electronically.");
   if (locks.has(f.id)) throw new AppError("Already signing. Please wait.", 409);
   locks.add(f.id);
@@ -305,26 +312,48 @@ export async function completeClientSigning(tok: string, input: SignInput, ctx: 
     const hash = sha256(signedPdf);
     const docPath = await putBlob(`ws/${ws.id}/files/${f.id}/client-signed.pdf`, signedPdf);
     if (sigPng) await putBlob(`ws/${ws.id}/files/${f.id}/client-signature.png`, sigPng);
-    run("INSERT INTO documents (id, workspace_id, file_id, kind, path, sha256, created_at) VALUES (?,?,?,?,?,?,?)", id("doc_"), ws.id, f.id, "client_signed", docPath, hash, now());
-    const upd = run(
-      "UPDATE files SET status = 'signed', client_signed_at = ?, client_values_json = ? WHERE id = ? AND status IN ('sent','viewed')",
-      signedAt,
-      JSON.stringify(stored),
-      f.id,
-    );
-    if (Number(upd.changes) !== 1) throw new AppError("This agreement was already signed.", 409);
+    const ok = tx(() => {
+      const upd = run(
+        "UPDATE files SET status = 'signed', client_signed_at = ?, client_values_json = ? WHERE id = ? AND status IN ('sent','viewed')",
+        signedAt,
+        JSON.stringify(stored),
+        f.id,
+      );
+      if (Number(upd.changes) !== 1) return false;
+      run("INSERT INTO documents (id, workspace_id, file_id, kind, path, sha256, created_at) VALUES (?,?,?,?,?,?,?)", id("doc_"), ws.id, f.id, "client_signed", docPath, hash, now());
+      return true;
+    });
+    if (!ok) throw new AppError("This agreement was already signed or is no longer available.", 409);
     audit(ws.id, f.id, "file.signed", f.client_email, ctx, { sha256: hash, method: input.method, original_sha256: version.sha256 });
     const signed = getFile(ws.id, f.id);
     emit(ws.id, "file.signed", fileJson(signed));
-    if (ws.auto_countersign) return await countersign(signed, ws, { kind: "system", label: "auto-countersign" }, {});
+    if (ws.auto_countersign) {
+      try {
+        return await countersign(signed, ws, { kind: "system", label: "auto-countersign" }, {});
+      } catch (e) {
+        // the client's signature is safe; tell the firm to countersign by hand
+        console.error("[auto-countersign]", f.id, e);
+      }
+    }
     await notifyFirm(ws, signed, "ready");
-    return signed;
+    return getFile(ws.id, f.id);
   } finally {
     locks.delete(f.id);
   }
 }
 
-export async function countersign(f: FileRow, ws: Workspace, actor: Actor, ctx: Ctx): Promise<FileRow> {
+export async function countersign(f0: FileRow, ws: Workspace, actor: Actor, ctx: Ctx): Promise<FileRow> {
+  const key = `cs:${f0.id}`;
+  if (locks.has(key)) throw new AppError("This file is already being countersigned.", 409);
+  locks.add(key);
+  try {
+    return await countersignOnce(getFile(ws.id, f0.id), ws, actor, ctx);
+  } finally {
+    locks.delete(key);
+  }
+}
+
+async function countersignOnce(f: FileRow, ws: Workspace, actor: Actor, ctx: Ctx): Promise<FileRow> {
   if (f.status !== "signed") throw new AppError("Only files signed by the client can be countersigned.", 409);
   const version = getVersion(f.template_version_id);
   const fields = versionFields(version);
@@ -346,9 +375,10 @@ export async function countersign(f: FileRow, ws: Workspace, actor: Actor, ctx: 
   }
   const base = await getBlob(doc.path);
   const stamped = await stampFields(base, fields.filter((x) => x.role === "firm"), values);
-  audit(ws.id, f.id, "file.countersigned", actor.label, ctx, { signer: signerName, method: actor.kind === "system" ? "adopted signature, applied automatically" : "applied by " + actor.label });
+  const method = actor.kind === "system" ? "adopted signature, applied automatically" : "applied by " + actor.label;
 
-  const events = fileEvents(f.id);
+  // the countersign event is written to the log only once the sealed file exists (below)
+  const events = [...fileEvents(f.id), { seq: 0, file_id: f.id, type: "file.countersigned", actor: actor.label, ip: ctx.ip ?? null, user_agent: null, data_json: "{}", created_at: t }];
   const signedEv = events.find((e) => e.type === "file.signed");
   const final = await appendCertificate(stamped, {
     envelopeId: f.id,
@@ -379,9 +409,15 @@ export async function countersign(f: FileRow, ws: Workspace, actor: Actor, ctx: 
   const finalBuf = Buffer.from(final);
   const hash = sha256(finalBuf);
   const p = await putBlob(`ws/${ws.id}/files/${f.id}/final.pdf`, finalBuf);
-  run("INSERT INTO documents (id, workspace_id, file_id, kind, path, sha256, created_at) VALUES (?,?,?,?,?,?,?)", id("doc_"), ws.id, f.id, "final", p, hash, now());
-  run("UPDATE files SET status = 'completed', completed_at = ? WHERE id = ?", now(), f.id);
-  audit(ws.id, f.id, "file.completed", "system", ctx, { sha256: hash });
+  const claimed = tx(() => {
+    const u = run("UPDATE files SET status = 'completed', completed_at = ? WHERE id = ? AND status = 'signed'", now(), f.id);
+    if (Number(u.changes) !== 1) return false;
+    run("INSERT INTO documents (id, workspace_id, file_id, kind, path, sha256, created_at) VALUES (?,?,?,?,?,?,?)", id("doc_"), ws.id, f.id, "final", p, hash, now());
+    audit(ws.id, f.id, "file.countersigned", actor.label, ctx, { signer: signerName, method });
+    audit(ws.id, f.id, "file.completed", "system", {}, { sha256: hash });
+    return true;
+  });
+  if (!claimed) throw new AppError("This file changed while it was being countersigned (it may have been voided).", 409);
   const done = getFile(ws.id, f.id);
   const filename = downloadName(done);
   const link = signingLink(done);
@@ -449,7 +485,8 @@ async function notifyFirm(ws: Workspace, f: FileRow, what: "completed" | "ready"
 export async function declineFile(tok: string, reason: string, ctx: Ctx): Promise<FileRow> {
   const loaded = loadByToken(tok);
   if (!loaded) throw new AppError("This signing link isn't valid.", 404);
-  const { file: f, ws } = loaded;
+  const { ws } = loaded;
+  const f = expireIfDue(loaded.file, ws);
   if (f.status !== "sent" && f.status !== "viewed") throw new AppError("This agreement can no longer be declined.", 409);
   run("UPDATE files SET status = 'declined', declined_at = ?, decline_reason = ? WHERE id = ?", now(), reason.slice(0, 1000), f.id);
   audit(ws.id, f.id, "file.declined", f.client_email, ctx, { reason: reason.slice(0, 1000) });
@@ -461,7 +498,9 @@ export async function declineFile(tok: string, reason: string, ctx: Ctx): Promis
 
 export function voidFile(f: FileRow, ws: Workspace, actor: Actor, reason: string, ctx: Ctx): FileRow {
   if (f.status === "completed" || f.status === "voided") throw new AppError(`A ${f.status} file can't be voided.`, 409);
-  run("UPDATE files SET status = 'voided', voided_at = ? WHERE id = ?", now(), f.id);
+  if (locks.has(`cs:${f.id}`)) throw new AppError("This file is being countersigned right now. Try again in a moment.", 409);
+  const u = run("UPDATE files SET status = 'voided', voided_at = ? WHERE id = ? AND status NOT IN ('completed','voided')", now(), f.id);
+  if (Number(u.changes) !== 1) throw new AppError("This file can't be voided any more.", 409);
   audit(ws.id, f.id, "file.voided", actor.label, ctx, { reason: reason.slice(0, 500) });
   const v = getFile(ws.id, f.id);
   emit(ws.id, "file.voided", fileJson(v));

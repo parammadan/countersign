@@ -14,7 +14,7 @@ import { clientIp, limited } from "@/lib/ratelimit";
 import { NewFileBody } from "@/lib/schemas";
 import { draftFromVersion } from "@/lib/templates";
 import { WEBHOOK_EVENTS } from "@/lib/webhooks";
-import { layout, sendEmail } from "@/lib/email";
+import { emailMode, layout, sendEmail } from "@/lib/email";
 import { appUrl } from "@/lib/paths";
 import { escapeHtml } from "@/lib/util";
 import { checkWebhookUrl } from "@/lib/ssrf";
@@ -22,6 +22,7 @@ import { checkWebhookUrl } from "@/lib/ssrf";
 export type FormState = { error?: string; ok?: string; secret?: string } | undefined;
 
 const s = (v: FormDataEntryValue | null) => (typeof v === "string" ? v.trim() : "");
+const DUMMY_HASH = hashPassword("not-a-real-password");
 
 async function throttle(bucket: string, max: number) {
   const ip = clientIp(await headers());
@@ -83,7 +84,8 @@ export async function loginAction(_: FormState, fd: FormData): Promise<FormState
     const email = s(fd.get("email")).toLowerCase();
     const pw = String(fd.get("password") ?? "");
     const u = one<{ id: string; password_hash: string }>("SELECT id, password_hash FROM users WHERE email = ?", email);
-    if (!u || !verifyPassword(pw, u.password_hash)) return { error: "Email or password is wrong." };
+    const ok = verifyPassword(pw, u?.password_hash ?? DUMMY_HASH); // same work whether or not the account exists
+    if (!u || !ok) return { error: "Email or password is wrong." };
     const m = one<{ workspace_id: string }>("SELECT workspace_id FROM members WHERE user_id = ? ORDER BY created_at LIMIT 1", u.id);
     if (!m) return { error: "This account isn't part of a workspace." };
     await createSession(u.id, m.workspace_id);
@@ -103,8 +105,9 @@ export async function acceptInviteAction(_: FormState, fd: FormData): Promise<Fo
   try {
     await throttle("invite", 10);
     const tok = s(fd.get("token"));
-    const inv = one<{ id: string; workspace_id: string; email: string; role: string; accepted_at: string | null }>("SELECT * FROM invites WHERE token_hash = ?", sha256(tok));
+    const inv = one<{ id: string; workspace_id: string; email: string; role: string; accepted_at: string | null; created_at: string }>("SELECT * FROM invites WHERE token_hash = ?", sha256(tok));
     if (!inv || inv.accepted_at) return { error: "This invite link is invalid or was already used." };
+    if (new Date(inv.created_at).getTime() < Date.now() - 7 * 86400_000) return { error: "This invite has expired. Ask your admin for a new one." };
     const name = s(fd.get("name"));
     const pw = String(fd.get("password") ?? "");
     let u = one<{ id: string; password_hash: string }>("SELECT id, password_hash FROM users WHERE email = ?", inv.email);
@@ -257,6 +260,7 @@ export async function settingsAction(_: FormState, fd: FormData): Promise<FormSt
       reminder_days: s(fd.get("reminder_days")),
       expiry_days: s(fd.get("expiry_days")),
     });
+    if (b.require_otp && emailMode() === "outbox") return { error: "Email codes need email delivery, which isn't configured on this server yet." };
     run(
       `UPDATE workspaces SET name=?, legal_name=?, sender_name=?, reply_to=?, brand_color=?, countersigner_name=?, countersigner_title=?, countersigner_email=?,
        auto_countersign=?, require_otp=?, reminder_days=?, expiry_days=? WHERE id=?`,
@@ -298,7 +302,8 @@ export async function inviteAction(_: FormState, fd: FormData): Promise<FormStat
       to: email,
       subject: `${sess.userName} invited you to ${ws.name} on Countersign`,
       fromName: "Countersign",
-      html: layout({ brand: ws.brand_color, firm: ws.name, heading: `Join ${escapeHtml(ws.name)} on Countersign`, body: `${escapeHtml(sess.userName)} added you as ${role}.`, cta: { href: link, label: "Accept invite" } }),
+      html: layout({ brand: ws.brand_color, firm: ws.name, heading: `Join ${ws.name} on Countersign`, body: `${escapeHtml(sess.userName)} added you as ${role}.`, cta: { href: link, label: "Accept invite" } }),
+      logHtml: `<p>Invitation for ${escapeHtml(email)} (${role}). The link is withheld from the log; the admin who sent it can copy it once.</p>`,
     });
     audit(ws.id, null, "member.invited", sess.userEmail, {}, { email, role });
     revalidatePath("/app/settings");
@@ -363,12 +368,11 @@ export async function forgotAction(_: FormState, fd: FormData): Promise<FormStat
     await throttle("forgot", 5);
     const email = s(fd.get("email")).toLowerCase();
     const u = one<{ id: string; name: string }>("SELECT id, name FROM users WHERE email = ?", email);
-    const m = u && one<{ workspace_id: string }>("SELECT workspace_id FROM members WHERE user_id = ? LIMIT 1", u.id);
-    if (u && m) {
+    if (u) {
       const tok = token(24);
       run("INSERT INTO password_resets (token_hash, user_id, expires_at, created_at) VALUES (?,?,?,?)", sha256(tok), u.id, new Date(Date.now() + 3600_000).toISOString(), now());
       await sendEmail({
-        workspaceId: m.workspace_id,
+        workspaceId: "_system",
         kind: "password_reset",
         to: email,
         subject: "Reset your Countersign password",
@@ -444,6 +448,43 @@ export async function importCsvAction(_: FormState, fd: FormData): Promise<FormS
     }
     revalidatePath("/app/files");
     return errs.length ? { error: `${ok} sent, ${errs.length} skipped. ${errs.slice(0, 5).join(" · ")}${errs.length > 5 ? " …" : ""}` } : { ok: `${ok} file${ok === 1 ? "" : "s"} created and sent.` };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+// ---------- team management ----------
+
+export async function memberAction(_: FormState, fd: FormData): Promise<FormState> {
+  try {
+    const sess = await requireAdmin();
+    const op = s(fd.get("op"));
+    if (op === "revoke") {
+      run("DELETE FROM invites WHERE id = ? AND workspace_id = ? AND accepted_at IS NULL", s(fd.get("id")), sess.workspaceId);
+      audit(sess.workspaceId, null, "member.invite_revoked", sess.userEmail);
+      revalidatePath("/app/settings");
+      return { ok: "Invite revoked." };
+    }
+    const uid = s(fd.get("userId"));
+    if (uid === sess.userId) return { error: "You can't change your own access. Ask another admin." };
+    const m = one<{ role: string }>("SELECT role FROM members WHERE workspace_id = ? AND user_id = ?", sess.workspaceId, uid);
+    if (!m) return { error: "Not a member." };
+    if (m.role === "owner" && sess.role !== "owner") return { error: "Only an owner can change another owner." };
+    if (op === "remove") {
+      tx(() => {
+        run("DELETE FROM members WHERE workspace_id = ? AND user_id = ?", sess.workspaceId, uid);
+        run("DELETE FROM sessions WHERE user_id = ? AND workspace_id = ?", uid, sess.workspaceId);
+      });
+      audit(sess.workspaceId, null, "member.removed", sess.userEmail, {}, { user: uid });
+    } else if (op === "role") {
+      const role = s(fd.get("role"));
+      if (!["admin", "staff"].includes(role)) return { error: "Unknown role." };
+      run("UPDATE members SET role = ? WHERE workspace_id = ? AND user_id = ?", role, sess.workspaceId, uid);
+      run("DELETE FROM sessions WHERE user_id = ? AND workspace_id = ?", uid, sess.workspaceId);
+      audit(sess.workspaceId, null, "member.role_changed", sess.userEmail, {}, { user: uid, role });
+    } else return { error: "Unknown action." };
+    revalidatePath("/app/settings");
+    return { ok: "Team updated." };
   } catch (e) {
     return fail(e);
   }

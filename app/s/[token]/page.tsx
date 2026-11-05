@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import { loadByToken, expireIfDue, markViewed, prefillValues, formatDate } from "@/lib/files";
-import { ctxFromHeaders } from "@/lib/http";
+import { loadByToken, expireIfDue, prefillValues, formatDate } from "@/lib/files";
+import { signerVerified } from "@/lib/signer";
 import { one } from "@/lib/db";
 import { now } from "@/lib/util";
 import { SigningRoom, type SignerField } from "@/components/SigningRoom";
@@ -63,8 +63,9 @@ export default async function Page({ params }: { params: Promise<{ token: string
       </Message>,
     );
 
-  markViewed(file, ws, await ctxFromHeaders());
-  const pre = prefillValues(file, ws, fields);
+  // Until the emailed code is verified in this browser, send nothing about the agreement's contents.
+  const verified = await signerVerified(file, ws);
+  const pre = verified ? prefillValues(file, ws, fields) : new Map();
   const signerFields: SignerField[] = fields.map((f) => {
     const v = pre.get(f.id);
     return { ...f, reason: undefined, confidence: undefined, value: v?.kind === "text" ? v.text : v?.kind === "check" && v.on ? "✓" : undefined };
@@ -74,15 +75,15 @@ export default async function Page({ params }: { params: Promise<{ token: string
       token={token}
       firm={ws.name}
       agreement={tpl}
-      title={file.title}
-      clientName={file.client_name}
-      clientEmail={file.client_email}
-      clientCompany={file.client_company}
-      pages={pages}
-      fields={signerFields}
+      title={verified ? file.title : ""}
+      clientName={verified ? file.client_name : ""}
+      clientEmail={verified ? file.client_email : file.client_email.replace(/^(.{2}).*(@.*)$/, "$1***$2")}
+      clientCompany={verified ? file.client_company : null}
+      pages={verified ? pages : []}
+      fields={verified ? signerFields : []}
       today={formatDate(now())}
       requireOtp={!!ws.require_otp}
-      otpVerified={!!file.otp_verified_at}
+      otpVerified={verified}
       consented={!!file.consent_at}
     />,
   );

@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { all, one, run } from "./db";
 import { id, now } from "./util";
-import { checkWebhookUrl } from "./ssrf";
+import { checkWebhookUrl, safeFetch } from "./ssrf";
 
 export const WEBHOOK_EVENTS = ["file.created", "file.sent", "file.viewed", "file.signed", "file.completed", "file.declined", "file.expired", "file.voided"] as const;
 
@@ -41,16 +41,21 @@ export function emit(workspaceId: string, event: string, data: Record<string, un
 const BACKOFF_MIN = [1, 5, 30, 120, 720];
 
 export async function attempt(deliveryId: string) {
-  const d = one<Delivery & { status: string }>("SELECT * FROM webhook_deliveries WHERE id = ?", deliveryId);
-  if (!d || d.status === "delivered" || d.status === "dead") return;
-  const h = one<Hook>("SELECT * FROM webhooks WHERE id = ?", d.webhook_id);
-  if (!h) return;
+  // claim it, so the immediate attempt and the worker never send the same delivery twice
+  const claim = run("UPDATE webhook_deliveries SET status = 'in_flight', next_attempt_at = ? WHERE id = ? AND status IN ('pending','retrying')", now(), deliveryId);
+  if (Number(claim.changes) !== 1) return;
+  const d = one<Delivery & { status: string }>("SELECT * FROM webhook_deliveries WHERE id = ?", deliveryId)!;
+  const h = one<Hook & { active: number }>("SELECT * FROM webhooks WHERE id = ?", d.webhook_id);
+  if (!h || !h.active) {
+    run("UPDATE webhook_deliveries SET status = 'dead', last_error = 'webhook removed' WHERE id = ?", d.id);
+    return;
+  }
   const ts = Math.floor(Date.now() / 1000).toString();
   let code: number | null = null;
   let err: string | null = null;
   try {
     await checkWebhookUrl(h.url);
-    const res = await fetch(h.url, {
+    const res = await safeFetch(h.url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -60,8 +65,6 @@ export async function attempt(deliveryId: string) {
         "X-Countersign-Signature": `t=${ts},v1=${sign(h.secret, ts, d.payload)}`,
       },
       body: d.payload,
-      redirect: "manual",
-      signal: AbortSignal.timeout(10_000),
     });
     code = res.status;
     if (!res.ok) err = `HTTP ${res.status}`;
@@ -80,5 +83,7 @@ export async function attempt(deliveryId: string) {
 }
 
 export function dueDeliveries(): string[] {
+  // in_flight rows older than 2 minutes were interrupted (e.g. a restart): retry them
+  run("UPDATE webhook_deliveries SET status = 'retrying' WHERE status = 'in_flight' AND next_attempt_at < ?", new Date(Date.now() - 120_000).toISOString());
   return all<{ id: string }>("SELECT id FROM webhook_deliveries WHERE status IN ('pending','retrying') AND next_attempt_at <= ? LIMIT 50", now()).map((r) => r.id);
 }

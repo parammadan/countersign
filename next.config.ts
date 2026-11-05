@@ -4,6 +4,7 @@ const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
   serverExternalPackages: ["pdfjs-dist"],
+  experimental: { serverActions: { bodySizeLimit: "2mb" } },
   turbopack: {
     rules: {
       "*.css": {

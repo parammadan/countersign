@@ -1,7 +1,7 @@
 // Background loop: webhook retries, link expiry, reminders. Runs inside the app process.
 import { all } from "./db";
 import { attempt, dueDeliveries } from "./webhooks";
-import { expireIfDue, getWorkspace, sendFile } from "./files";
+import { expireIfDue, getFile, getWorkspace, sendFile } from "./files";
 import type { FileRow } from "./types";
 
 export async function tick(): Promise<{ deliveries: number; expired: number; reminded: number }> {
@@ -27,9 +27,11 @@ export async function tick(): Promise<{ deliveries: number; expired: number; rem
         .map((x) => Number(x.trim()))
         .filter((x) => Number.isFinite(x) && x > 0)
         .sort((a, b) => a - b);
-      const nextDay = days[f.reminders_sent];
-      if (nextDay !== undefined && f.sent_at && t >= new Date(f.sent_at).getTime() + nextDay * 86400_000) {
-        await sendFile(f, ws, "reminder", { kind: "system", label: "reminder schedule" }, {});
+      const fresh = getFile(ws.id, f.id); // re-read: a reminder may have just gone out
+      if (fresh.status !== "sent" && fresh.status !== "viewed") continue;
+      const nextDay = days[fresh.reminders_sent];
+      if (nextDay !== undefined && fresh.sent_at && t >= new Date(fresh.sent_at).getTime() + nextDay * 86400_000) {
+        await sendFile(fresh, ws, "reminder", { kind: "system", label: "reminder schedule" }, {});
         reminded++;
       }
     } catch (e) {
@@ -39,11 +41,21 @@ export async function tick(): Promise<{ deliveries: number; expired: number; rem
   return { deliveries, expired, reminded };
 }
 
-const g = globalThis as unknown as { __csworker?: NodeJS.Timeout };
+const g = globalThis as unknown as { __csworker?: NodeJS.Timeout; __csbusy?: boolean };
 
 export function startWorker() {
   if (g.__csworker || process.env.DISABLE_WORKER) return;
-  const run = () => tick().catch((e) => console.error("[worker]", e));
+  const run = async () => {
+    if (g.__csbusy) return; // never overlap ticks
+    g.__csbusy = true;
+    try {
+      await tick();
+    } catch (e) {
+      console.error("[worker]", e);
+    } finally {
+      g.__csbusy = false;
+    }
+  };
   g.__csworker = setInterval(run, 60_000);
   setTimeout(run, 5_000);
 }

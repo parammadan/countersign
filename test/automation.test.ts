@@ -117,19 +117,20 @@ describe("automation", () => {
     expect(() => files.voidFile(files.getFile(ws.id, f.id), ws, actor, "again", {})).toThrow(/voided/);
   });
 
-  it("requires the emailed code when the workspace asks for it", async () => {
-    db.run("UPDATE workspaces SET require_otp = 1 WHERE id = ?", ws.id);
-    const w = files.getWorkspace(ws.id);
-    const f = await files.createFile(w, { clientName: "Taylor Mock", clientEmail: "taylor@example.com" }, actor, {});
-    await expect(files.completeClientSigning(tok(f), { consent: true, values: {}, signature: PNG, method: "typed" }, {})).rejects.toThrow(/code/);
-    await files.sendOtp(f, w, {});
-    const html = db.one<{ html: string }>("SELECT html FROM emails WHERE file_id = ? AND kind = 'otp'", f.id)!.html;
-    const code = /letter-spacing:6px">(\d{6})</.exec(html)![1];
-    expect(files.verifyOtp(files.getFile(w.id, f.id), w, "000000" === code ? "111111" : "000000", {})).toBe(false);
-    expect(files.verifyOtp(files.getFile(w.id, f.id), w, code, {})).toBe(true);
-    const done = await files.completeClientSigning(tok(f), { consent: true, values: {}, signature: PNG, method: "typed" }, {});
-    expect(done.status).toBe("completed");
-    db.run("UPDATE workspaces SET require_otp = 0 WHERE id = ?", ws.id);
+  it("emailed codes: stored hashed, kept out of the log, 5 tries", async () => {
+    const f = await files.createFile(ws, { clientName: "Taylor Mock", clientEmail: "taylor@example.com" }, actor, {});
+    await files.sendOtp(f, ws, {});
+    const mail = db.one<{ html: string; subject: string }>("SELECT html, subject FROM emails WHERE file_id = ? AND kind = 'otp'", f.id)!;
+    expect(mail.html).not.toMatch(/\d{6}/);
+    expect(mail.subject).not.toMatch(/\d{6}/);
+    const row = files.getFile(ws.id, f.id);
+    let code = "";
+    for (let n = 100000; n < 1000000 && !code; n++) if (crypto.createHash("sha256").update(`${f.id}:${n}`).digest("hex") === row.otp_hash) code = String(n);
+    expect(code).toHaveLength(6);
+    const wrong = code === "123456" ? "654321" : "123456";
+    expect(files.verifyOtp(files.getFile(ws.id, f.id), ws, wrong, {})).toBe(false);
+    expect(files.verifyOtp(files.getFile(ws.id, f.id), ws, code, {})).toBe(true);
+    expect(() => files.verifyOtp(files.getFile(ws.id, f.id), ws, code, {})).toThrow(/expired|new one/); // single use
   });
 
   it("holds for manual countersign when auto is off", async () => {

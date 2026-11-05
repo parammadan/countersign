@@ -13,6 +13,11 @@ export function limited(key: string, max: number, windowMs: number): boolean {
   return b.n > max;
 }
 
+// Only trust forwarding headers set by a proxy we sit behind (TRUST_PROXY=fly on Fly.io, =1 for a
+// generic proxy that sets X-Forwarded-For). Otherwise a client could spoof its IP into the audit trail.
 export function clientIp(h: Headers): string {
-  return (h.get("fly-client-ip") || h.get("x-forwarded-for")?.split(",")[0] || h.get("x-real-ip") || "unknown").trim();
+  const trust = process.env.TRUST_PROXY;
+  if (trust === "fly") return (h.get("fly-client-ip") || "unknown").trim();
+  if (trust === "1" || trust === "true") return (h.get("x-forwarded-for")?.split(",")[0] || h.get("x-real-ip") || "unknown").trim();
+  return "unknown";
 }

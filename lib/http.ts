@@ -69,11 +69,38 @@ export function apiAuth(req: Request): { ws: Workspace; keyName: string } {
   return { ws: getWorkspace(k.workspace_id), keyName: k.name };
 }
 
-export async function readJson(req: Request, max = 2_000_000): Promise<unknown> {
+// Read a body with a hard byte cap, without trusting (or requiring) Content-Length.
+export async function readCapped(req: Request, max: number): Promise<Buffer> {
   const len = Number(req.headers.get("content-length") || 0);
   if (len > max) throw new AppError("Request too large.", 413);
-  const text = await req.text();
-  if (text.length > max) throw new AppError("Request too large.", 413);
+  if (!req.body) return Buffer.alloc(0);
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) {
+      await reader.cancel().catch(() => {});
+      throw new AppError("Request too large.", 413);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks);
+}
+
+export async function readForm(req: Request, max: number): Promise<FormData> {
+  const buf = await readCapped(req, max);
+  try {
+    return await new Response(new Uint8Array(buf), { headers: { "content-type": req.headers.get("content-type") || "" } }).formData();
+  } catch {
+    throw new AppError("Couldn't read the upload. Try again.", 400);
+  }
+}
+
+export async function readJson(req: Request, max = 2_000_000): Promise<unknown> {
+  const text = (await readCapped(req, max)).toString("utf8");
   try {
     return text ? JSON.parse(text) : {};
   } catch {
