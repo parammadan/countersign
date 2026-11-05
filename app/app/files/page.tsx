@@ -4,6 +4,7 @@ import { all } from "@/lib/db";
 import type { FileRow } from "@/lib/types";
 import { Card, LinkButton, PageHeader, cx, inputCls } from "@/components/ui";
 import { FileTable } from "@/components/FileTable";
+import { CsvImport } from "@/components/ResetForms";
 
 export const metadata = { title: "Files" };
 
@@ -30,7 +31,16 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ s
   );
   return (
     <>
-      <PageHeader title="Files" sub="One row per job or case. Each one carries its client agreement." actions={<LinkButton href="/app/files/new">+ New file</LinkButton>} />
+      <PageHeader
+        title="Files"
+        sub="One row per job or case. Each one carries its client agreement."
+        actions={
+          <>
+            <a href="/api/files/export" className="inline-flex items-center rounded-lg border border-line bg-white px-3.5 py-2 text-sm font-medium shadow-sm hover:bg-gray-50">Export CSV</a>
+            <LinkButton href="/app/files/new">+ New file</LinkButton>
+          </>
+        }
+      />
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-wrap gap-1.5">
           {TABS.map((t) => (
@@ -47,6 +57,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ s
       <Card>
         <FileTable files={files} empty={q ? "No files match that search." : "Nothing here yet."} />
       </Card>
+      <details className="mt-6 rounded-xl border border-line bg-white p-4">
+        <summary className="cursor-pointer text-sm font-medium">Import a backlog of files from CSV</summary>
+        <div className="mt-3"><CsvImport /></div>
+      </details>
     </>
   );
 }

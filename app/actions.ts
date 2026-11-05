@@ -355,3 +355,96 @@ export async function rotateInboundAction() {
   run("UPDATE workspaces SET inbound_token = ? WHERE id = ?", token(18), sess.workspaceId);
   revalidatePath("/app/developers");
 }
+
+// ---------- password reset ----------
+
+export async function forgotAction(_: FormState, fd: FormData): Promise<FormState> {
+  try {
+    await throttle("forgot", 5);
+    const email = s(fd.get("email")).toLowerCase();
+    const u = one<{ id: string; name: string }>("SELECT id, name FROM users WHERE email = ?", email);
+    const m = u && one<{ workspace_id: string }>("SELECT workspace_id FROM members WHERE user_id = ? LIMIT 1", u.id);
+    if (u && m) {
+      const tok = token(24);
+      run("INSERT INTO password_resets (token_hash, user_id, expires_at, created_at) VALUES (?,?,?,?)", sha256(tok), u.id, new Date(Date.now() + 3600_000).toISOString(), now());
+      await sendEmail({
+        workspaceId: m.workspace_id,
+        kind: "password_reset",
+        to: email,
+        subject: "Reset your Countersign password",
+        fromName: "Countersign",
+        html: layout({ brand: "#1f4fd1", firm: "Countersign", heading: "Reset your password", body: `Hi ${escapeHtml(u.name.split(" ")[0])}, use the button below to choose a new password. The link works for one hour. If you didn't ask for this, ignore this email.`, cta: { href: `${appUrl()}/reset/${tok}`, label: "Choose a new password" } }),
+        logHtml: "<p>Password reset email (link withheld from the log).</p>",
+      });
+    }
+    return { ok: "If that email has an account, a reset link is on its way." };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function resetAction(_: FormState, fd: FormData): Promise<FormState> {
+  try {
+    await throttle("reset", 10);
+    const tok = s(fd.get("token"));
+    const pw = String(fd.get("password") ?? "");
+    if (pw.length < 8) return { error: "Use at least 8 characters." };
+    const r = one<{ user_id: string; expires_at: string; used_at: string | null }>("SELECT user_id, expires_at, used_at FROM password_resets WHERE token_hash = ?", sha256(tok));
+    if (!r || r.used_at || r.expires_at < now()) return { error: "This reset link is invalid or has expired. Ask for a new one." };
+    const m = one<{ workspace_id: string }>("SELECT workspace_id FROM members WHERE user_id = ? ORDER BY created_at LIMIT 1", r.user_id);
+    if (!m) return { error: "This account isn't part of a workspace." };
+    tx(() => {
+      run("UPDATE users SET password_hash = ? WHERE id = ?", hashPassword(pw), r.user_id);
+      run("UPDATE password_resets SET used_at = ? WHERE token_hash = ?", now(), sha256(tok));
+      run("DELETE FROM sessions WHERE user_id = ?", r.user_id);
+    });
+    await createSession(r.user_id, m.workspace_id);
+  } catch (e) {
+    return fail(e);
+  }
+  redirect("/app");
+}
+
+// ---------- CSV import ----------
+
+export async function importCsvAction(_: FormState, fd: FormData): Promise<FormState> {
+  try {
+    const sess = await requireSession();
+    const ws = getWorkspace(sess.workspaceId);
+    const file = fd.get("csv");
+    if (!(file instanceof File) || file.size === 0) return { error: "Choose a CSV file." };
+    if (file.size > 1_000_000) return { error: "CSV files up to 1 MB." };
+    const { parseCsv } = await import("@/lib/csv");
+    const rows = parseCsv(await file.text());
+    if (rows.length < 2) return { error: "The CSV needs a header row and at least one client." };
+    if (rows.length > 201) return { error: "Import up to 200 files at a time." };
+    const head = rows[0].map((h) => h.trim().toLowerCase().replace(/\s+/g, "_"));
+    const col = (...names: string[]) => head.findIndex((h) => names.includes(h));
+    const ci = { name: col("client_name", "name", "full_name", "client"), email: col("client_email", "email", "e-mail"), company: col("client_company", "company", "organization"), ref: col("ref", "reference", "external_ref", "file_ref", "matter", "case", "id"), title: col("title", "file_title") };
+    if (ci.name < 0 || ci.email < 0) return { error: "The header row needs client_name and client_email columns." };
+    const known = new Set(Object.values(ci).filter((i) => i >= 0));
+    const actor = { kind: "user" as const, label: `${sess.userEmail} (CSV import)`, userId: sess.userId };
+    const ctx = await ctxFromHeaders();
+    let ok = 0;
+    const errs: string[] = [];
+    for (let r = 1; r < rows.length; r++) {
+      const row = rows[r];
+      const prefill: Record<string, string> = {};
+      head.forEach((h, i) => {
+        if (!known.has(i) && h && row[i] !== undefined) prefill[h.replace(/^prefill\./, "")] = row[i];
+      });
+      try {
+        const b = NewFileBody.parse({ client_name: row[ci.name], client_email: row[ci.email], client_company: ci.company >= 0 ? row[ci.company] || undefined : undefined, ref: ci.ref >= 0 ? row[ci.ref] || undefined : undefined, title: ci.title >= 0 ? row[ci.title] || undefined : undefined, prefill });
+        await createFile(ws, b, actor, ctx, true);
+        ok++;
+      } catch (e) {
+        const msg = e instanceof AppError ? e.message : e instanceof z.ZodError ? e.issues.map((i) => `${i.path.join(".")} ${i.message}`).join(", ") : "failed";
+        errs.push(`Row ${r + 1}: ${msg}`);
+      }
+    }
+    revalidatePath("/app/files");
+    return errs.length ? { error: `${ok} sent, ${errs.length} skipped. ${errs.slice(0, 5).join(" · ")}${errs.length > 5 ? " …" : ""}` } : { ok: `${ok} file${ok === 1 ? "" : "s"} created and sent.` };
+  } catch (e) {
+    return fail(e);
+  }
+}

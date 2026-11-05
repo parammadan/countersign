@@ -11,7 +11,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "test:detect": "FIXTURE_DIR=fixtures/agreements vitest run test/detect.test.ts && FIXTURE_DIR=fixtures/holdout vitest run test/detect.test.ts && FIXTURE_DIR=fixtures/final vitest run test/detect.test.ts"
   },
   "dependencies": {
     "next": "16.4.5",

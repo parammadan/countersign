@@ -14,7 +14,7 @@ export function LoginForm({ next }: { next?: string }) {
       <Field label="Work email">
         <Input name="email" type="email" autoComplete="email" required autoFocus />
       </Field>
-      <Field label="Password">
+      <Field label="Password" hint={<Link className="text-brand" href="/forgot">Forgot your password?</Link>}>
         <Input name="password" type="password" autoComplete="current-password" required />
       </Field>
       <Button className="w-full" disabled={pending}>{pending ? "Signing in…" : "Sign in"}</Button>

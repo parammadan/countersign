@@ -158,5 +158,16 @@ Buffer: Days 6–7 absorb slips. If Day 3 slips, cut from Day 5 (CSV, branding, 
 3. **LLM assist on/off** (paid calls need his OK; the default plan works without it).
 4. **Product name** and repo visibility (public vs collaborator only).
 
+## What changed while building (2026-11-05)
+
+- **Supabase → SQLite (`node:sqlite`) + files on a volume, with our own auth.** One container with no external services means fewer ways for the grader's run to fail, and it can run anywhere. Tenancy is enforced in every query by `workspace_id` rather than by RLS.
+- **Schedule compressed.** The grader path worked end to end on day 1; the remaining days go to detector accuracy on unseen agreements, polish and a live deploy, well before the deadline.
+- **Detector accuracy measured on held-out sets** written by agents that couldn't read the detector (see `docs/SUBMISSION.md`).
+
 ## Status
 - [x] Plan written, repo initialized (2026-11-05)
+- [x] Grader path end to end (browser E2E on all tuning fixtures, incl. Word via LibreOffice in Docker)
+- [x] Detector measured on held-out + final sets
+- [x] API, inbound webhook, outbound webhooks, n8n template, CSV import/export, reminders/expiry, team, password reset
+- [ ] Deploy to Fly.io + Resend domain
+- [ ] Private repo + `theastraway` collaborator

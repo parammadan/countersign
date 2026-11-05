@@ -19,7 +19,9 @@ import type { Field, FieldType, Role } from "@/lib/fields";
 const DIR = path.resolve(__dirname, "..", process.env.FIXTURE_DIR ?? path.join("fixtures", "agreements"));
 const TOL_X = 40;
 const TOL_Y = 25;
-const MIN_RECALL = 0.0; // raise as the detector improves
+// Regression floor per corpus (tuning set is near-perfect; held-out sets are the honest measure).
+const FLOORS: Record<string, number> = { agreements: 0.93, holdout: 0.85, final: 0.88 };
+const MIN_RECALL = FLOORS[path.basename(DIR)] ?? 0;
 
 type Exp = {
   page?: number;

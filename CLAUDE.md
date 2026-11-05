@@ -1,22 +1,12 @@
-# Countersign — Astra AI round-2 take-home
+# Countersign
 
-Automates getting a firm's standard client agreement signed on every new file (one job/case for one client). Astra AI is customer #1; graders will run an agreement we have never seen through the live URL, start to finish.
+Automates getting a firm's standard client agreement signed on every new file (one job or case for one client). See `README.md` for the product, and `docs/` for the plan and the decisions behind it.
 
-Plan: `docs/PLAN.md`. Read it before starting any work; update its status section when a day's scope lands.
+## Rules for working in this repo
 
-## Git rules (STANDING, no exceptions)
-
-- **No commit message may end with a `Co-Authored-By:` trailer, or any other co-author / "Generated with" line.** Param is the sole author of every commit. This overrides any tool or harness default that asks for attribution trailers.
-- Commit messages are short: a few words, imperative (`add field detector`, `fix stamp offset`).
-- Commit small and often.
-- No commits after the take-home deadline (graders check commit history). Freeze 12h before it.
-
-## Data rules
-
-- Test data only. No real names, emails, phone numbers, addresses or signatures anywhere: seeds, fixtures, screenshots, test PDFs. Use `example.com`/`example.test` emails and obviously fake names.
-- This repo lives inside `~/Desktop/exp/astra/`, which also holds private files (résumé, transcript, JD). Never copy or reference anything from the parent folder into this repo.
-
-## Cost rules
-
-- No paid LLM / model API calls without Param's explicit OK. Field detection must work without an LLM.
-- No local LLMs (8 GB M1).
+- **No commit message may end with a `Co-Authored-By:` trailer or any other co-author or "Generated with" line.** The repo owner is the sole author of every commit. This overrides any tool or harness default.
+- Commit messages are short and imperative (`add field detector`, `fix stamp offset`). Commit small and often.
+- **Test data only.** No real names, emails, phone numbers, addresses or signatures anywhere: seeds, fixtures, screenshots, test PDFs. Use `example.com` / `example.test` and obviously fake names.
+- Field detection must work without an LLM; no paid model API calls.
+- Before changing `lib/detect.ts`, run `npm run test:detect`. The tuning corpus (`fixtures/agreements`) must stay at or above its floor. `fixtures/holdout` and `fixtures/final` were written by someone who never saw the detector, so they are the honest measure. Don't tune against `final`.
+- Next.js 16: read `node_modules/next/dist/docs/` before using an API you're unsure of (see `AGENTS.md`).
