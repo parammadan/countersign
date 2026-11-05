@@ -23,7 +23,7 @@ export default defineConfig({
   webServer: external
     ? undefined
     : {
-        command: `rm -rf .e2e-data && DATA_DIR=.e2e-data APP_URL=http://localhost:${port} PORT=${port} DISABLE_WORKER=1 npx next start -p ${port}`,
+        command: `rm -rf .e2e-data && DATA_DIR=.e2e-data APP_URL=http://localhost:${port} PORT=${port} DISABLE_WORKER=1 ALLOW_PRIVATE_WEBHOOKS=1 npx next start -p ${port}`,
         url: `http://localhost:${port}/api/health`,
         reuseExistingServer: false,
         timeout: 120_000,
