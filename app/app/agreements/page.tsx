@@ -4,6 +4,7 @@ import { all } from "@/lib/db";
 import { Card, Notice, PageHeader, cx } from "@/components/ui";
 import { UploadAgreement } from "@/components/UploadAgreement";
 import { TemplateMenu } from "@/components/TemplateMenu";
+import { testFileAction } from "@/app/actions";
 
 export const metadata = { title: "Agreements" };
 
@@ -42,6 +43,14 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
                 </div>
                 {admin && (
                   <div className="flex flex-wrap items-center gap-2">
+                    {t.active_version_id && (
+                      <form action={testFileAction}>
+                        <input type="hidden" name="templateId" value={t.id} />
+                        <button className="rounded-lg border border-line bg-white px-3.5 py-2 text-sm font-medium shadow-sm hover:bg-gray-50" title="Opens a file with you as the client, so you can see exactly what clients see">
+                          Send a test to me
+                        </button>
+                      </form>
+                    )}
                     {draft && (
                       <Link href={`/app/agreements/${draft.id}`} className="rounded-lg bg-brand px-3.5 py-2 text-sm font-medium text-white shadow-sm">
                         Review draft v{draft.version}

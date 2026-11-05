@@ -489,3 +489,17 @@ export async function memberAction(_: FormState, fd: FormData): Promise<FormStat
     return fail(e);
   }
 }
+
+export async function testFileAction(fd: FormData) {
+  const sess = await requireSession();
+  const ws = getWorkspace(sess.workspaceId);
+  const tid = s(fd.get("templateId"));
+  const f = await createFile(
+    ws,
+    { templateId: tid, clientName: sess.userName, clientEmail: sess.userEmail, title: `Test: signing as a client`, ref: null, prefill: {} },
+    { kind: "user", label: `${sess.userEmail} (test)`, userId: sess.userId },
+    await ctxFromHeaders(),
+    true,
+  );
+  redirect(`/app/files/${f.id}?created=1`);
+}

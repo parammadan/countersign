@@ -51,3 +51,16 @@ test("try-a-sample path works for a brand-new workspace", async ({ page, browser
   await signAsClient(ctx, link);
   await ctx.close();
 });
+
+test("send a test to me opens a signable file addressed to the admin", async ({ page, browser }) => {
+  const email = await signup(page);
+  await uploadAndPublish(page, "03-stacked-provider-customer.pdf");
+  await page.goto("/app/agreements");
+  await page.getByRole("button", { name: "Send a test to me" }).click();
+  await expect(page).toHaveURL(/\/app\/files\/file_/);
+  await expect(page.getByText(email).first()).toBeVisible();
+  const link = (await page.locator('a[href*="/s/"]').first().getAttribute("href"))!;
+  const ctx = await browser.newContext();
+  await signAsClient(ctx, link);
+  await ctx.close();
+});
