@@ -2,7 +2,7 @@
   "firmName": "Northgate Managed IT Services, LLC",
   "description": "Letter, Helvetica 9. Page 1 = order form: ruled 4-column grid with EMPTY value cells (no underscores) for customer details, '[ ]' service-tier checkboxes, then the only signature block: two columns, CUSTOMER on the LEFT and the firm on the right, rows 'Authorized Signature:' / 'Printed Name:' / 'Title:' / 'Date:' with drawn lines. Pages 2+ = Managed Services Terms with an SLA table and no blanks.",
   "split": "holdout",
-  "pages": 3,
+  "pages": 5,
   "pageSize": [
     612,
     792

@@ -350,7 +350,7 @@ await holdout(
     firmName: "Saltmarsh Creative Co., LLC",
     description:
       "Letter, Helvetica 10. Agency SOW under an MSA: preamble blanks (MSA date, client name), a project-summary block of 'Label' + separate underscore items, monthly retainer blank, deliverables table. Two-column sign-off: left 'Saltmarsh Creative Co., LLC', right 'Accepted by:' with an extra 'Client company:' row; rows 'Label: ____' single items.",
-    pageRange: [1, 6],
+    pageRange: [2, 2],
   },
   { font: "Helvetica", fontSize: 10, pageSize: LETTER, margin: 60, footer: pageOfN("Saltmarsh Creative Co.  |  SOW template rev. 7  |  ") },
   (w) => {
@@ -453,7 +453,7 @@ await holdout(
     firmName: "Wexley & Brandt CPAs, LLP",
     description:
       "Letter, TimesRoman 11. CPA review-engagement letter, firm 'we' / client 'you'. Blanks for date, addressee, salutation, entity name in the body and the fee. Firm signs on a drawn line under 'Wexley & Brandt CPAs, LLP' with the partner name printed under the line. 'RESPONSE:' block names the entity in a blank, then Management and Governance signature/title/date rows (label left, drawn line right).",
-    pageRange: [1, 6],
+    pageRange: [2, 2],
   },
   { font: "TimesRoman", fontSize: 11, pageSize: LETTER, margin: 72, leading: 1.35, footer: (w, i) => i > 0 && w.text(`Page ${i + 1}`, w.W - w.m - 30, w.H - 36, { size: 9 }) },
   (w) => {
@@ -548,10 +548,10 @@ await holdout(
   {
     firmName: "Ironbark Roofing & Exteriors, Inc.",
     description:
-      "Letter, Helvetica 9, dense one-pager + terms. Boxed job-info grid ('Label' + separate underscores, two per row), proposal number blank in body, owner initials next to the right-to-cancel clause, two drawn-square acknowledgment checkboxes, and 'X ________' signature lines with small captions under, firm block 'CONTRACTOR: Ironbark Roofing & Exteriors, Inc.'.",
-    pageRange: [1, 6],
+      "Letter, Helvetica 8.5, dense one-pager. Boxed job-info grid ('Label' + separate underscores, two per row), proposal number blank in body, owner initials next to the right-to-cancel clause, two drawn-square acknowledgment checkboxes, and 'X ________' signature lines with small captions under, firm block 'CONTRACTOR: Ironbark Roofing & Exteriors, Inc.'.",
+    pageRange: [1, 1],
   },
-  { font: "Helvetica", fontSize: 9, pageSize: LETTER, margin: 50, leading: 1.35, footer: pageOfN("Ironbark HIC-2026  |  ", 7) },
+  { font: "Helvetica", fontSize: 8.5, pageSize: LETTER, margin: 42, bottom: 40, leading: 1.3, footer: pageOfN("Ironbark HIC-2026  |  ", 7) },
   (w) => {
     w.text("IRONBARK", w.m, w.y + 20, { size: 20, font: w.bold });
     w.text("ROOFING & EXTERIORS", w.m, w.y + 31, { size: 8, font: w.bold, color: GREY });
@@ -602,15 +602,13 @@ await holdout(
       "2. PAYMENT. The deposit is due on signing. The balance is due on substantial completion. Payments more than ten (10) days late bear interest at 1.5% per month. Contractor will not demand payment for work not yet performed or materials not yet delivered to the job site.",
       "3. CHANGES. Any change to the Work, including rotten decking beyond the allowance above, will be described in a written change order signed by Owner showing the added or reduced cost and any change to the schedule. Decking beyond the allowance is replaced at $85 per sheet installed.",
       "4. PERMITS AND INSPECTIONS. Contractor will obtain the building permit and schedule required inspections. The permit fee is included in the contract price.",
-      "5. SITE. Owner will provide access to the property, driveway space for a dumpster, and use of an exterior electrical outlet. Owner is responsible for moving vehicles, patio furniture and items stored in the attic under the work area.",
-      "6. WARRANTY. Contractor warrants its workmanship for five (5) years from completion. Shingle and material warranties are provided by the manufacturer and are passed through to Owner. This warranty does not cover damage from storms exceeding manufacturer wind ratings, foot traffic or alterations by others.",
-      "7. DELAYS. Contractor is not responsible for delays caused by weather, material shortages, permitting authorities, or other causes beyond its reasonable control. Start and completion dates above are estimates.",
-      "8. MECHANIC'S LIEN NOTICE. Anyone who helps improve your property and is not paid may have the right to record a lien against your property. To protect yourself, you may request lien waivers from Contractor and its suppliers with each payment.",
+      "5. WARRANTY. Contractor warrants its workmanship for five (5) years from completion. Shingle and material warranties are provided by the manufacturer and are passed through to Owner. This warranty does not cover damage from storms exceeding manufacturer wind ratings, foot traffic or alterations by others.",
+      "6. MECHANIC'S LIEN NOTICE. Anyone who helps improve your property and is not paid may have the right to record a lien against your property. To protect yourself, you may request lien waivers from Contractor and its suppliers with each payment.",
     ];
     for (const t of terms) w.para(t, { after: 4 });
     w.rich(
       [
-        "9. OWNER'S RIGHT TO CANCEL. YOU MAY CANCEL THIS CONTRACT AT ANY TIME BEFORE MIDNIGHT OF THE THIRD BUSINESS DAY AFTER THE DATE YOU SIGN IT. SEE THE ATTACHED NOTICE OF CANCELLATION FORM FOR AN EXPLANATION OF THIS RIGHT.",
+        "7. OWNER'S RIGHT TO CANCEL. YOU MAY CANCEL THIS CONTRACT AT ANY TIME BEFORE MIDNIGHT OF THE THIRD BUSINESS DAY AFTER THE DATE YOU SIGN IT. SEE THE ATTACHED NOTICE OF CANCELLATION FORM FOR AN EXPLANATION OF THIS RIGHT.",
       ],
       { font: w.bold, after: 6 },
     );
@@ -621,7 +619,7 @@ await holdout(
       w.y += 22;
     }
     w.para(
-      "10. ENTIRE AGREEMENT. This Contract, the Proposal and any signed change orders are the entire agreement between Owner and Contractor. This Contract is governed by the laws of the state where the property is located.",
+      "8. ENTIRE AGREEMENT. This Contract, the Proposal and any signed change orders are the entire agreement between Owner and Contractor. This Contract is governed by the laws of the state where the property is located.",
     );
     w.ensure(200);
     w.advance(4);
@@ -667,7 +665,7 @@ await holdout(
     firmName: "Harrowgate Talent Partners Ltd",
     description:
       "A4, Helvetica 9.5. UK permanent-recruitment terms of business with fee and rebate tables, 'Schedule 1 – Client Details' (labels + drawn lines, client may complete), and a ruled signature TABLE with header row 'Party | Signature | Date'; party cells read 'For and on behalf of ...'; a 'Print name and position' line under the table.",
-    pageRange: [1, 6],
+    pageRange: [2, 2],
   },
   { font: "Helvetica", fontSize: 9.5, pageSize: A4, margin: 56, footer: pageOfN("Harrowgate Talent Partners Ltd  -  Terms of Business (Permanent) v4.1  -  ") },
   (w) => {
@@ -782,7 +780,7 @@ await holdout(
     firmName: "Northgate Managed IT Services, LLC",
     description:
       "Letter, Helvetica 9. Page 1 = order form: ruled 4-column grid with EMPTY value cells (no underscores) for customer details, '[ ]' service-tier checkboxes, then the only signature block: two columns, CUSTOMER on the LEFT and the firm on the right, rows 'Authorized Signature:' / 'Printed Name:' / 'Title:' / 'Date:' with drawn lines. Pages 2+ = Managed Services Terms with an SLA table and no blanks.",
-    pageRange: [1, 6],
+    pageRange: [5, 5],
     note: "Value cells in the order-form grid are empty table cells; their field boxes sit on the cell's bottom rule. Tier checkboxes are client-ticked but a firm could pre-tick them (acceptRoles prefill).",
   },
   { font: "Helvetica", fontSize: 9, pageSize: LETTER, margin: 54, footer: pageOfN("Northgate MSA-ORD rev. 2026.2  |  Customer Confidential  |  ") },
@@ -910,6 +908,48 @@ await holdout(
       ["Entire agreement.", "The Order Form and these Terms are the entire agreement between the parties about the Services and supersede any proposals or purchase order terms. If the Order Form conflicts with these Terms, the Order Form controls. Amendments must be in writing and signed by both parties."],
     ];
     clauses(w, T2, { start: 4 });
+    w.newPage();
+    w.title("EXHIBIT A – SERVICE MATRIX", 12, 6);
+    const Y = "Included";
+    const N = "–";
+    w.table(
+      [200, 101, 101, 102],
+      [
+        ["Service", "Essentials", "Professional", "Enterprise"],
+        ["Remote help desk", "Business hours", "Business hours", "24x7"],
+        ["On-site support", N, "Next business day", "Same day (P1/P2)"],
+        ["Patch management (OS + 3rd party)", Y, Y, Y],
+        ["Endpoint detection and response", Y, Y, Y],
+        ["Email security and filtering", Y, Y, Y],
+        ["Backup monitoring and test restores", N, "Quarterly", "Monthly"],
+        ["Microsoft 365 / Google admin", "Basic", Y, Y],
+        ["Network device management", N, Y, Y],
+        ["Vendor management", N, Y, Y],
+        ["Security awareness training", N, "Annual", "Quarterly"],
+        ["Phishing simulations", N, N, "Monthly"],
+        ["Quarterly business reviews", N, Y, Y],
+        ["Virtual CIO / IT roadmap", N, N, Y],
+        ["Annual security assessment", N, N, Y],
+        ["After-hours change windows", "Billable", "2 per month", "Unlimited"],
+        ["Additional users (per user/month)", "$95", "$135", "$175"],
+      ],
+      { header: true, rowH: 18, size: 8.5 },
+    );
+    w.para("Devices: covered users may each have up to two endpoints (one computer and one mobile device). Servers, firewalls and switches listed in the onboarding inventory are covered at the tier selected; additional servers are billed at $225 per server per month.");
+    w.para("Projects such as office moves, server replacements, cloud migrations and new site build-outs are outside the monthly fee and are quoted separately in a project statement of work.");
+    w.newPage();
+    w.title("EXHIBIT B – ACCEPTABLE USE AND SECURITY REQUIREMENTS", 12, 6);
+    const AU = [
+      ["Authorized contacts.", "Only the contacts Customer designates in Northgate's portal may approve changes, purchases or access requests. Northgate will verify the identity of any caller requesting a password reset or access change by a call-back to the number on file."],
+      ["Multi-factor authentication.", "Customer will require multi-factor authentication for all users on email, remote access and administrative accounts. Northgate is not responsible for incidents that would have been prevented by multi-factor authentication Customer declined to enable."],
+      ["Supported systems.", "Customer will replace operating systems, firewalls and other devices within twelve (12) months after the manufacturer ends security support. Unsupported systems are serviced on a reasonable-efforts basis only and are excluded from service levels."],
+      ["Prohibited use.", "Customer will not use the Services or Northgate-managed systems to store or transmit unlawful material, infringe the rights of others, send unsolicited bulk email, or attempt to gain unauthorized access to any system or network."],
+      ["Monitoring.", "Customer authorizes Northgate to monitor, log and inspect activity on managed systems as needed to deliver the Services, detect threats and respond to incidents, and confirms that it has given any notices to its users that applicable law requires."],
+      ["Incident response.", "If Northgate detects a likely compromise, it may isolate affected devices or disable affected accounts without prior notice, and will contact Customer's authorized contacts as soon as practicable. Incident response beyond eight (8) hours per incident is billed at time-and-materials rates for Essentials and Professional tiers."],
+      ["Cyber insurance.", "Customer is encouraged to maintain its own cyber insurance. On request, Northgate will provide reasonable information about its controls to support Customer's insurance applications."],
+      ["Changes to these requirements.", "Northgate may update this Exhibit on thirty (30) days' notice to reflect changes in security practice. Material changes that increase Customer's costs require Customer's written agreement."],
+    ];
+    clauses(w, AU);
   },
 );
 
@@ -920,7 +960,7 @@ await holdout(
     firmName: "Juniper Lane Photography LLC",
     description:
       "Letter, Helvetica 10.5. Wedding photography contract: event details as 'Label: ____' single items two per row, two '[ ]' model-release choices, and 'Signed: ________ on ________' lines (signature + date in ONE text item) under CLIENT and PHOTOGRAPHER headings, plus a client 'Print name:' line.",
-    pageRange: [1, 6],
+    pageRange: [2, 2],
   },
   { font: "Helvetica", fontSize: 10.5, pageSize: LETTER, margin: 66, leading: 1.38, footer: pageOfN("Juniper Lane Photography  ·  ", 8) },
   (w) => {
@@ -1017,7 +1057,7 @@ await holdout(
     firmName: "Ashcombe Whitlow LLP",
     description:
       "Letter, TimesRoman 11.5. Law-firm engagement letter: date / salutation / matter blanks, hourly-rate table, trust-deposit blank, 'Client's initials: ____' after the fee-arbitration clause, firm signs 'By: ____' under 'Very truly yours, ASHCOMBE WHITLOW LLP' with partner name printed below, then 'CLIENT ACKNOWLEDGMENT' with drawn lines and captions under ('Signature of Client', 'Date', 'Printed name', 'On behalf of (if an entity)').",
-    pageRange: [1, 6],
+    pageRange: [3, 3],
   },
   { font: "TimesRoman", fontSize: 11.5, pageSize: LETTER, margin: 72, leading: 1.4, footer: pageOfN("", 8.5) },
   (w) => {
@@ -1117,7 +1157,7 @@ await holdout(
     firmName: "Kestrel Ridge Consulting Pty Ltd",
     description:
       "A4, TimesRoman 10. Australian combined confidentiality + consulting engagement deed: 'Parties' block with blanks for client name / ABN / address, Part A (confidentiality) and Part B (engagement), a Schedule with item blanks, then 'EXECUTED as an agreement' with two columns headed 'For and on behalf of / Kestrel Ridge Consulting Pty Ltd' and 'For and on behalf of / the Client'; each line is a row of dot leaders with an italic caption UNDER it ('Signature of authorised person', 'Name of authorised person (print)', 'Office held', 'Date').",
-    pageRange: [1, 6],
+    pageRange: [2, 2],
   },
   { font: "TimesRoman", fontSize: 10, pageSize: A4, margin: 62, leading: 1.38, footer: pageOfN("Kestrel Ridge Consulting – Confidentiality and Engagement Agreement – ", 7.5) },
   (w) => {
@@ -1228,7 +1268,7 @@ await holdout(
     firmName: "Willowmere Coaching LLC",
     description:
       "Letter, Helvetica 11. Individual executive-coaching agreement ('Coach'/'Client', 'we'/'you'): client name blank in the preamble, start date and investment blanks in a program summary, two '[ ]' payment options on ONE line, then a 'Client acknowledgment' paragraph and two side-by-side columns (COACH left, CLIENT right) of drawn lines with captions under. Coach's printed name is already typed (no field).",
-    pageRange: [1, 6],
+    pageRange: [2, 2],
   },
   { font: "Helvetica", fontSize: 11, pageSize: LETTER, margin: 72, leading: 1.42, footer: pageOfN("Willowmere Coaching  ·  ", 8) },
   (w) => {
