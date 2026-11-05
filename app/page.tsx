@@ -36,7 +36,8 @@ export default async function Home() {
           )}
         </nav>
       </header>
-      <section className="mx-auto max-w-6xl px-4 pt-14 pb-16 sm:px-6 sm:pt-20">
+      <section className="mx-auto grid max-w-6xl items-center gap-12 px-4 pt-14 pb-16 sm:px-6 sm:pt-20 lg:grid-cols-[1.15fr_1fr]">
+        <div>
         <p className="mb-4 text-sm font-semibold tracking-wide text-brand uppercase">For firms that start every job with a signed agreement</p>
         <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-ink sm:text-6xl">Your client agreement, signed on every file. Automatically.</h1>
         <p className="mt-6 max-w-2xl text-lg text-muted">
@@ -46,6 +47,8 @@ export default async function Home() {
           <Link href="/signup" className="rounded-lg bg-brand px-5 py-3 font-medium text-white shadow-sm hover:brightness-110">Create your workspace</Link>
           <Link href="/login" className="rounded-lg border border-line px-5 py-3 font-medium text-ink hover:bg-gray-50">Sign in</Link>
         </div>
+        </div>
+        <HeroVisual />
       </section>
       <section className="border-y border-line bg-bg">
         <div className="mx-auto grid max-w-6xl gap-6 px-4 py-14 sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
@@ -74,6 +77,49 @@ export default async function Home() {
           <Link href="/verify" className="hover:text-ink">Verify a signed document</Link>
         </div>
       </footer>
+    </div>
+  );
+}
+
+function HeroVisual() {
+  const steps = [
+    ["File opened from CRM", "9:02"],
+    ["Agreement sent to client", "9:02"],
+    ["Client opened it on their phone", "9:41"],
+    ["Client signed", "9:44"],
+    ["Countersigned automatically", "9:44"],
+  ];
+  return (
+    <div aria-hidden className="relative mx-auto w-full max-w-md">
+      <div className="absolute -inset-6 -z-10 rounded-[2rem] bg-gradient-to-br from-brand/15 via-brand/5 to-transparent blur-2xl" />
+      <div className="rounded-2xl border border-line bg-white p-5 shadow-xl shadow-brand/10">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-xs font-medium text-muted">File 2026-0142</div>
+            <div className="font-semibold">Client Agreement: Jordan Sample</div>
+          </div>
+          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">Completed</span>
+        </div>
+        <ol className="mt-4 space-y-2.5">
+          {steps.map(([t, at], i) => (
+            <li key={t} className="flex items-center gap-3 text-sm">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand text-[10px] font-bold text-white">{i === steps.length - 1 ? "✓" : i + 1}</span>
+              <span className="flex-1">{t}</span>
+              <span className="tabular text-xs text-muted">{at}</span>
+            </li>
+          ))}
+        </ol>
+        <div className="mt-5 grid grid-cols-2 gap-3 rounded-xl border border-dashed border-line bg-gray-50 p-3">
+          {[["NORTHWIND ADVISORY, LLC", "Avery Tester", "#5b3fd6"], ["CLIENT", "Jordan Sample", "#1f4fd1"]].map(([h, n, c]) => (
+            <div key={h}>
+              <div className="truncate text-[10px] font-semibold tracking-wide text-muted">{h}</div>
+              <div className="mt-1 border-b border-gray-400 pb-0.5 font-[cursive] text-lg italic" style={{ color: c }}>{n}</div>
+              <div className="mt-0.5 text-[10px] text-muted">Nov 5, 2026</div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 truncate font-mono text-[10px] text-muted">sha256 9f2c…a41e · certificate of completion attached</div>
+      </div>
     </div>
   );
 }

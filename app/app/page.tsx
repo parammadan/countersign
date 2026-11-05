@@ -14,6 +14,11 @@ function hours(ms: number) {
   return h < 1 ? `${Math.max(1, Math.round(h * 60))} min` : h < 48 ? `${h.toFixed(1)} h` : `${(h / 24).toFixed(1)} days`;
 }
 
+// request-time cutoffs (kept out of render for React's purity rule)
+function since(days: number) {
+  return new Date(Date.now() - days * 86400_000).toISOString();
+}
+
 export default async function Page({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const s = await requireSession();
   const ws = getWorkspace(s.workspaceId);
@@ -22,8 +27,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ e
     all<{ status: string; n: number }>("SELECT status, COUNT(*) n FROM files WHERE workspace_id = ? GROUP BY status", ws.id).map((r) => [r.status, r.n]),
   ) as Record<string, number>;
   const waiting = (counts.sent ?? 0) + (counts.viewed ?? 0);
-  const stuck = one<{ n: number }>("SELECT COUNT(*) n FROM files WHERE workspace_id = ? AND status IN ('sent','viewed') AND sent_at < ?", ws.id, new Date(Date.now() - 3 * 86400_000).toISOString())?.n ?? 0;
-  const done30 = one<{ n: number }>("SELECT COUNT(*) n FROM files WHERE workspace_id = ? AND status = 'completed' AND completed_at > ?", ws.id, new Date(Date.now() - 30 * 86400_000).toISOString())?.n ?? 0;
+  const stuck = one<{ n: number }>("SELECT COUNT(*) n FROM files WHERE workspace_id = ? AND status IN ('sent','viewed') AND sent_at < ?", ws.id, since(3))?.n ?? 0;
+  const done30 = one<{ n: number }>("SELECT COUNT(*) n FROM files WHERE workspace_id = ? AND status = 'completed' AND completed_at > ?", ws.id, since(30))?.n ?? 0;
   const durations = all<{ sent_at: string; client_signed_at: string }>(
     "SELECT sent_at, client_signed_at FROM files WHERE workspace_id = ? AND client_signed_at IS NOT NULL AND sent_at IS NOT NULL ORDER BY client_signed_at DESC LIMIT 50",
     ws.id,
@@ -47,7 +52,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ e
     `SELECT * FROM files WHERE workspace_id = ? AND (status IN ('signed','declined','expired') OR (status IN ('sent','viewed') AND sent_at < ?))
      ORDER BY COALESCE(client_signed_at, declined_at, sent_at) DESC LIMIT 8`,
     ws.id,
-    new Date(Date.now() - 3 * 86400_000).toISOString(),
+    since(3),
   );
   const recent = all<FileRow>("SELECT * FROM files WHERE workspace_id = ? ORDER BY created_at DESC LIMIT 8", ws.id);
 

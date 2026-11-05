@@ -50,6 +50,22 @@ export function FieldEditor({
   const [err, setErr] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
   const drag = useRef<{ id: string; mode: "move" | "resize"; sx: number; sy: number; f: Field; scale: number } | null>(null);
+  const history = useRef<Field[][]>([]);
+  const [canUndo, setCanUndo] = useState(false);
+  const snapshot = useCallback(() => {
+    setFields((fs) => {
+      const last = history.current[history.current.length - 1];
+      if (last !== fs) history.current.push(fs);
+      if (history.current.length > 100) history.current.shift();
+      return fs;
+    });
+    setCanUndo(true);
+  }, []);
+  const undo = useCallback(() => {
+    const prev = history.current.pop();
+    if (prev) setFields(prev);
+    setCanUndo(history.current.length > 0);
+  }, []);
   const first = useRef(true);
 
   const selected = fields.find((f) => f.id === sel) ?? null;
@@ -84,6 +100,7 @@ export function FieldEditor({
 
   const update = (id: string, patch: Partial<Field>) => setFields((fs) => fs.map((f) => (f.id === id ? { ...f, ...patch, confidence: 1, reason: f.reason } : f)));
   const remove = (id: string) => {
+    snapshot();
     setFields((fs) => fs.filter((f) => f.id !== id));
     setSel(null);
   };
@@ -113,16 +130,23 @@ export function FieldEditor({
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [pages]);
 
   useEffect(() => {
     if (readOnly) return;
     const key = (e: KeyboardEvent) => {
-      if (!sel || (e.target as HTMLElement).closest("input,select,textarea")) return;
+      if ((e.target as HTMLElement).closest("input,select,textarea")) return;
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        undo();
+        return;
+      }
+      if (!sel) return;
       const f = fields.find((x) => x.id === sel);
       if (!f) return;
       const step = e.shiftKey ? 10 : 1;
+      if (["Delete", "Backspace", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key) && e.key !== "Delete" && e.key !== "Backspace") snapshot();
       if (e.key === "Delete" || e.key === "Backspace") remove(sel);
       else if (e.key === "ArrowLeft") update(sel, { x: f.x - step });
       else if (e.key === "ArrowRight") update(sel, { x: f.x + step });
@@ -201,6 +225,7 @@ export function FieldEditor({
                 confidence: 1,
                 reason: "added by hand",
               };
+              snapshot();
               setFields((fs) => [...fs, f]);
               setSel(id);
               setPlacing(null);
@@ -222,6 +247,7 @@ export function FieldEditor({
                         e.stopPropagation();
                         e.preventDefault();
                         setSel(f.id);
+                        snapshot();
                         drag.current = { id: f.id, mode: "move", sx: e.clientX, sy: e.clientY, f, scale };
                       }}
                       onClick={(e) => {
@@ -247,6 +273,7 @@ export function FieldEditor({
                             e.stopPropagation();
                             e.preventDefault();
                             setSel(f.id);
+                            snapshot();
                             drag.current = { id: f.id, mode: "resize", sx: e.clientX, sy: e.clientY, f, scale };
                           }}
                           className={cx("absolute right-0 bottom-0 h-2.5 w-2.5 cursor-se-resize", ROLE_STYLE[f.role].solid, sel === f.id ? "opacity-100" : "opacity-0 group-hover:opacity-100")}
@@ -265,8 +292,11 @@ export function FieldEditor({
           <div className="flex items-center justify-between">
             <h2 className="font-semibold">{readOnly ? "Fields" : "Review fields"}</h2>
             {!readOnly && (
+              <span className="flex items-center gap-3">
+              <button type="button" onClick={undo} disabled={!canUndo} className="text-xs font-medium text-brand disabled:text-gray-300" title="Undo (⌘Z)">Undo</button>
               <span className={cx("text-xs", saved === "error" ? "text-bad" : "text-muted")}>
                 {saved === "saving" ? "Saving…" : saved === "dirty" ? "Unsaved" : saved === "error" ? "Not saved" : "All changes saved"}
+              </span>
               </span>
             )}
           </div>
@@ -328,7 +358,7 @@ export function FieldEditor({
               <h3 className="text-sm font-semibold">Selected field</h3>
               {!readOnly && <button className="text-xs font-medium text-bad" onClick={() => remove(selected.id)}>Delete</button>}
             </div>
-            <fieldset disabled={readOnly} className="space-y-3 text-sm">
+            <fieldset disabled={readOnly} className="space-y-3 text-sm" onFocusCapture={snapshot}>
               <label className="block">
                 <span className="mb-1 block text-xs font-medium text-muted">Who fills it</span>
                 <select className={inputCls} value={selected.role} onChange={(e) => {

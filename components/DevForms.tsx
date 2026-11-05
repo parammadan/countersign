@@ -28,7 +28,7 @@ export function NewKeyForm() {
       <Secret st={st} />
       <div className="flex flex-col gap-2 sm:flex-row">
         <Input name="name" placeholder="Key name, e.g. CRM sync" maxLength={60} />
-        <Button name="op" value="create" disabled={pending}>Create API key</Button>
+        <Button name="op" value="create" disabled={pending} className="shrink-0 whitespace-nowrap">Create API key</Button>
       </div>
     </form>
   );
