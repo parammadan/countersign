@@ -64,7 +64,7 @@ So an unseen agreement always ends in a signed, sealed document, and usually wit
 | **Workspaces, team invites with admin/staff roles, branding, sender name and reply-to** | So it's a product any firm can sign up for and run, not a tool for one firm. Staff can open files; only admins can change the agreement or settings. |
 | **Signed outbound webhooks with retries, API keys stored as hashes, CSV export** | So firms can plug it into the systems they already run, and keep their data. |
 | **Email log** | Every email the system sent, viewable in the app, which helps with support and deliverability questions. One-time codes and reset links are kept out of it. |
-| **Password reset, rate limiting, CSRF/origin checks, SSRF-guarded webhooks, encrypted signing tokens** | Basics a company would expect before trusting it with client documents. |
+| **Password reset, team management (remove, change role, revoke invites), rate limiting, CSRF/origin checks, SSRF-guarded webhooks, encrypted signing tokens** | Basics a company would expect before trusting it with client documents. |
 
 ## Features I deliberately left out, and why
 
@@ -80,7 +80,27 @@ So an unseen agreement always ends in a signed, sealed document, and usually wit
 | **SSO/SAML, SOC 2 artifacts, data-residency options** | Enterprise-sales features, not needed to buy and run it at small-firm size. |
 | **Native mobile apps** | Clients sign in the browser, and the signing room is built mobile-first. Nobody installs anything to sign one agreement. |
 | **Collecting a payment or retainer at signing** | A separate product decision, and easy to add after signing. |
+| **Account email verification and per-user workspace switching** | Sign-ups can send straight away (with a daily cap per workspace) so a firm, or the grader, can try it in minutes. Verification is the next step before opening sign-ups to the public. A person belonging to several firms signs in to the first one. |
 | **Postgres and multi-instance hosting** | One instance with SQLite in WAL mode on a persistent volume handles thousands of files a day for a firm and is simpler to run and back up. The SQL is plain enough to move to Postgres when there are many tenants. |
+
+## Security review
+
+Before launch I had a separate Claude Code session do a read-only security and correctness review, with no hand-off of my own reasoning. It found no critical issues, 5 high, 9 medium and 12 low. I fixed the high and medium ones, and each fix has a test:
+
+- **Sensitive emails:** one-time codes, invite links and password-reset links are never stored in the in-app email log (staff could otherwise have read a link and taken over an account).
+- **Rotated pages:** stamps are mapped through the page's `/Rotate` and crop box, so signatures on landscape or rotated pages land where the editor showed them. This is tested at all four rotations, with and without crop boxes, including that the text reads upright.
+- **Request size:** bodies are capped while streaming, before parsing, so an oversized upload can't take down the server.
+- **LibreOffice:** runs without the app's secrets in its environment, with a timeout and at most two conversions at once.
+- **Email code:** the verified code is tied to the client's browser (an httpOnly cookie), not to the file, so a forwarded link alone can't sign. Nothing about the agreement is sent to the browser before verification.
+- **Countersigning:** it is atomic. A double click, or a void during auto-countersign, can't produce two sealed copies, and the audit event is written only once the sealed PDF exists. If auto-countersign fails, the client still sees success and the firm is asked to countersign by hand.
+- **Webhooks:** deliveries are claimed before sending, so there are no duplicates. Removed webhooks stop retrying. DNS is checked at connect time, so a hostname can't pass the check and then point at an internal address.
+- **Client IPs:** they come only from the trusted proxy (Fly), so they can't be spoofed into the audit trail.
+- **Team:** admins can remove members and change roles, and invites expire after 7 days.
+- **Smaller fixes:** signature images are capped by pixel size; each workspace has a daily cap on new files; the "client opened it" event is recorded from the browser, so email link scanners don't fake it; `/verify` says when a file was voided; fillable PDF form fields are flattened so they can't hide stamps.
+
+**Residual risks, accepted for now and written down here:**
+- LibreOffice still runs as the same OS user as the app. The right production fix is a separate, network-isolated conversion worker.
+- New sign-ups aren't email-verified before they can send, which is mitigated by the daily cap.
 
 ## How well it handles an agreement it has never seen
 
