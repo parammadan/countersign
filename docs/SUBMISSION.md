@@ -52,6 +52,7 @@ So an unseen agreement always ends in a signed, sealed document, and usually wit
 |---|---|
 | **Upload any PDF or Word agreement, with automatic field detection** | The grader's test, and the real job: firms already have an agreement and won't re-type it into a template builder. Deterministic, so the same document gives the same result, it costs nothing per file, and every field comes with a reason the admin can read. |
 | **Field editor (drag, resize, retype, reassign party, prefill mapping)** | Detection will never be perfect on unseen documents (measured below), so a fast human fix is what makes it safe to sell. Colour-coded by who fills each field. |
+| **"Try a sample" and "Send a test to me"** | A prospect can see the whole flow in under three minutes before trusting it with their own document, and a firm can check exactly what its clients will see. |
 | **Signature page fallback** | An agreement with no signature line can still be signed. No dead ends. |
 | **Immutable agreement versions** | Each file records exactly which version was signed. Editing creates a new version and never changes what a client already signed. |
 | **New files from the app, CSV, REST API, inbound webhook, and an n8n workflow** | "Automates getting that agreement signed on every file" means it has to start where the file is born, which is usually a CRM. The inbound URL needs no code. The n8n template fits Astra's own stack. |

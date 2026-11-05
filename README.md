@@ -11,10 +11,10 @@ A firm uploads the agreement it already uses (PDF or Word) once. From then on, e
 ## Try it in 3 minutes
 
 1. **Create a workspace** at `/signup`. Enter your firm's legal name exactly as it appears in your agreement; that's how your signature block is told apart from the client's.
-2. **Agreements → upload** your agreement. Countersign reads it and marks every place someone signs, initials, dates or fills a blank: blue for the client, violet for your firm, amber for blanks filled from each file. Fix anything that's off (drag, resize, retype), then **Publish**.
+2. **Agreements → upload** your agreement (or click *Try a sample one*). Countersign reads it and marks every place someone signs, initials, dates or fills a blank: blue for the client, violet for your firm, amber for blanks filled from each file. Fix anything that's off (drag, resize, retype), then **Publish**.
 3. **Settings → Firm countersignature**: type or draw it once.
 4. **New file**: client name and email. The agreement is filled in and sent right away.
-5. Open the signing link (from the email, or **Copy signing link** on the file) as the client: consent, review, sign, done. Your countersignature is applied immediately, and both sides get the sealed PDF with a certificate of completion.
+5. Open the signing link (from the email, **Copy signing link** on the file, or **Send a test to me** on the agreement) as the client: consent, review, sign, done. Your countersignature is applied immediately, and both sides get the sealed PDF with a certificate of completion.
 6. Check any copy at `/verify`.
 
 ## How it works
