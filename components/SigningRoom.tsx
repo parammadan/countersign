@@ -139,7 +139,10 @@ export function SigningRoom(p: Props) {
       <div className="sticky top-0 z-30 border-b border-line bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-4xl items-center gap-3 px-4 py-2.5">
           <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-semibold">{p.agreement}</div>
+            <div className="flex items-baseline gap-2">
+              <span className="truncate text-sm font-semibold">{p.agreement}</span>
+              <a href={`/api/sign/${p.token}/pdf`} target="_blank" rel="noreferrer" className="shrink-0 text-xs font-medium text-brand hover:underline">Download PDF</a>
+            </div>
             <div className="mt-1 h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-gray-100">
               <div className="h-full bg-brand transition-all" style={{ width: `${progress}%` }} />
             </div>
