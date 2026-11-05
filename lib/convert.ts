@@ -62,7 +62,7 @@ async function convertWithLibreOffice(data: Buffer, ext: string): Promise<Buffer
   try {
     await new Promise<void>((resolve, reject) => {
       execFile(
-        soffice(),
+        /*turbopackIgnore: true*/ soffice(),
         [`-env:UserInstallation=${profile}`, "--headless", "--norestore", "--convert-to", "pdf", "--outdir", dir, input],
         { timeout: 90_000 },
         (err, _so, se) => {
