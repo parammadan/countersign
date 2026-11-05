@@ -3,7 +3,8 @@
 
 export type TextItem = { str: string; x: number; y: number; w: number; h: number; size: number };
 export type HLine = { x0: number; x1: number; y: number };
-export type PageText = { index: number; width: number; height: number; items: TextItem[]; hlines: HLine[] };
+export type Box = { x: number; y: number; w: number; h: number };
+export type PageText = { index: number; width: number; height: number; items: TextItem[]; hlines: HLine[]; boxes: Box[] };
 export type Extracted = { pages: PageText[]; textChars: number };
 
 // Helvetica AFM widths (1/1000 em) for a better per-character x estimate inside a text item.
@@ -46,12 +47,14 @@ export async function extractPdf(data: Uint8Array): Promise<Extracted> {
         textChars += it.str.trim().length;
       }
       let hlines: HLine[] = [];
+      let boxes: Box[] = [];
       try {
-        hlines = await drawnLines(page, vp.transform, pdfjs.Util.transform as (a: number[], b: number[]) => number[]);
+        ({ hlines, boxes } = await drawnLines(page, vp.transform, pdfjs.Util.transform as (a: number[], b: number[]) => number[]));
       } catch {
         hlines = [];
+        boxes = [];
       }
-      pages.push({ index: p - 1, width: vp.width, height: vp.height, items, hlines });
+      pages.push({ index: p - 1, width: vp.width, height: vp.height, items, hlines, boxes });
       page.cleanup();
     }
   } finally {
@@ -65,9 +68,10 @@ async function drawnLines(
   page: { getOperatorList: () => Promise<{ fnArray: number[]; argsArray: unknown[] }> },
   vpT: number[],
   mul: (a: number[], b: number[]) => number[],
-): Promise<HLine[]> {
+): Promise<{ hlines: HLine[]; boxes: Box[] }> {
   const ol = await page.getOperatorList();
   const out: HLine[] = [];
+  const boxes: Box[] = [];
   // Track CTM through save/restore/transform
   let ctm = [1, 0, 0, 1, 0, 0];
   const stack: number[][] = [];
@@ -82,13 +86,27 @@ async function drawnLines(
     else if (fn === 11) ctm = stack.pop() ?? [1, 0, 0, 1, 0, 0]; // restore
     else if (fn === 12) ctm = mul(ctm, args as number[]); // transform
     else if (fn === OPS.constructPath) {
-      collectPath(args, pt, out);
+      collectPath(args, pt, out, boxes);
     }
   }
-  return out;
+  // dedupe near-identical squares (fill + stroke of the same box)
+  const uniq: Box[] = [];
+  for (const b of boxes) if (!uniq.some((u) => Math.abs(u.x - b.x) < 2 && Math.abs(u.y - b.y) < 2)) uniq.push(b);
+  return { hlines: out, boxes: uniq };
 }
 
-function collectPath(args: unknown[], pt: (x: number, y: number) => number[], out: HLine[]) {
+function pushBox(boxes: Box[], pts: number[][]) {
+  if (pts.length < 4) return;
+  const xs = pts.map((p) => p[0]);
+  const ys = pts.map((p) => p[1]);
+  const x = Math.min(...xs),
+    y = Math.min(...ys);
+  const w = Math.max(...xs) - x,
+    h = Math.max(...ys) - y;
+  if (w >= 5 && w <= 16 && h >= 5 && h <= 16 && Math.abs(w - h) < 2.5) boxes.push({ x, y, w, h });
+}
+
+function collectPath(args: unknown[], pt: (x: number, y: number) => number[], out: HLine[], boxes: Box[]) {
   // pdfjs >=5: args = [paintOp, [Float32Array path], minMax]; path encodes [op, ...coords]
   // pdfjs <5: args = [ops[], coords[], minMax]
   const push = (ax: number, ay: number, bx: number, by: number) => {
@@ -111,6 +129,7 @@ function collectPath(args: unknown[], pt: (x: number, y: number) => number[], ou
         const [x, y, w, h] = [c[k], c[k + 1], c[k + 2], c[k + 3]];
         k += 4;
         if (Math.abs(h) < 2.5) push(x, y + h / 2, x + w, y + h / 2);
+        else pushBox(boxes, [pt(x, y), pt(x + w, y), pt(x + w, y + h), pt(x, y + h)]);
       } else if (op === OPS.moveTo) {
         cx = c[k];
         cy = c[k + 1];
@@ -133,17 +152,21 @@ function collectPath(args: unknown[], pt: (x: number, y: number) => number[], ou
     cy = 0,
     sx = 0,
     sy = 0;
+  let sub: number[][] = [];
   while (i < pathArr.length) {
     const op = pathArr[i++];
     if (op === 0) {
+      pushBox(boxes, sub);
       cx = sx = pathArr[i++];
       cy = sy = pathArr[i++];
+      sub = [pt(cx, cy)];
     } else if (op === 1) {
       const x = pathArr[i++],
         y = pathArr[i++];
       push(cx, cy, x, y);
       cx = x;
       cy = y;
+      sub.push(pt(x, y));
     } else if (op === 2) {
       i += 4;
       cx = pathArr[i++];
@@ -154,8 +177,11 @@ function collectPath(args: unknown[], pt: (x: number, y: number) => number[], ou
       cy = pathArr[i++];
     } else if (op === 4) {
       // closePath: thin rectangles come through as 4 lineTos + close; the long edges are caught above
+      pushBox(boxes, sub);
+      sub = [];
       cx = sx;
       cy = sy;
     } else break;
   }
+  pushBox(boxes, sub);
 }

@@ -20,19 +20,33 @@ export type Detection = {
 const SIG_RE = /\b(signature|signed|sign here|signatory|by)\b/i;
 
 function classify(label: string): FieldType {
-  const l = label.toLowerCase().replace(/[:.\s]+$/, "");
-  if (/\binitials?\b/.test(l)) return "initials";
+  const l = label.toLowerCase().replace(/[:.\s]+$/, "").trim();
+  if (l === "x") return "signature";
+  if (/^on$|^on date$/.test(l)) return "date";
+  if (/^dear$/.test(l)) return "name";
+  if (/^(to|attn|attention)$/.test(l)) return "company";
+  if (/\bprint(ed)?\s+name\b/.test(l)) return "name";
+  if (/\binitials\b|^initial$|\binitial here\b|\b(client|owner|customer)'?s? initial\b/.test(l)) return "initials";
   if (/\b(signature|signed|sign here|signatory)\b/.test(l) || /^(\w+\s+)?by$/.test(l) || /\bby\s*$/.test(l)) return "signature";
   if (/\be-?mail\b/.test(l)) return "email";
   if (/\bdate\b|\bdated\b|\bday of\b|\bmade on\b|\bentered into on\b|\bas of\b|\bon this\b|\beffective\b/.test(l)) return "date";
-  if (/\btitle\b|\bposition\b|\bcapacity\b|\bits\s*$/.test(l)) return "title";
+  if (/\btitle\b|\bposition\b|\bcapacity\b|\bits\s*$|\boffice held\b|\bdesignation\b/.test(l)) return "title";
+  if (/\b(project|matter|business|trade|file|case|account|product|event|venue|program|campaign|job|property)\s+name\b/.test(l)) return /business|trade/.test(l) ? "company" : "text";
   if (/\b(printed|print|full|legal)?\s*name\b/.test(l)) return "name";
   if (/\b(company|organization|organisation|entity|business)\b/.test(l)) return "company";
   return "text";
 }
 
-const FIRM_WORDS = ["provider", "service provider", "consultant", "contractor", "agency", "firm", "vendor", "supplier", "licensor", "developer", "studio"];
-const CLIENT_WORDS = ["client", "customer", "buyer", "purchaser", "licensee", "subscriber", "recipient", "member", "patient", "owner", "you"];
+const FIRM_WORDS = ["provider", "service provider", "consultant", "contractor", "agency", "firm", "vendor", "supplier", "licensor", "developer", "studio", "coach", "photographer", "designer", "accountant", "accountants", "attorney", "attorneys", "counsel", "law firm", "advisor", "adviser", "planner", "trainer", "practitioner", "agent", "broker", "we", "us"];
+const CLIENT_WORDS = ["client", "customer", "buyer", "purchaser", "licensee", "subscriber", "recipient", "member", "patient", "owner", "homeowner", "policyholder", "you", "the client", "undersigned"];
+
+// caption under a line that means "sign here" even without the word signature
+const SIGN_CAPTION = /\b(authori[sz]ed|representative|signatory|signature|partner|director|officer|president|principal|managing|manager|member|owner|proprietor|founder|ceo)\b/i;
+function looksLikePersonLine(t: string) {
+  // "Priya Fakehart, CPA, Engagement Partner" / "Dana Lee"
+  const x = t.trim();
+  return /^[A-Z][a-z'.-]+(?:\s+[A-Z][a-z'.-]+){1,3}\s*,\s*[A-Za-z .&–-]+/.test(x) || /\b(CPA|Esq|PCC|MBA|PhD|JD|CFA|CFP|PE|RA)\b/.test(x);
+}
 
 function norm(s: string) {
   return s
@@ -177,15 +191,34 @@ export function detectFields(ex: Extracted, opts: DetectOptions = {}): Detection
         let reason = `blank after "${label}"`;
         let conf = 0.85;
         let lineY = line.y;
+        if (!label && li > 0) {
+          // sentence wrapped onto this line: "... MSA dated\n________"
+          const prev = lines[li - 1];
+          if (i0 < 3 && line.y - prev.bottom < line.size * 0.8 && !/[.:;]\s*$/.test(prev.text) && overlap(prev, x0, x1)) {
+            const w = lastWords(prev.text, 4);
+            if (w && classify(w) !== "text") {
+              label = w;
+              reason = `blank continuing "${w}"`;
+            }
+          }
+        }
         if (!label) {
           // label written under the line ("_____ \n Signature")
           const under = below.find((b) => b.y - line.bottom < line.size * 1.8 && overlap(b, x0, x1));
           const seg = under && segments(under).find((s) => s.x1 > x0 - 10 && s.x0 < x1 + 10);
-          if (seg && cleanLabel(seg.text).split(" ").length <= 7) {
+          if (seg && cleanLabel(seg.text).split(" ").length <= 7 && !/^(to|re|dear|attn|from|subject|cc)\b/i.test(cleanLabel(seg.text))) {
             label = cleanLabel(seg.text);
             reason = `blank above "${label}"`;
             conf = 0.8;
             lineY = under!.y;
+            if (classify(label) === "text" && (SIGN_CAPTION.test(label) || looksLikePersonLine(label))) {
+              reason = `blank above "${label}" (a signer's caption)`;
+              label = `Signature (${label})`;
+            }
+          } else if (page.index === 0 && line.y < page.height * 0.3 && x0 < page.width * 0.45 && line.text.replace(/[_\s]/g, "").length === 0) {
+            label = "Date";
+            reason = "unlabelled blank at the top of a letter (its date)";
+            conf = 0.5;
           } else {
             label = "";
             reason = "unlabelled blank";
@@ -220,10 +253,52 @@ export function detectFields(ex: Extracted, opts: DetectOptions = {}): Detection
           labelParty,
         });
       }
-      // 2) bare labels with empty space after them ("Signature:", "By:", "Name:")
+      // 2a) form rows: "Client legal name ______" where the line is drawn, not typed
+      const rowSegs = new Set<number>();
       if (consumedTo === 0) {
         const segs = segments(line);
         segs.forEach((seg, si) => {
+          const t = cleanLabel(seg.text);
+          if (!t || t.length > 60 || t.split(" ").length > 8) return;
+          const next = segs[si + 1];
+          // labels reach across to their line, unless the "label" is really a caption or a printed name
+          const isCaption = page.hlines.some((h) => h.y <= line.y + 2 && line.y - h.y < line.size * 1.6 && h.x1 > seg.x0 && h.x0 < seg.x1);
+          const reach = /:\s*$/.test(seg.text.trim()) ? 230 : isCaption || looksLikePersonLine(t) ? 0 : 200;
+          const hl = page.hlines.find(
+            (h) =>
+              !usedHLines.has(h) &&
+              h.y >= line.y + line.size * 0.4 &&
+              h.y <= line.bottom + 5 &&
+              h.x0 >= seg.x1 - 4 &&
+              h.x0 - seg.x1 < reach &&
+              h.x1 - h.x0 >= 50 &&
+              (!next || next.x0 >= h.x1 - 4),
+          );
+          if (!hl) return;
+          usedHLines.add(hl);
+          rowSegs.add(si);
+          const type = classify(t);
+          const h = fieldHeight(type, line.size);
+          raws.push({
+            page: page.index,
+            type,
+            label: t,
+            x: hl.x0,
+            y: hl.y - h + 1,
+            w: hl.x1 - hl.x0,
+            h,
+            lineY: line.y,
+            confidence: type === "text" ? 0.6 : 0.8,
+            reason: `form row "${t}" with a drawn line`,
+            labelParty: partyOf(t, defined),
+          });
+        });
+      }
+      // 2b) bare labels with empty space after them ("Signature:", "By:", "Name:")
+      if (consumedTo === 0) {
+        const segs = segments(line);
+        segs.forEach((seg, si) => {
+          if (rowSegs.has(si)) return;
           const t = cleanLabel(seg.text);
           if (!t || t.length > 48) return;
           const endsColon = /:\s*$/.test(seg.text.trim());
@@ -286,9 +361,16 @@ export function detectFields(ex: Extracted, opts: DetectOptions = {}): Detection
       if (!under) continue;
       const seg = segments(under).find((s) => s.x1 > hl.x0 - 5 && s.x0 < hl.x1 + 5);
       if (!seg) continue;
-      const t = cleanLabel(seg.text);
-      if (!t || t.split(" ").length > 6) continue;
-      const type = classify(t);
+      let t = cleanLabel(seg.text);
+      if (!t || t.split(" ").length > 7) continue;
+      // a form row ("Label ____") under this line, or text sitting just above it, means it's a box edge
+      if (/_{3,}/.test(under.text)) continue;
+      if (lines.some((l) => l.bottom > hl.y - 18 && l.bottom <= hl.y + 1 && overlap(l, hl.x0 + 10, hl.x1 - 10) && l.text.trim().length > 1)) continue;
+      let type = classify(t);
+      if (type === "text" && (SIGN_CAPTION.test(t) || looksLikePersonLine(t))) {
+        type = "signature";
+        t = `Signature (${t})`;
+      }
       if (type === "text" && !SIG_RE.test(t)) continue;
       const h = fieldHeight(type, under.size);
       raws.push({
@@ -305,6 +387,77 @@ export function detectFields(ex: Extracted, opts: DetectOptions = {}): Detection
         labelParty: partyOf(t, defined),
       });
       usedHLines.add(hl);
+    }
+    // 5) signature tables: header row "Party | Signature | Date", one row per party, empty cells
+    for (let li = 0; li < lines.length; li++) {
+      const hdr = segments(lines[li]);
+      if (hdr.length < 2 || hdr.length > 5) continue;
+      const cols = hdr.map((sg) => ({ sg, t: cleanLabel(sg.text) })).filter((c) => c.t.split(" ").length <= 3);
+      const sigCol = cols.findIndex((c) => /^(signature|sign|signed|signature of party)$/i.test(c.t));
+      if (sigCol < 0 || cols.length !== hdr.length) continue;
+      const fieldCols = cols
+        .map((c, i) => ({ ...c, i, type: i === sigCol ? ("signature" as FieldType) : classify(c.t) }))
+        .filter((c) => c.i === sigCol || ["date", "name", "title"].includes(c.type));
+      if (!fieldCols.length) continue;
+      // rows: lines below whose leftmost text names a party
+      const rowLines = lines.filter((l) => l.y > lines[li].bottom && l.y - lines[li].bottom < 170);
+      const leftText = (l: Line) => segments(l).filter((sg) => sg.x1 < fieldCols[0].sg.x0).map((sg) => sg.text).join(" ").trim();
+      const groups: Line[][] = [];
+      for (const l of rowLines) {
+        if (!leftText(l)) continue;
+        const g = groups[groups.length - 1];
+        const last = g?.[g.length - 1];
+        if (last && l.y - last.bottom < l.size * 0.9) g.push(l);
+        else groups.push([l]);
+      }
+      const starts = groups.filter((g) => partyOf(g.map(leftText).join(" "), defined)).map((g) => g[0]);
+      if (!starts.length) continue;
+      starts.forEach((st, ri) => {
+        const end = ri + 1 < starts.length ? starts[ri + 1].y : st.y + 50;
+        const rowText = rowLines.filter((l) => l.y >= st.y - 1 && l.y < end).map((l) => segments(l).filter((sg) => sg.x1 < fieldCols[0].sg.x0).map((sg) => sg.text).join(" ")).join(" ");
+        const party = partyOf(rowText, defined);
+        fieldCols.forEach((c, k) => {
+          const nextCol = cols[c.i + 1];
+          const x0 = c.sg.x0 - 3;
+          const x1 = nextCol ? nextCol.sg.x0 - 8 : Math.min(page.width - 40, c.sg.x0 + 150);
+          const occupied = rowLines.some((l) => l.y >= st.y - 1 && l.y < end && segments(l).some((sg) => sg.x0 < x1 && sg.x1 > x0));
+          if (occupied) return;
+          const h = c.type === "signature" ? Math.min(30, Math.max(20, end - st.y - 6)) : fieldHeight(c.type, st.size);
+          raws.push({
+            page: page.index,
+            type: c.type,
+            label: `${c.t} (${cleanLabel(rowText).slice(0, 40)})`,
+            x: x0,
+            y: st.y - 2,
+            w: Math.max(40, x1 - x0),
+            h,
+            lineY: st.y,
+            confidence: party ? 0.75 : 0.5,
+            reason: `signature table column "${c.t}", row "${cleanLabel(rowText).slice(0, 40)}"`,
+            labelParty: party,
+          });
+          void k;
+        });
+      });
+    }
+    // 6) checkbox squares drawn as vectors
+    for (const b of page.boxes) {
+      if (raws.some((r) => r.page === page.index && r.type === "checkbox" && Math.abs(r.x - b.x) < 6 && Math.abs(r.y - b.y) < 6)) continue;
+      const ln = lines.find((l) => l.y - 3 < b.y + b.h && l.bottom + 3 > b.y && l.x0 > b.x + b.w - 2 && l.x0 - (b.x + b.w) < 30);
+      const right = ln ? cleanLabel(ln.text).split(" ").slice(0, 8).join(" ") : "";
+      raws.push({
+        page: page.index,
+        type: "checkbox",
+        label: right || "Checkbox",
+        x: b.x,
+        y: b.y,
+        w: b.w,
+        h: b.h,
+        lineY: b.y,
+        confidence: right ? 0.7 : 0.45,
+        reason: "drawn checkbox square",
+        labelParty: undefined,
+      });
     }
   }
 
@@ -371,6 +524,12 @@ function assignRoles(raws: Raw[], allLines: Line[][], d: { firm: string[]; clien
     kept.push(r);
   }
   kept.sort((a, b) => a.page - b.page || a.y - b.y || a.x - b.x);
+  for (let i = kept.length - 1; i >= 0; i--) {
+    const r = kept[i];
+    if (r.type !== "signature" || !/followed by empty space/.test(r.reason)) continue;
+    const below = kept.some((o) => o !== r && o.page === r.page && o.type === "signature" && o.y > r.y + 4 && o.y - r.y < 80 && o.x < r.x + r.w && o.x + o.w > r.x - 150);
+    if (below) kept.splice(i, 1);
+  }
 
   // Signature blocks: each signature/initials-less signature field anchors a block.
   const sigs = kept.filter((r) => r.type === "signature");
@@ -384,7 +543,7 @@ function assignRoles(raws: Raw[], allLines: Line[][], d: { firm: string[]; clien
     for (const b of blocks) {
       if (b.anchor.page !== r.page) continue;
       const a = b.anchor;
-      const sameLine = Math.abs(r.y + r.h - (a.y + a.h)) < 6;
+      const sameLine = Math.abs(r.y + r.h - (a.y + a.h)) < 6 || (Math.abs(r.lineY - a.lineY) < 3 && /signature table/.test(a.reason));
       const dx = Math.abs(r.x - a.x);
       const dy = r.y - a.y;
       let dist = Infinity;
@@ -413,11 +572,11 @@ function assignRoles(raws: Raw[], allLines: Line[][], d: { firm: string[]; clien
       b.conf = 0.9;
       continue;
     }
-    const h = headingParty(b.anchor, allLines[b.anchor.page], d);
+    const h = headingParty(b.anchor, allLines[b.anchor.page], d, sigs.filter((k) => k !== b.anchor && k.page === b.anchor.page).map((k) => k.lineY));
     if (h) {
       b.party = h.party;
       b.why = `under "${h.text}"`;
-      b.conf = 0.85;
+      b.conf = h.conf;
     }
   }
   const unresolved = blocks.filter((b) => !b.party);
@@ -469,7 +628,10 @@ function assignRoles(raws: Raw[], allLines: Line[][], d: { firm: string[]; clien
     } else {
       // body blank, outside any signature block
       const lp = r.labelParty;
-      if (lp === "client" && type === "name") {
+      if (type === "name" && /^dear\b/i.test(r.label)) {
+        role = "prefill";
+        prefillKey = "client.name";
+      } else if (lp === "client" && type === "name") {
         role = "prefill";
         prefillKey = "client.name";
       } else if (lp === "client" && type === "email") {
@@ -484,6 +646,15 @@ function assignRoles(raws: Raw[], allLines: Line[][], d: { firm: string[]; clien
       } else if (type === "date") {
         role = "prefill";
         prefillKey = "file.date";
+      } else if (/\$\s*$|\b(fee|fees|price|amount|rate|deposit|retainer|cost|total|budget|sum)\b/i.test(r.label)) {
+        role = "prefill";
+        let k = "custom." + slugKey(r.label.replace(/\$/g, "").split(" ").slice(-3).join(" "));
+        while (usedKeys.has(k)) k += "_2";
+        prefillKey = k;
+        type = "text";
+      } else if (type === "company" && /^(to|attn|attention)$/i.test(r.label)) {
+        role = "prefill";
+        prefillKey = "client.company";
       } else if (lp === "client") {
         role = "client";
         type = type === "name" ? "name" : "text";
@@ -528,20 +699,34 @@ function assignRoles(raws: Raw[], allLines: Line[][], d: { firm: string[]; clien
   return out;
 }
 
-function headingParty(anchor: Raw, lines: Line[], d: { firm: string[]; client: string[] }) {
-  // Walk up from the block, in its column, to the nearest line naming a party. Stop at body text.
+function headingParty(anchor: Raw, lines: Line[], d: { firm: string[]; client: string[] }, fieldLineYs: number[]) {
+  // Walk up from the block, in its column, to the nearest line naming a party. Skip the block's own
+  // rows, stop at body text. If only the neighbouring column's heading names a party, this column is
+  // the other party.
   const above = lines.filter((l) => l.y < anchor.lineY - 1 && anchor.lineY - l.y <= 220).sort((a, b) => b.y - a.y);
+  const colX0 = anchor.x - 70;
+  const colX1 = anchor.x + anchor.w + 10;
   for (const l of above) {
-    const segs = segments(l)
-      .filter((s) => !(s.x1 < anchor.x - 120 || s.x0 > anchor.x + anchor.w + 40))
-      .sort((a, b) => colDist(a, anchor) - colDist(b, anchor));
-    for (const s of segs) {
-      const t = cleanLabel(s.text);
+    // reached the rows of another signature block in this column: its heading isn't ours
+    if (fieldLineYs.some((y) => Math.abs(y - l.y) < 2)) {
+      const all0 = segments(l).filter((sg) => sg.x1 > colX0 && sg.x0 < colX1);
+      if (all0.some((sg) => classify(cleanLabel(sg.text)) === "signature")) return undefined;
+    }
+    const all = segments(l);
+    const mine = all.filter((sg) => sg.x1 > colX0 && sg.x0 < colX1).sort((a, b) => colDist(a, anchor) - colDist(b, anchor));
+    for (const sg of mine) {
+      const t = cleanLabel(sg.text);
       if (!t || t.length > 90) continue;
       const p = partyOf(t, d);
-      if (p) return { party: p, text: t };
+      if (p) return { party: p, text: t, conf: 0.85 };
     }
-    const body = segs.some((s) => s.text.length > 70 && /[a-z]{3,}\s+[a-z]{3,}\s+[a-z]{3,}/.test(s.text));
+    if (mine.length && all.length >= 2) {
+      const others = all.filter((sg) => !mine.includes(sg)).map((sg) => partyOf(cleanLabel(sg.text), d)).filter(Boolean) as Role[];
+      if (others.length === 1 && others[0] !== "prefill" && cleanLabel(mine[0].text).length < 60) {
+        return { party: (others[0] === "client" ? "firm" : "client") as Role, text: `${cleanLabel(mine[0].text)}, next to the ${others[0]}'s column`, conf: 0.7 };
+      }
+    }
+    const body = mine.some((sg) => sg.text.length > 70 && /[a-z]{3,}\s+[a-z]{3,}\s+[a-z]{3,}/.test(sg.text));
     if (body) return undefined;
   }
   return undefined;
