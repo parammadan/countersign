@@ -56,4 +56,20 @@ test("field editor", async ({ page }) => {
   await page.waitForURL(/agreements\/tv_/);
   await expect(page.getByText("found automatically")).toBeVisible();
   await audit(page, "field editor", { exclude: ["canvas"] });
+  // a selected field, placing mode and the publish dialog
+  await page.locator("[data-field-id]").first().click();
+  await expect(page.getByRole("heading", { name: "Selected field" })).toBeVisible();
+  await page.getByRole("button", { name: "Client initials" }).click();
+  await expect(page.getByLabel("Page to place it on")).toBeVisible();
+  await audit(page, "field editor (selected, placing)", { exclude: ["canvas"] });
+  await page.getByRole("button", { name: "Review and publish" }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await audit(page, "publish dialog", { exclude: ["canvas"] });
+  await page.getByRole("dialog").getByRole("checkbox").check();
+  await page.getByRole("dialog").getByRole("button", { name: /^Publish version/ }).click();
+  await page.waitForURL(/published=1/);
+  // the library with a live agreement, its history and an archived view
+  await audit(page, "agreement library");
+  await page.goto("/app/agreements?view=archived");
+  await audit(page, "agreement library (archived, empty)");
 });

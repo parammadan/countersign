@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { adoptCountersignature, newFile, signAsClient, signup, uid, uploadAndPublish } from "./helpers";
+import { adoptCountersignature, newFile, signAsClient, signup, uid, uploadAndPublish, publishDraft } from "./helpers";
 
 // The path the grader takes: an agreement the system has never seen, signed start to finish.
 const FIXTURES = (process.env.E2E_FIXTURES || "02-msa-two-column.pdf").split(",");
@@ -41,8 +41,7 @@ test("try-a-sample path works for a brand-new workspace", async ({ page, browser
   await page.goto("/app/agreements");
   await page.getByRole("button", { name: /Try a sample/ }).click();
   await expect(page).toHaveURL(/\/app\/agreements\/tv_/, { timeout: 60_000 });
-  await page.getByRole("button", { name: /publish/i }).click();
-  await expect(page).toHaveURL(/published=1/);
+  await publishDraft(page);
   await adoptCountersignature(page);
   await page.goto("/app/files/new");
   await expect(page.getByLabel("Project Fee")).toBeVisible();

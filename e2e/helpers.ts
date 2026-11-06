@@ -21,7 +21,15 @@ export async function uploadAndPublish(page: Page, fixture: string) {
   await page.locator('input[type="file"]').first().setInputFiles(path.isAbsolute(fixture) ? fixture : path.join(process.cwd(), "fixtures/agreements", fixture));
   await expect(page).toHaveURL(/\/app\/agreements\/tv_/, { timeout: 90_000 });
   await expect(page.getByText("found automatically")).toBeVisible();
-  await page.getByRole("button", { name: /publish/i }).click();
+  await publishDraft(page);
+}
+
+/** Publish the open draft through the confirmation dialog (it asks the admin to confirm they checked the fields). */
+export async function publishDraft(page: Page) {
+  await page.getByRole("button", { name: "Review and publish" }).click();
+  const d = page.getByRole("dialog");
+  await d.getByRole("checkbox").check();
+  await d.getByRole("button", { name: /^Publish version \d+/ }).click();
   await expect(page).toHaveURL(/published=1/);
 }
 
@@ -50,8 +58,13 @@ export async function newFile(page: Page, client: { name: string; email: string;
 export async function signAsClient(ctx: BrowserContext, link: string) {
   const page = await ctx.newPage();
   await page.goto(link);
-  await page.getByRole("checkbox").check();
-  await page.getByRole("button", { name: "Review and sign" }).click();
+  // a client who already consented (consent is saved on the server) goes straight to the fields
+  const review = page.getByRole("button", { name: "Review and sign" });
+  await expect(review.or(page.getByRole("button", { name: /^Next field$/ })).first()).toBeVisible();
+  if (await review.isVisible()) {
+    await page.getByRole("checkbox").check();
+    await review.click();
+  }
   for (let i = 0; i < 40; i++) {
     if (await page.getByRole("button", { name: /^Finish/ }).first().isVisible().catch(() => false)) break;
     await page.getByRole("button", { name: /^Next field$/ }).click();
