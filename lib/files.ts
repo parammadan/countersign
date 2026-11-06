@@ -12,6 +12,7 @@ import type { Field, PageSize } from "./fields";
 import type { FileRow, Template, TemplateVersion, Workspace } from "./types";
 
 import { AppError } from "./errors";
+import { assertCanSendTo } from "./emailverify";
 export { AppError };
 
 export type Ctx = { ip?: string; ua?: string };
@@ -81,6 +82,7 @@ const DAILY_FILE_CAP = Number(process.env.DAILY_FILE_CAP || 300);
 export async function createFile(ws: Workspace, input: NewFile, actor: Actor, ctx: Ctx, send = true): Promise<FileRow> {
   const today = one<{ n: number }>("SELECT COUNT(*) n FROM files WHERE workspace_id = ? AND created_at > ?", ws.id, new Date(Date.now() - 86400_000).toISOString())?.n ?? 0;
   if (today >= DAILY_FILE_CAP) throw new AppError(`This workspace has opened ${DAILY_FILE_CAP} files in the last 24 hours, the current limit. Contact support to raise it.`, 429);
+  if (send) assertCanSendTo(ws.id, input.clientEmail);
   const { template, version } = resolveTemplate(ws.id, input.templateId);
   if (input.ref && one("SELECT 1 FROM files WHERE workspace_id = ? AND ref = ? AND status NOT IN ('voided','declined')", ws.id, input.ref)) {
     throw new AppError(`A file with reference "${input.ref}" already exists.`, 409);
@@ -120,6 +122,7 @@ function templateName(f: FileRow) {
 export async function sendFile(f: FileRow, ws: Workspace, kind: "invite" | "resend" | "reminder", actor: Actor, ctx: Ctx): Promise<FileRow> {
   if (["completed", "voided", "signed"].includes(f.status)) throw new AppError(`This file is ${f.status}; it can't be sent again.`, 409);
   if (f.status === "declined" && kind !== "resend") throw new AppError("This file was declined. Use Send again.", 409);
+  assertCanSendTo(ws.id, f.client_email);
   const t = now();
   if (f.status === "draft" || f.status === "expired" || f.status === "declined") {
     // (re)starting the clock: reminders count from now
@@ -139,11 +142,12 @@ export async function sendFile(f: FileRow, ws: Workspace, kind: "invite" | "rese
     kind === "reminder"
       ? `Hi ${first},<br><br>This is a reminder that <b>${escapeHtml(ws.name)}</b> is waiting on your signature on the <b>${escapeHtml(name)}</b> before work can begin${onFile}.`
       : `Hi ${first},<br><br><b>${escapeHtml(ws.name)}</b> needs your signature on the <b>${escapeHtml(name)}</b> before work can begin${onFile}. It takes about two minutes, and you can sign on your phone. No account needed.`;
-  await sendEmail({
+  const r = await sendEmail({
     workspaceId: ws.id,
     fileId: file.id,
     kind,
     to: file.client_email,
+    redact: [link],
     subject,
     fromName: ws.sender_name,
     replyTo: ws.reply_to,
@@ -155,10 +159,17 @@ export async function sendFile(f: FileRow, ws: Workspace, kind: "invite" | "rese
       cta: { href: link, label: "Review and sign" },
     }),
   });
+  const emailStatus = r.delivered ? "sent" : r.error ? "failed" : "logged";
+  run("UPDATE files SET email_status = ?, email_error = ? WHERE id = ?", emailStatus, r.error ?? null, file.id);
   const type = kind === "invite" ? "file.sent" : kind === "resend" ? "file.resent" : "file.reminded";
-  audit(ws.id, file.id, type, actor.label, ctx, { to: file.client_email });
-  if (kind === "invite") emit(ws.id, "file.sent", fileJson(file));
-  return file;
+  if (emailStatus === "failed") {
+    // the link still works (the firm can copy it), but nobody should think the client was emailed
+    audit(ws.id, file.id, "file.email_failed", actor.label, ctx, { to: file.client_email, kind, error: r.error });
+  } else {
+    audit(ws.id, file.id, type, actor.label, ctx, { to: file.client_email, delivery: emailStatus });
+    if (kind === "invite") emit(ws.id, "file.sent", fileJson(file));
+  }
+  return getFile(ws.id, file.id);
 }
 
 export function prefillValues(f: FileRow, ws: Workspace, fields: Field[]): Map<string, StampValue> {
@@ -179,6 +190,13 @@ export function prefillValues(f: FileRow, ws: Workspace, fields: Field[]): Map<s
     else if (v) m.set(fl.id, { kind: "text", text: v });
   }
   return m;
+}
+
+// A signing link keeps working for the client's own copy for this long after completion, then closes.
+// (The copy is also emailed; the firm can always download it from the app.)
+export const COPY_LINK_DAYS = 30;
+export function copyLinkClosed(f: FileRow) {
+  return f.status === "completed" && !!f.completed_at && Date.now() > new Date(f.completed_at).getTime() + COPY_LINK_DAYS * 86400_000;
 }
 
 export function loadByToken(tok: string) {
@@ -431,10 +449,11 @@ async function countersignOnce(f: FileRow, ws: Workspace, actor: Actor, ctx: Ctx
   const done = getFile(ws.id, f.id);
   const filename = downloadName(done);
   const link = signingLink(done);
-  await sendEmail({
+  const copy = await sendEmail({
     workspaceId: ws.id,
     fileId: f.id,
     kind: "completed",
+    redact: link ? [link] : [],
     to: done.client_email,
     subject: `Signed: your ${templateName(done)} with ${ws.name}`,
     fromName: ws.sender_name,
@@ -443,11 +462,13 @@ async function countersignOnce(f: FileRow, ws: Workspace, actor: Actor, ctx: Ctx
       brand: ws.brand_color,
       firm: ws.name,
       heading: "All signed: here is your copy",
-      body: `Thanks, ${escapeHtml(done.client_name.split(" ")[0])}. Both parties have signed. Your completed agreement is attached, and you can download it again from the link below.`,
+      body: `Thanks, ${escapeHtml(done.client_name.split(" ")[0])}. Both parties have signed. Your completed agreement is attached, and you can download it again from the link below for the next ${COPY_LINK_DAYS} days.`,
       cta: link ? { href: link, label: "Download signed copy" } : undefined,
     }),
     attachments: [{ filename, content: finalBuf }],
   });
+  if (copy.delivered) run("UPDATE files SET copy_emailed_at = ? WHERE id = ?", now(), f.id);
+  else audit(ws.id, f.id, "file.email_failed", "system", {}, { to: done.client_email, kind: "completed", error: copy.error });
   await notifyFirm(ws, done, "completed", finalBuf);
   emit(ws.id, "file.completed", { ...fileJson(done), sha256: hash });
   return done;
@@ -525,6 +546,40 @@ export function finalDocument(f: FileRow) {
   );
 }
 
+export type ReadinessCheck = { key: string; label: string; ok: boolean; required: boolean; detail?: string };
+
+// "Ready for work" is earned, not assumed from the status: every required condition is re-checked,
+// including that the sealed PDF on disk still matches the fingerprint recorded when it was sealed.
+export async function readiness(f: FileRow): Promise<{ ready: boolean; checks: ReadinessCheck[] }> {
+  const has = (type: string) => !!one("SELECT 1 FROM audit_events WHERE file_id = ? AND type = ? LIMIT 1", f.id, type);
+  const doc = one<{ path: string; sha256: string }>("SELECT path, sha256 FROM documents WHERE file_id = ? AND kind = 'final'", f.id);
+  let sealed = false;
+  let sealDetail = "No sealed PDF yet";
+  if (doc) {
+    try {
+      sealed = sha256(await getBlob(doc.path)) === doc.sha256;
+      sealDetail = sealed ? `SHA-256 ${doc.sha256.slice(0, 12)}… matches` : "Stored PDF doesn't match its recorded fingerprint";
+    } catch {
+      sealDetail = "Sealed PDF is missing from storage";
+    }
+  }
+  const checks: ReadinessCheck[] = [
+    { key: "consent", label: "Client consented to sign electronically", ok: !!f.consent_at, required: true },
+    { key: "client_signed", label: "Client signed every required field", ok: !!f.client_signed_at && has("file.signed"), required: true },
+    { key: "countersigned", label: "Firm countersigned", ok: has("file.countersigned"), required: true },
+    { key: "sealed", label: "Final PDF sealed and intact", ok: sealed, required: true, detail: sealDetail },
+    { key: "not_voided", label: "File is still active (not voided)", ok: f.status !== "voided", required: true },
+    {
+      key: "copy_emailed",
+      label: "Client emailed their signed copy",
+      ok: !!f.copy_emailed_at,
+      required: false,
+      detail: f.copy_emailed_at ? undefined : "Not emailed; the client can still download it from their link for 30 days",
+    },
+  ];
+  return { ready: f.status === "completed" && checks.every((c) => !c.required || c.ok), checks };
+}
+
 export function fileJson(f: FileRow) {
   return {
     id: f.id,
@@ -541,6 +596,8 @@ export function fileJson(f: FileRow) {
     declined_at: f.declined_at,
     decline_reason: f.decline_reason,
     expires_at: f.expires_at,
+    ready_for_work: f.status === "completed",
+    email: { status: f.email_status, error: f.email_error, copy_emailed_at: f.copy_emailed_at },
     signing_url: f.status === "voided" ? null : signingLink(f),
     document_url: f.status === "completed" ? `${appUrl()}/api/v1/files/${f.id}/document` : null,
     app_url: `${appUrl()}/app/files/${f.id}`,

@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { AppError, expireIfDue, loadByToken } from "./files";
+import { AppError, copyLinkClosed, expireIfDue, loadByToken } from "./files";
 import { seal, unseal } from "./secret";
 import type { FileRow, Workspace } from "./types";
 
@@ -7,6 +7,7 @@ export function signerOr404(tok: string) {
   const l = loadByToken(tok);
   if (!l) throw new AppError("This signing link isn't valid. Check you used the whole link from your email.", 404);
   const file = expireIfDue(l.file, l.ws);
+  if (copyLinkClosed(file)) throw new AppError(`This link has expired. Ask ${l.ws.name} for a copy of the signed agreement.`, 410);
   return { ...l, file };
 }
 

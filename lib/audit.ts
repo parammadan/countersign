@@ -54,4 +54,5 @@ export const EVENT_TEXT: Record<string, string> = {
   "file.voided": "Voided by firm",
   "file.expired": "Signing link expired",
   "file.downloaded": "Signed copy downloaded",
+  "file.email_failed": "Email to client failed",
 };

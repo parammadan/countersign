@@ -18,6 +18,7 @@ import { emailMode, layout, sendEmail } from "@/lib/email";
 import { appUrl } from "@/lib/paths";
 import { escapeHtml } from "@/lib/util";
 import { checkWebhookUrl } from "@/lib/ssrf";
+import { confirmEmail, sendVerification, userVerified, verificationRequired, workspaceVerified } from "@/lib/emailverify";
 
 export type FormState = { error?: string; ok?: string; secret?: string } | undefined;
 
@@ -71,6 +72,7 @@ export async function signupAction(_: FormState, fd: FormData): Promise<FormStat
       run("INSERT INTO members (workspace_id, user_id, role, created_at) VALUES (?,?,?,?)", wid, uid, "owner", now());
     });
     audit(wid, null, "workspace.created", b.email);
+    if (verificationRequired()) await sendVerification({ id: uid, email: b.email, name: b.name }, wid);
     await createSession(uid, wid);
   } catch (e) {
     return fail(e);
@@ -117,7 +119,8 @@ export async function acceptInviteAction(_: FormState, fd: FormData): Promise<Fo
       if (!name) return { error: "Enter your name." };
       if (pw.length < 8) return { error: "Use a password of at least 8 characters." };
       const uid = id("usr_");
-      run("INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?,?,?,?,?)", uid, inv.email, name.slice(0, 120), hashPassword(pw), now());
+      // the invite link reached this inbox, which proves the address
+      run("INSERT INTO users (id, email, name, password_hash, created_at, email_verified_at) VALUES (?,?,?,?,?,?)", uid, inv.email, name.slice(0, 120), hashPassword(pw), now(), now());
       u = { id: uid, password_hash: "" };
     }
     tx(() => {
@@ -130,6 +133,31 @@ export async function acceptInviteAction(_: FormState, fd: FormData): Promise<Fo
     return fail(e);
   }
   redirect("/app");
+}
+
+export async function resendVerificationAction(_: FormState): Promise<FormState> {
+  try {
+    await throttle("verify-resend", 3);
+    const sess = await requireSession();
+    if (userVerified(sess.userId)) return { ok: "Your email is already confirmed." };
+    const u = one<{ id: string; email: string; name: string }>("SELECT id, email, name FROM users WHERE id = ?", sess.userId)!;
+    const r = await sendVerification(u, sess.workspaceId);
+    if (!r.delivered) return { error: `We couldn't send the email${r.error ? ` (${r.error})` : ""}. Try again in a minute.` };
+    return { ok: `Sent to ${u.email}. Check your inbox (and spam).` };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function confirmEmailAction(_: FormState, fd: FormData): Promise<FormState> {
+  try {
+    await throttle("verify-confirm", 20);
+    const r = confirmEmail(s(fd.get("token")));
+    if (!r.ok) return { error: r.reason };
+  } catch (e) {
+    return fail(e);
+  }
+  redirect("/app?confirmed=1");
 }
 
 // ---------- files ----------
@@ -299,6 +327,7 @@ export async function inviteAction(_: FormState, fd: FormData): Promise<FormStat
     const email = z.string().trim().toLowerCase().email("Enter a valid email").parse(s(fd.get("email")));
     const role = s(fd.get("role")) === "admin" ? "admin" : "staff";
     if (one("SELECT 1 FROM members m JOIN users u ON u.id = m.user_id WHERE m.workspace_id = ? AND u.email = ?", ws.id, email)) return { error: "They're already a member." };
+    if (verificationRequired() && !workspaceVerified(ws.id)) return { error: "Confirm your email address before inviting teammates. The link is in your inbox." };
     const tok = token(24);
     run("INSERT INTO invites (id, workspace_id, email, role, token_hash, created_at) VALUES (?,?,?,?,?,?)", id("inv_"), ws.id, email, role, sha256(tok), now());
     const link = `${appUrl()}/invite/${tok}`;

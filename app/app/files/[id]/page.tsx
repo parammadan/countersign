@@ -3,7 +3,7 @@ import { fmtDateTime } from "@/lib/time";
 import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/auth";
 import { all, one } from "@/lib/db";
-import { AppError, getFile, getVersion, signingLink, versionFields } from "@/lib/files";
+import { AppError, getFile, getVersion, readiness, signingLink, versionFields } from "@/lib/files";
 import { EVENT_TEXT, fileEvents } from "@/lib/audit";
 import { Card, Notice, StatusBadge, cx } from "@/components/ui";
 import { FileActions } from "@/components/FileActions";
@@ -55,7 +55,8 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const fields = versionFields(v);
   const outbox = emailMode() === "outbox";
   const lastInvite = emails.find((m) => ["invite", "resend", "reminder"].includes(m.kind));
-  const inviteFailed = !outbox && lastInvite?.status === "failed";
+  const inviteFailed = f.email_status === "failed" || (!outbox && lastInvite?.status === "failed");
+  const ready = await readiness(f);
   const closed = ["declined", "voided", "expired"].includes(f.status);
 
   return (
@@ -114,6 +115,30 @@ export default async function Page({ params, searchParams }: { params: Promise<{
           </div>
         )}
       </Card>
+
+      {(f.status === "completed" || f.status === "signed") && (
+        <Card className={cx("mb-6 p-5", ready.ready && "border-emerald-300")}>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="font-semibold">{ready.ready ? "Ready for work" : "Not ready for work yet"}</h2>
+            {ready.ready && <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700">All required checks passed</span>}
+          </div>
+          <ul className="space-y-1.5 text-sm" aria-label="Readiness checks">
+            {ready.checks.map((c) => (
+              <li key={c.key} className="flex items-start gap-2">
+                <span aria-hidden className={cx("mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white", c.ok ? "bg-emerald-600" : c.required ? "bg-red-600" : "bg-amber-500")}>
+                  {c.ok ? "✓" : "!"}
+                </span>
+                <span>
+                  <span className="sr-only">{c.ok ? "Passed: " : c.required ? "Failed: " : "Warning: "}</span>
+                  {c.label}
+                  {!c.required && <span className="text-muted"> (optional)</span>}
+                  {c.detail && <span className="block text-xs text-muted">{c.detail}</span>}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
         <div className="space-y-6">

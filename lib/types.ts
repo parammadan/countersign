@@ -78,6 +78,11 @@ export type FileRow = {
   source: string;
   created_by: string | null;
   created_at: string;
+  /** result of the latest email to the client: sent | failed | logged (no provider configured) */
+  email_status: "sent" | "failed" | "logged" | null;
+  email_error: string | null;
+  /** when the signed copy was emailed to the client */
+  copy_emailed_at: string | null;
 };
 
 export const STATUS_LABEL: Record<FileStatus, string> = {

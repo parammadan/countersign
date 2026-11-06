@@ -45,6 +45,8 @@ export async function sendEmail(opts: {
   attachments?: Attachment[];
   /** sensitive email (codes, reset/invite links): this is stored instead of `html`, always */
   logHtml?: string;
+  /** strings (e.g. signing links) replaced in the stored copy, so staff reading the log can't use them */
+  redact?: string[];
 }): Promise<{ id: string; delivered: boolean; error?: string }> {
   const eid = id("em_");
   let status = "logged";
@@ -106,13 +108,19 @@ export async function sendEmail(opts: {
     opts.kind,
     opts.to,
     opts.logHtml ? opts.subject.replace(/\d{6}/, "••••••") : opts.subject,
-    opts.logHtml ?? opts.html,
+    opts.logHtml ?? redactAll(opts.html, opts.redact),
     status,
     providerId,
     error,
     now(),
   );
   return { id: eid, delivered: status === "sent", error: error ?? undefined };
+}
+
+function redactAll(html: string, secrets?: string[]) {
+  let out = html;
+  for (const x of secrets ?? []) if (x) out = out.split(x).join("[personal link withheld from the log]").split(escapeHtml(x)).join("[personal link withheld from the log]");
+  return out;
 }
 
 export function layout(opts: { brand: string; firm: string; heading: string; body: string; cta?: { href: string; label: string }; foot?: string }) {

@@ -200,6 +200,21 @@ const MIGRATIONS: string[] = [
   DROP INDEX files_ref;
   CREATE UNIQUE INDEX files_ref_live ON files(workspace_id, ref) WHERE ref IS NOT NULL AND status NOT IN ('voided','declined');
   `,
+  // delivery result of the latest client email; email verification (existing accounts count as verified)
+  `
+  ALTER TABLE files ADD COLUMN email_status TEXT;
+  ALTER TABLE files ADD COLUMN email_error TEXT;
+  ALTER TABLE files ADD COLUMN copy_emailed_at TEXT;
+  ALTER TABLE users ADD COLUMN email_verified_at TEXT;
+  UPDATE users SET email_verified_at = created_at;
+  CREATE TABLE email_verifications (
+    token_hash TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    expires_at TEXT NOT NULL,
+    used_at TEXT,
+    created_at TEXT NOT NULL
+  );
+  `,
 ];
 
 function open(): DatabaseSync {

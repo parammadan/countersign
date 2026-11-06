@@ -64,6 +64,32 @@ describe("file lifecycle", () => {
     expect(() => db.run("DELETE FROM audit_events")).toThrow(/append-only/);
     const mails = db.all<{ kind: string; to_email: string }>("SELECT kind, to_email FROM emails WHERE file_id = ?", f.id);
     expect(mails.map((m) => m.kind)).toEqual(expect.arrayContaining(["invite", "completed", "firm_completed"]));
+
+    // no email provider here: the invite was logged, not delivered, and the stored copy has no usable link
+    expect(done.email_status).toBe("logged");
+    const stored = db.all<{ html: string }>("SELECT html FROM emails WHERE file_id = ?", f.id);
+    for (const m of stored) expect(m.html).not.toContain(tok);
+    expect(stored.some((m) => m.html.includes("withheld from the log"))).toBe(true);
+
+    // ready for work only when every required condition holds, re-checked against the stored PDF
+    const r = await mod.readiness(done);
+    expect(r.ready).toBe(true);
+    expect(r.checks.filter((c) => c.required).every((c) => c.ok)).toBe(true);
+    expect(r.checks.find((c) => c.key === "copy_emailed")!.ok).toBe(false); // logged, not delivered
+    const blob = path.join(dir, "blobs", doc.path);
+    fs.writeFileSync(blob, Buffer.concat([finalBytes, Buffer.from("tamper")]));
+    const tampered = await mod.readiness(done);
+    expect(tampered.ready).toBe(false);
+    expect(tampered.checks.find((c) => c.key === "sealed")!.ok).toBe(false);
+    fs.writeFileSync(blob, finalBytes);
+
+    // the client's link to their copy closes 30 days after completion
+    expect(mod.copyLinkClosed(done)).toBe(false);
+    expect(mod.copyLinkClosed({ ...done, completed_at: new Date(Date.now() - 31 * 86400_000).toISOString() })).toBe(true);
+
+    // a file that isn't finished is never ready
+    const open = await mod.createFile(ws, { templateId: template.id, clientName: "Riley Example", clientEmail: "riley@example.com" }, { kind: "system", label: "test" }, {});
+    expect((await mod.readiness(open)).ready).toBe(false);
   });
 
   it("adds a signature page when the agreement has no signature line", async () => {

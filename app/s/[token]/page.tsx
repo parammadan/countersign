@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { loadByToken, expireIfDue, prefillValues, formatDate } from "@/lib/files";
+import { loadByToken, expireIfDue, prefillValues, formatDate, copyLinkClosed } from "@/lib/files";
 import { signerVerified } from "@/lib/signer";
 import { one } from "@/lib/db";
 import { now } from "@/lib/util";
@@ -56,6 +56,8 @@ export default async function Page({ params }: { params: Promise<{ token: string
   if (file.status === "draft") return shell(<Message title="Not ready yet" body={`${ws.name} hasn't sent this agreement yet.`} />);
   if (file.status === "signed")
     return shell(<Message title="You've signed" body={`Thanks. ${ws.name} is countersigning now. You'll get the completed copy by email as soon as they do.`} />);
+  if (copyLinkClosed(file))
+    return shell(<Message title="This link has expired" body={`The agreement was completed more than 30 days ago, so this link no longer opens it. Your signed copy was emailed to you; ${ws.name} can send it again.`} />);
   if (file.status === "completed" && !(await signerVerified(file, ws)))
     return shell(<VerifyThenDownload token={token} email={file.client_email.replace(/^(.{2}).*(@.*)$/, "$1***$2")} />);
   if (file.status === "completed")
