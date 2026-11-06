@@ -242,23 +242,33 @@ export async function templateAction(_: FormState, fd: FormData): Promise<FormSt
   try {
     const sess = await requireAdmin();
     const tid = s(fd.get("templateId"));
-    const t = one<{ id: string }>("SELECT id FROM templates WHERE id = ? AND workspace_id = ?", tid, sess.workspaceId);
+    const t = one<{ id: string; archived: number }>("SELECT id, archived FROM templates WHERE id = ? AND workspace_id = ?", tid, sess.workspaceId);
     if (!t) throw new AppError("Agreement not found", 404);
     const op = s(fd.get("op"));
+    let done = "Saved.";
     if (op === "rename") {
       const name = s(fd.get("name")).slice(0, 120);
       if (!name) throw new AppError("Enter a name.");
       run("UPDATE templates SET name = ? WHERE id = ?", name, tid);
+      done = "Renamed.";
     } else if (op === "default") {
+      if (t.archived) throw new AppError("Restore this agreement before making it the default.");
+      done = "Now the default for new files.";
       tx(() => {
         run("UPDATE templates SET is_default = 0 WHERE workspace_id = ?", sess.workspaceId);
         run("UPDATE templates SET is_default = 1 WHERE id = ?", tid);
       });
     } else if (op === "archive") {
       run("UPDATE templates SET archived = 1, is_default = 0 WHERE id = ?", tid);
+      done = "Archived. Files already sent are unaffected.";
+    } else if (op === "restore") {
+      run("UPDATE templates SET archived = 0 WHERE id = ?", tid);
+      done = "Restored.";
+    } else {
+      throw new AppError("Unknown action.");
     }
     revalidatePath("/app/agreements");
-    return { ok: "Saved." };
+    return { ok: done };
   } catch (e) {
     return fail(e);
   }
