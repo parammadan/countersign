@@ -11,6 +11,10 @@ test.skip(!process.env.VISUAL, "set VISUAL=1 to run the visual regression suite"
 function dynamic(page: Page) {
   return [
     page.getByText(/\b\d{1,2}:\d{2}\s?(AM|PM)\b|just now|\bago\b|\bUTC\b|\d{4}-\d{2}-\d{2}/),
+    // calendar days ("Nov 6, 2026") inside the app, such as published dates in the agreement library
+    // detection time ("found automatically in 1s") depends on the machine's speed
+    page.getByText(/found automatically in/),
+    page.locator("#main").getByText(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}, \d{4}\b/),
     page.locator('a[href*="/s/"], code'),
     // the signing link is a random token whose rendered width varies, so mask its whole line
     page.locator("p, div").filter({ hasText: /^Signing link:/ }),
@@ -27,6 +31,13 @@ async function signupFixed(page: Page) {
   await page.getByLabel("Password").fill("correct-horse-42");
   await page.getByRole("button", { name: "Create workspace" }).click();
   await expect(page).toHaveURL(/\/app$/);
+}
+
+// the first PDF page has finished drawing (its placeholder is gone); later pages draw as they scroll in
+async function rendered(page: Page) {
+  await expect(page.locator("[data-page]").first()).toBeVisible();
+  await expect(page.locator('[data-page="0"] .animate-pulse')).toHaveCount(0, { timeout: 20_000 });
+  await page.waitForTimeout(300);
 }
 
 const shot = (page: Page, name: string, fullPage = true) =>
@@ -73,4 +84,22 @@ test("app screens, desktop and phone", async ({ page, browser }) => {
   await c.goto(link);
   await shot(c, "phone-sign-intro");
   await client.close();
+
+  // the agreement editor, last so the screens above are unaffected by the draft it creates
+  await page.goto("/app/agreements");
+  await page.getByRole("button", { name: "Edit fields" }).click();
+  await page.waitForURL((u) => /\/app\/agreements\/tv_/.test(u.pathname));
+  const editorUrl = page.url();
+  await rendered(page);
+  await shot(page, "editor", false);
+  await page.locator("[data-field-id]").first().click();
+  await shot(page, "editor-selected", false);
+  const phone2 = await browser.newContext({ ...devices["Pixel 7"], storageState: await page.context().storageState() });
+  const p2 = await phone2.newPage();
+  await p2.goto("/app/agreements");
+  await shot(p2, "phone-agreements");
+  await p2.goto(editorUrl);
+  await rendered(p2);
+  await shot(p2, "phone-editor", false);
+  await phone2.close();
 });
