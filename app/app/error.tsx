@@ -10,7 +10,7 @@ export default function AppError({ error, reset }: { error: Error & { digest?: s
       <p className="mt-2 text-sm text-muted">{msg ?? "Something went wrong on our side. Nothing was lost; try again."}</p>
       <div className="mt-5 flex justify-center gap-2">
         <button onClick={reset} className="rounded-lg bg-brand px-3.5 py-2 text-sm font-medium text-white">Try again</button>
-        <Link href="/app" className="rounded-lg border border-line bg-white px-3.5 py-2 text-sm font-medium">Command center</Link>
+        <Link href="/app" className="rounded-lg border border-line bg-white px-3.5 py-2 text-sm font-medium">Back to overview</Link>
       </div>
     </div>
   );

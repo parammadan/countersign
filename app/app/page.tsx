@@ -6,7 +6,7 @@ import type { FileRow } from "@/lib/types";
 import { Card, LinkButton, Notice, PageHeader, cx } from "@/components/ui";
 import { FileTable } from "@/components/FileTable";
 
-export const metadata = { title: "Command center" };
+export const metadata = { title: "Overview" };
 
 function hours(ms: number) {
   if (!Number.isFinite(ms) || ms <= 0) return "-";
@@ -65,7 +65,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ e
 
   return (
     <>
-      <PageHeader title="Command center" sub={`Every file's client agreement, in one place.`} actions={<LinkButton href="/app/files/new">+ New file</LinkButton>} />
+      <PageHeader title="Overview" sub={`Every file's client agreement, in one place.`} actions={<LinkButton href="/app/files/new" icon="plus">New file</LinkButton>} />
       {error === "admin" && <div className="mb-4"><Notice tone="warn">That page is for workspace admins.</Notice></div>}
       {!setupDone && (
         <Card className="mb-6 p-5">
