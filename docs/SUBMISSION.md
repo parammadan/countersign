@@ -1,7 +1,7 @@
 # Countersign: submission
 
-- **Submission URL:** _to fill after deploy_
-- **Repository:** _to fill_ (private; `theastraway` added as a collaborator)
+- **Submission URL:** https://countersign-app.fly.dev
+- **Repository:** https://github.com/parammadan/countersign (private; `theastraway` invited as a collaborator)
 
 ## What I built
 

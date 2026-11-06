@@ -1,5 +1,5 @@
 # Fly.io: one always-on machine + a volume for the SQLite DB and stored PDFs.
-app = "countersign"
+app = "countersign-app"
 primary_region = "ewr"
 
 [build]

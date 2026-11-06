@@ -169,5 +169,6 @@ Buffer: Days 6–7 absorb slips. If Day 3 slips, cut from Day 5 (CSV, branding, 
 - [x] Grader path end to end (browser E2E on all tuning fixtures, incl. Word via LibreOffice in Docker)
 - [x] Detector measured on held-out + final sets
 - [x] API, inbound webhook, outbound webhooks, n8n template, CSV import/export, reminders/expiry, team, password reset
-- [ ] Deploy to Fly.io + Resend domain
-- [ ] Private repo + `theastraway` collaborator
+- [x] Deployed to Fly.io: https://countersign-app.fly.dev (live E2E passing)
+- [ ] Resend domain for real email
+- [x] Private repo + `theastraway` collaborator invited

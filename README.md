@@ -4,7 +4,7 @@
 
 A firm uploads the agreement it already uses (PDF or Word) once. From then on, every new file (one job or case for one client) sends that agreement to the client, chases it, countersigns it for the firm and files the sealed copy. Nobody at the firm has to touch it.
 
-- **Live:** _submission URL goes here after deploy_
+- **Live:** https://countersign-app.fly.dev
 - **What was built and why:** [`docs/SUBMISSION.md`](docs/SUBMISSION.md)
 - **Original plan:** [`docs/PLAN.md`](docs/PLAN.md)
 
