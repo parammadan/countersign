@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { fmtDay } from "@/lib/time";
 import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/auth";
 import { getTemplateVersion } from "@/lib/templates";
@@ -46,7 +47,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
       )}
       {version.status === "published" && (
         <div className="mb-4">
-          <Notice tone="ok">Published {version.published_at ? new Date(version.published_at).toLocaleDateString() : ""}. Read-only: files already sent keep exactly this version.</Notice>
+          <Notice tone="ok">Published {version.published_at ? fmtDay(version.published_at) : ""}. Read-only: files already sent keep exactly this version.</Notice>
         </div>
       )}
       <FieldEditor

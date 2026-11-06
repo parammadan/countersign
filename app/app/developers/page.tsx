@@ -1,4 +1,5 @@
 import { requireAdmin } from "@/lib/auth";
+import { fmtDay } from "@/lib/time";
 import { all } from "@/lib/db";
 import { getWorkspace } from "@/lib/files";
 import { appUrl } from "@/lib/paths";
@@ -21,6 +22,10 @@ export default async function Page() {
   const inbound = `${base}/api/inbound/${ws.inbound_token}`;
   const keys = all<{ id: string; name: string; prefix: string; created_at: string; last_used_at: string | null; revoked_at: string | null }>("SELECT * FROM api_keys WHERE workspace_id = ? ORDER BY created_at DESC", ws.id);
   const hooks = all<{ id: string; url: string; events: string; created_at: string }>("SELECT * FROM webhooks WHERE workspace_id = ? AND active = 1 ORDER BY created_at DESC", ws.id);
+  const agreements = all<{ id: string; name: string; is_default: number; live: number }>(
+    "SELECT id, name, is_default, active_version_id IS NOT NULL AS live FROM templates WHERE workspace_id = ? AND archived = 0 ORDER BY is_default DESC, created_at",
+    ws.id,
+  );
   const deliveries = all<{ id: string; event: string; status: string; attempts: number; response_code: number | null; last_error: string | null; created_at: string; url: string }>(
     "SELECT d.*, w.url FROM webhook_deliveries d JOIN webhooks w ON w.id = d.webhook_id WHERE d.workspace_id = ? ORDER BY d.created_at DESC LIMIT 15",
     ws.id,
@@ -62,19 +67,40 @@ export default async function Page() {
                 <li key={k.id} className={cx("flex items-center justify-between gap-3 px-4 py-2.5", k.revoked_at && "text-muted line-through")}>
                   <span className="min-w-0 truncate">{k.name} <code className="ml-2 text-xs text-muted">{k.prefix}…</code></span>
                   <span className="flex shrink-0 items-center gap-3 text-xs text-muted">
-                    {k.last_used_at ? `used ${new Date(k.last_used_at).toLocaleDateString()}` : "never used"}
+                    {k.last_used_at ? `used ${fmtDay(k.last_used_at)}` : "never used"}
                     {!k.revoked_at && <RevokeKey id={k.id} />}
                   </span>
                 </li>
               ))}
             </ul>
           )}
+          {agreements.length > 0 && (
+            <div className="mt-5 overflow-x-auto rounded-lg border border-line text-sm">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
+                    <th className="px-4 py-2">Agreement</th>
+                    <th className="px-4 py-2"><code>agreement_id</code></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {agreements.map((a) => (
+                    <tr key={a.id} className="border-b border-line last:border-0">
+                      <td className="px-4 py-2">{a.name}{a.is_default ? <span className="ml-2 text-xs text-muted">(default: used when no agreement_id is sent)</span> : null}{!a.live ? <span className="ml-2 text-xs text-warn">not published</span> : null}</td>
+                      <td className="px-4 py-2"><code className="text-xs">{a.id}</code></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
           <div className="mt-5 space-y-3 text-sm">
             <Code>{`# Open a file and send the agreement
 curl -X POST ${base}/api/v1/files \\
   -H "Authorization: Bearer cs_live_..." -H "Content-Type: application/json" \\
   -d '{"client_name":"Jordan Sample","client_email":"jordan@example.com",
-       "ref":"2026-0142","prefill":{"fee":"4,500"}}'
+       "ref":"2026-0142","prefill":{"fee":"4,500"}${agreements.length > 1 ? `,
+       "agreement_id":"${agreements[0].id}"` : ""}}'
 
 # Check status / list / fetch the signed PDF
 curl ${base}/api/v1/files/{id}        -H "Authorization: Bearer cs_live_..."

@@ -41,9 +41,9 @@ new file (UI · CSV · REST API · inbound webhook · n8n) ─┤
   | corpus | docs | who wrote it | precision | recall |
   |---|---|---|---|---|
   | `fixtures/agreements` (tuning) | 17 (incl. 3 DOCX) | written alongside the detector | 0.99 | 0.96 |
-  | `fixtures/holdout` | 9 | written without seeing the detector; then used for tuning | 0.96 | 0.90 |
+  | `fixtures/holdout` | 9 | written without seeing the detector; then used for tuning | 0.95 | 0.89 |
   | `fixtures/final`, **first run** | 8 | written without seeing the detector; 4 AI/software-consulting agreements in Google Docs / Word layouts + 4 other services agreements | **0.89** | **0.85** |
-  | `fixtures/final`, after one round of general fixes | 8 | same | 0.96 | 0.92 |
+  | `fixtures/final`, after general fixes | 8 | same | 0.97 | 0.91 |
 
   The first run on `final` is the honest number for an agreement it has never seen. Client signature lines were found in 8 of 8 documents in that first run. Whatever the detector misses, the admin fixes in the editor before publishing, and publishing is blocked until there is a client signature. Run `npm run test:detect` for the full per-field report.
 - **Legal trail.** An ESIGN-style consumer disclosure with logged consent, explicit intent-to-sign, an optional emailed one-time code, an append-only audit log (SQLite triggers reject UPDATE/DELETE) with IP, user agent and timestamps, and SHA-256 of the original, client-signed and final PDFs. The certificate of completion is appended to the final PDF.

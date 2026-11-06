@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { fmtDateTime } from "@/lib/time";
 import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/auth";
 import { all, one } from "@/lib/db";
@@ -28,7 +29,7 @@ function stepDone(f: FileRow, k: string) {
   return null;
 }
 
-const fmt = (iso: string) => new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+const fmt = fmtDateTime;
 
 export default async function Page({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ created?: string }> }) {
   const s = await requireSession();
@@ -80,7 +81,13 @@ export default async function Page({ params, searchParams }: { params: Promise<{
           </Notice>
         </div>
       )}
-      {f.status === "declined" && <div className="mb-4"><Notice tone="error">Declined by the client: “{f.decline_reason}”</Notice></div>}
+      {f.status === "declined" && (
+        <div className="mb-4">
+          <Notice tone="error">
+            Declined by the client: “{f.decline_reason}”. If the agreement itself needs changing, publish a new version and open a new file. If it was a misunderstanding, use <b>Send again</b>.
+          </Notice>
+        </div>
+      )}
       {inviteFailed && (f.status === "sent" || f.status === "viewed") && (
         <div className="mb-4">
           <Notice tone="error">The last email to {f.client_email} wasn&apos;t delivered ({lastInvite?.error ?? "provider error"}). Use Copy signing link to send it another way, or Resend email to try again.</Notice>

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { fmtDateTime } from "@/lib/time";
 import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/auth";
 import { one } from "@/lib/db";
@@ -22,7 +23,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
         {m.file_id && <> / <Link href={`/app/files/${m.file_id}`} className="hover:text-ink">file</Link></>}
       </div>
       <h1 className="mb-1 text-xl font-semibold">{m.subject}</h1>
-      <p className="mb-4 text-sm text-muted">To {m.to_email} · {new Date(m.created_at).toLocaleString()} · {m.status}</p>
+      <p className="mb-4 text-sm text-muted">To {m.to_email} · {fmtDateTime(m.created_at)} · {m.status}</p>
       <Card className="overflow-hidden">
         <iframe title="Email preview" sandbox="allow-popups allow-popups-to-escape-sandbox" srcDoc={m.html.replace("<head>", '<head><base target="_blank">').replace("<html>", '<html><head><base target="_blank"></head>')} className="h-[640px] w-full bg-white" />
       </Card>

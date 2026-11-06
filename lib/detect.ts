@@ -22,6 +22,13 @@ const SIG_RE = /\b(signature|signed|sign here|signatory|by)\b/i;
 function classify(label: string): FieldType {
   const l = label.toLowerCase().replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").replace(/[:.\s]+$/, "").trim();
   if (/\b(approved|accepted|agreed|acknowledged|executed|witnessed)\s+by$/.test(l)) return "signature";
+  // "signatory email", "name of signatory", "signature date": the other word says what goes in the blank
+  if (/\b(signature|signed|signatory|signer)\b/.test(l)) {
+    if (/\be-?mail\b/.test(l)) return "email";
+    if (/\bname\b/.test(l)) return "name";
+    if (/\btitle\b|\bposition\b/.test(l)) return "title";
+    if (/\bdate\b/.test(l)) return "date";
+  }
   if (l === "x") return "signature";
   if (/^on$|^on date$/.test(l)) return "date";
   if (/^dear$/.test(l)) return "name";
@@ -33,7 +40,8 @@ function classify(label: string): FieldType {
   if (/\bdate\b|\bdated\b|\bday of\b|\bmade on\b|\bentered into on\b|\bas of\b|\bon this\b|\beffective\b|\bbegins? on\b|\bcommenc\w* on\b|\bstart\w* on\b|\bends? on\b|\bexpires? on\b|\bdue$|\bdue on\b|\bdeadline\b/.test(l)) return "date";
   if (/\btitle\b|\bposition\b|\bcapacity\b|\bits\s*$|\boffice held\b|\bdesignation\b/.test(l)) return "title";
   if (/\b(project|matter|business|trade|file|case|account|product|event|venue|program|campaign|job|property)\s+name\b/.test(l)) return /business|trade/.test(l) ? "company" : "text";
-  if (/\b(printed|print|full|legal)?\s*name\b/.test(l)) return "name";
+  if (/\blegal name\b|\bentity name\b|\bcompany name\b|\borganization name\b/.test(l)) return "company";
+  if (/\b(printed|print|full)?\s*name\b/.test(l)) return "name";
   if (/\b(company|organization|organisation|entity|business)\b/.test(l)) return "company";
   return "text";
 }
@@ -152,7 +160,8 @@ function cleanLabel(s: string): string {
 }
 
 function lastWords(s: string, n: number) {
-  const w = cleanLabel(s).split(" ").filter(Boolean);
+  const tail = s.split(/[)”"]\s*[,.;]?\s+/).pop() ?? s; // text after the last closing paren/quote
+  const w = cleanLabel(tail).split(" ").filter(Boolean);
   return w.slice(-n).join(" ");
 }
 
@@ -241,7 +250,8 @@ export function detectFields(ex: Extracted, opts: DetectOptions = {}): Detection
         const paren = /^\s*\(([^)]{2,70})\)/.exec(afterText);
         if (paren && !labelParty) labelParty = partyOf(paren[1], defined);
         // `and ________ ("Client")`: the defined term after the blank names whose name goes there
-        const after = /^\s*,?\s*\(?\s*(?:the\s+|each\s+)?["“]([^"”]{2,40})["”]/.exec(afterText);
+        const nextStart = afterText.trim() ? afterText : (lines[li + 1]?.text ?? "").slice(0, 60);
+        const after = /^\s*,?\s*\(?\s*(?:the\s+|each\s+|hereinafter\s+)?["“]([^"”]{2,40})["”]/.exec(nextStart);
         if (after && (type === "text" || type === "company")) {
           const p = partyOf(after[1], defined);
           if (p) {
@@ -320,14 +330,15 @@ export function detectFields(ex: Extracted, opts: DetectOptions = {}): Detection
           const signerish = type !== "text" && type !== "company";
           if (!(endsColon && words <= 6 && (signerish || SIG_RE.test(t))) && !(/^(signature|by)$/i.test(t) && words === 1)) return;
           // caption printed under a drawn line ("____\nSignature"): handled by the drawn-line rule
-          if (page.hlines.some((h) => h.y <= line.y + 2 && line.y - h.y < line.size * 1.6 && h.x1 > seg.x0 - 5 && h.x0 < seg.x1 + 5)) return;
-          if (raws.some((r) => r.page === page.index && r.lineY < line.y - 1 && line.y - (r.y + r.h) < line.size * 1.2 && r.x < seg.x1 + 5 && r.x + r.w > seg.x0 - 5)) return;
+          const cellBelow = endsColon && page.hlines.some((h) => h.y >= line.bottom - 3 && h.y - line.bottom < line.size * 1.2 && h.x0 <= seg.x0 + 5 && h.x1 > seg.x1 + 50);
+          if (!cellBelow && page.hlines.some((h) => h.y <= line.y + 2 && line.y - h.y < line.size * 1.6 && h.x1 > seg.x0 - 5 && h.x0 < seg.x1 + 5)) return;
+          if (raws.some((r) => r.page === page.index && r.y + r.h <= line.y + 3 && line.y - (r.y + r.h) < line.size * 1.2 && r.x < seg.x1 + 5 && r.x + r.w > seg.x0 - 5)) return;
           const next = segs[si + 1];
           const right = next ? next.x0 - 6 : Math.min(page.width - 50, seg.x1 + 220);
           const x0 = seg.x1 + 4;
           if (right - x0 < 50) return;
           // a drawn line right of/under the label strengthens it
-          const hl = page.hlines.find((h) => !usedHLines.has(h) && h.y > line.y - 2 && h.y < line.bottom + line.size && h.x1 > x0 && h.x0 < right);
+          const hl = page.hlines.find((h) => !usedHLines.has(h) && h.y > line.y - 2 && h.y < line.bottom + line.size && h.x1 > x0 && h.x0 < right && h.x0 < x0 + 40);
           if (hl) usedHLines.add(hl);
           const fx0 = hl ? Math.max(x0, hl.x0) : x0;
           const fx1 = hl ? Math.min(right, hl.x1) : right;
@@ -351,7 +362,7 @@ export function detectFields(ex: Extracted, opts: DetectOptions = {}): Detection
       const cb = /☐|□|\[\s\]/g;
       while ((m = cb.exec(line.text))) {
         const c = line.chars[m.index];
-        const after = cleanLabel(line.text.slice(m.index + m[0].length, m.index + m[0].length + 60));
+        const after = cleanLabel(line.text.slice(m.index + m[0].length, m.index + m[0].length + 60).split(/☐|□|\[\s\]/)[0]);
         raws.push({
           page: page.index,
           type: "checkbox",
@@ -377,9 +388,13 @@ export function detectFields(ex: Extracted, opts: DetectOptions = {}): Detection
       if (!seg) continue;
       let t = cleanLabel(seg.text);
       if (!t || t.split(" ").length > 7) continue;
-      // a form row ("Label ____") under this line, or text sitting just above it, means it's a box edge
+      // a form row ("Label ____" or "Label:" in a cell) under this line, or text sitting just above it,
+      // means it's a box or table edge, not a signature rule. (Text above that is itself the caption of
+      // the previous rule, as in stacked "____ / Printed name / ____ / Title" blocks, doesn't count.)
       if (/_{3,}/.test(under.text)) continue;
-      if (lines.some((l) => l.bottom > hl.y - 18 && l.bottom <= hl.y + 1 && overlap(l, hl.x0 + 10, hl.x1 - 10) && l.text.trim().length > 1)) continue;
+      if (/:\s*$/.test(seg.text.trim())) continue;
+      const isCaptionOfAnotherRule = (l: Line) => page.hlines.some((h2) => h2 !== hl && h2.y <= l.y + 2 && l.y - h2.y < l.size * 1.8 && h2.x1 > l.x0 && h2.x0 < l.x1);
+      if (lines.some((l) => l.bottom > hl.y - 18 && l.bottom <= hl.y + 1 && overlap(l, hl.x0 + 10, hl.x1 - 10) && l.text.trim().length > 1 && !isCaptionOfAnotherRule(l))) continue;
       let type = classify(t);
       if (type === "text" && (SIGN_CAPTION.test(t) || looksLikePersonLine(t))) {
         type = "signature";
@@ -401,6 +416,20 @@ export function detectFields(ex: Extracted, opts: DetectOptions = {}): Detection
         labelParty: partyOf(t, defined),
       });
       usedHLines.add(hl);
+    }
+    // Captions-under rules other than signatures only count inside a signature stack: a signature
+    // rule directly above in the same column. Otherwise they're table/grid rows ("Contact email").
+    for (let i = raws.length - 1; i >= 0; i--) {
+      const r = raws[i];
+      if (r.page !== page.index || !r.reason.startsWith("drawn line above") || r.type === "signature" || r.type === "initials") continue;
+      const sigAbove = raws.some(
+        (o) =>
+          o.page === r.page &&
+          o.type === "signature" &&
+          ((o.y < r.y && r.y - o.y < 170 && Math.abs(o.x - r.x) < 40) || // stacked under the signature
+            (Math.abs(o.y + o.h - (r.y + r.h)) < 6 && r.x > o.x && r.x - (o.x + o.w) < 120)), // beside it on the same rule row
+      );
+      if (!sigAbove) raws.splice(i, 1);
     }
     // 5) signature tables: header row "Party | Signature | Date", one row per party, empty cells
     for (let li = 0; li < lines.length; li++) {
@@ -555,8 +584,20 @@ function assignRoles(raws: Raw[], allLines: Line[][], d: { firm: string[]; clien
     let best: Block | undefined;
     let bestD = Infinity;
     for (const b of blocks) {
-      if (b.anchor.page !== r.page) continue;
       const a = b.anchor;
+      if (a.page === r.page - 1 && r.y < 160) {
+        // block continued at the top of the next page: same column, nothing closer
+        const dx0 = Math.abs(r.x - a.x);
+        if (dx0 <= 160 && !blocks.some((o) => o.anchor.page === r.page && o.anchor.y < r.y)) {
+          const dist = 200 + r.y + dx0;
+          if (dist < bestD) {
+            bestD = dist;
+            best = b;
+          }
+        }
+        continue;
+      }
+      if (a.page !== r.page) continue;
       const sameLine = Math.abs(r.y + r.h - (a.y + a.h)) < 6 || (Math.abs(r.lineY - a.lineY) < 3 && /signature table/.test(a.reason));
       const dx = Math.abs(r.x - a.x);
       const dy = r.y - a.y;
@@ -656,18 +697,28 @@ function assignRoles(raws: Raw[], allLines: Line[][], d: { firm: string[]; clien
       } else if (lp === "client" && type === "company") {
         role = "prefill";
         prefillKey = "client.company";
-      } else if (type === "date" && /effective|dated|day of|as of|date of/i.test(r.label + " " + r.reason)) {
+      } else if (type === "date" && (/^date$/i.test(r.label) || /effective|dated|day of|as of|date of (this|the) agreement|made on|entered into|letter/i.test(r.label + " " + r.reason))) {
+        // the agreement's own date: the day it's sent
         role = "prefill";
         prefillKey = "file.date";
       } else if (type === "date") {
+        // some other date (start date, due date): the firm fills it in per file
         role = "prefill";
-        prefillKey = "file.date";
+        let k = "custom." + slugKey(r.label);
+        while (usedKeys.has(k)) k += "_2";
+        prefillKey = k;
       } else if (/\$\s*$|\b(fee|fees|price|amount|rate|deposit|retainer|cost|total|budget|sum)\b/i.test(r.label)) {
         role = "prefill";
         let k = "custom." + slugKey(r.label.replace(/\$/g, "").split(" ").slice(-3).join(" "));
         while (usedKeys.has(k)) k += "_2";
         prefillKey = k;
         type = "text";
+      } else if (type === "company" && !lp && r.page === 0) {
+        role = "prefill";
+        prefillKey = "client.company";
+      } else if (type === "email" && !lp && r.page === 0 && /contact|client|customer|your/i.test(r.label)) {
+        role = "prefill";
+        prefillKey = "client.email";
       } else if (type === "company" && /^(to|attn|attention)$/i.test(r.label)) {
         role = "prefill";
         prefillKey = "client.company";
@@ -696,7 +747,7 @@ function assignRoles(raws: Raw[], allLines: Line[][], d: { firm: string[]; clien
       y: round(r.y),
       w: round(r.w),
       h: round(r.h),
-      label: r.label,
+      label: r.label.replace(/[\s:$#]+$/, "") || r.label,
       required: role !== "prefill" && type !== "checkbox" ? type === "signature" || type === "initials" || type === "date" || type === "name" : false,
       prefillKey,
       confidence: Math.round(conf * 100) / 100,

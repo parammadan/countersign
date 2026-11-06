@@ -50,7 +50,11 @@ export function FileActions({ fileId, status, link, isAdmin, hasFinal }: { fileI
           </a>
         )}
         {open && <Button name="op" value="remind" variant="secondary" disabled={pending}>Send reminder</Button>}
-        {(open || status === "expired") && <Button name="op" value="resend" variant="secondary" disabled={pending}>{status === "expired" ? "Reopen and resend" : "Resend email"}</Button>}
+        {(open || status === "expired" || status === "declined") && (
+          <Button name="op" value="resend" variant="secondary" disabled={pending}>
+            {status === "expired" ? "Reopen and resend" : status === "declined" ? "Send again" : "Resend email"}
+          </Button>
+        )}
         {link && (open || status === "expired") && <CopyButton text={link} label="Copy signing link" />}
         {!["completed", "voided"].includes(status) && !voiding && (
           <Button type="button" variant="danger" onClick={() => setVoiding(true)}>Void</Button>

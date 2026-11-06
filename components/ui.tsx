@@ -103,7 +103,7 @@ export function timeAgo(iso: string | null | undefined) {
   if (d < 3600) return `${Math.floor(d / 60)}m ago`;
   if (d < 86400) return `${Math.floor(d / 3600)}h ago`;
   if (d < 86400 * 30) return `${Math.floor(d / 86400)}d ago`;
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: process.env.APP_TZ || "America/New_York" });
 }
 
 export function Logo({ className }: { className?: string }) {

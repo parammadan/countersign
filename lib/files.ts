@@ -118,11 +118,12 @@ function templateName(f: FileRow) {
 }
 
 export async function sendFile(f: FileRow, ws: Workspace, kind: "invite" | "resend" | "reminder", actor: Actor, ctx: Ctx): Promise<FileRow> {
-  if (["completed", "declined", "voided", "signed"].includes(f.status)) throw new AppError(`This file is ${f.status}; it can't be sent again.`, 409);
+  if (["completed", "voided", "signed"].includes(f.status)) throw new AppError(`This file is ${f.status}; it can't be sent again.`, 409);
+  if (f.status === "declined" && kind !== "resend") throw new AppError("This file was declined. Use Send again.", 409);
   const t = now();
-  if (f.status === "draft" || f.status === "expired") {
+  if (f.status === "draft" || f.status === "expired" || f.status === "declined") {
     // (re)starting the clock: reminders count from now
-    run("UPDATE files SET status = 'sent', sent_at = ?, reminders_sent = 0, expires_at = ? WHERE id = ?", t, addDays(t, ws.expiry_days), f.id);
+    run("UPDATE files SET status = 'sent', sent_at = ?, reminders_sent = 0, expires_at = ?, declined_at = NULL, consent_at = NULL WHERE id = ?", t, addDays(t, ws.expiry_days), f.id);
   } else if (kind === "resend") {
     run("UPDATE files SET expires_at = ? WHERE id = ?", addDays(t, ws.expiry_days), f.id);
   }
@@ -244,6 +245,11 @@ export function verifyOtp(f: FileRow, ws: Workspace, code: string, ctx: Ctx): bo
 
 const locks = new Set<string>();
 
+export function recordConsent(f: FileRow, ws: Workspace, ctx: Ctx) {
+  const u = run("UPDATE files SET consent_at = ? WHERE id = ? AND consent_at IS NULL", now(), f.id);
+  if (Number(u.changes) === 1) audit(ws.id, f.id, "file.consented", f.client_email, ctx, { disclosure_version: "2026-11-05" });
+}
+
 function parsePng(dataUrl: string | undefined, what: string): Uint8Array {
   const m = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl ?? "");
   if (!m) throw new AppError(`Add your ${what} first.`);
@@ -275,10 +281,7 @@ export async function completeClientSigning(tok: string, input: SignInput, ctx: 
   if (locks.has(f.id)) throw new AppError("Already signing. Please wait.", 409);
   locks.add(f.id);
   try {
-    if (!f.consent_at) {
-      run("UPDATE files SET consent_at = ? WHERE id = ?", now(), f.id);
-      audit(ws.id, f.id, "file.consented", f.client_email, ctx);
-    }
+    recordConsent(f, ws, ctx);
     const mine = fields.filter((x) => x.role === "client");
     const values = prefillValues(f, ws, fields);
     const signedAt = now();
@@ -389,7 +392,7 @@ async function countersignOnce(f: FileRow, ws: Workspace, actor: Actor, ctx: Ctx
   const signedEv = events.find((e) => e.type === "file.signed");
   const final = await appendCertificate(stamped, {
     envelopeId: f.id,
-    documentName: `${templateName(f)} (v${version.version}) – ${f.title}`,
+    documentName: f.title.startsWith(templateName(f)) ? `${templateName(f)} (version ${version.version}), client ${f.client_name}${f.ref ? `, file ${f.ref}` : ""}` : `${templateName(f)} (version ${version.version}): ${f.title}`,
     firmName: ws.legal_name,
     originalSha256: version.sha256,
     clientSignedSha256: doc.sha256,

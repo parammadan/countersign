@@ -25,9 +25,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ s
   const like = `%${q.replace(/[%_]/g, "")}%`;
   const files = all<FileRow & { agreement: string }>(
     `SELECT f.*, t.name AS agreement FROM files f JOIN template_versions v ON v.id = f.template_version_id JOIN templates t ON t.id = v.template_id
-     WHERE f.workspace_id = ? AND ${tab.where.replace(/status/g, "f.status")} AND (? = '' OR f.title LIKE ? OR f.client_name LIKE ? OR f.client_email LIKE ? OR f.ref LIKE ?)
+     WHERE f.workspace_id = ? AND ${tab.where.replace(/status/g, "f.status")} AND (? = '' OR f.title LIKE ? OR f.client_name LIKE ? OR f.client_email LIKE ? OR f.ref LIKE ? OR f.client_company LIKE ?)
      ORDER BY f.created_at DESC LIMIT 200`,
-    s.workspaceId, q, like, like, like, like,
+    s.workspaceId, q, like, like, like, like, like,
   );
   return (
     <>
@@ -51,7 +51,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ s
         </div>
         <form className="lg:w-72">
           <input type="hidden" name="status" value={tab.key} />
-          <input name="q" defaultValue={q} placeholder="Search client, email, ref…" className={inputCls} />
+          <input name="q" defaultValue={q} placeholder="Search client, company, email, ref…" aria-label="Search files" className={inputCls} />
         </form>
       </div>
       <Card>

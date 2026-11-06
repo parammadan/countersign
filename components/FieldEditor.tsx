@@ -270,7 +270,7 @@ export function FieldEditor({
                       style={{ left: pct(f.x, p.width), top: pct(f.y, p.height), width: pct(f.w, p.width), height: pct(f.h, p.height) }}
                     >
                       <span className={cx("truncate px-1", f.type === "signature" ? "text-[11px]" : "")} style={{ fontSize: Math.max(8, Math.min(11, f.h * scale * 0.5)) }}>
-                        {f.type === "checkbox" ? "" : f.role === "prefill" ? `⟨${f.label}⟩` : f.label}
+                        {f.type === "checkbox" ? "" : f.role === "prefill" ? `⟨${f.label}⟩` : boxText(f)}
                       </span>
                       {low && <span className="absolute -top-0.5 right-0.5 text-[9px] text-amber-700">?</span>}
                       {!readOnly && (
@@ -282,7 +282,7 @@ export function FieldEditor({
                             snapshot();
                             drag.current = { id: f.id, mode: "resize", sx: e.clientX, sy: e.clientY, f, scale };
                           }}
-                          className={cx("absolute right-0 bottom-0 h-2.5 w-2.5 cursor-se-resize", ROLE_STYLE[f.role].solid, sel === f.id ? "opacity-100" : "opacity-0 group-hover:opacity-100")}
+                          className={cx("absolute right-0 bottom-0 h-3.5 w-3.5 cursor-se-resize rounded-tl-sm", ROLE_STYLE[f.role].solid, sel === f.id ? "opacity-100" : "opacity-0 group-hover:opacity-100")}
                         />
                       )}
                     </div>
@@ -382,8 +382,35 @@ export function FieldEditor({
               </label>
               <label className="block">
                 <span className="mb-1 block text-xs font-medium text-muted">Label</span>
-                <input className={inputCls} value={selected.label} maxLength={120} onChange={(e) => update(selected.id, { label: e.target.value })} />
+                <input
+                  className={inputCls}
+                  value={selected.label}
+                  maxLength={120}
+                  onChange={(e) => {
+                    const label = e.target.value;
+                    // a blank asked at file creation keeps a key that matches its label
+                    const key = selected.role === "prefill" && selected.prefillKey?.startsWith("custom.") ? `custom.${slug(label)}` : selected.prefillKey;
+                    update(selected.id, { label, prefillKey: key && fields.some((f) => f.id !== selected.id && f.prefillKey === key) ? selected.prefillKey : key });
+                  }}
+                />
               </label>
+              <div className="grid grid-cols-4 gap-1.5">
+                {(["x", "y", "w", "h"] as const).map((k) => (
+                  <label key={k} className="block">
+                    <span className="mb-0.5 block text-[10px] font-medium uppercase text-muted">{k}</span>
+                    <input
+                      type="number"
+                      step={1}
+                      className={cx(inputCls, "px-1.5 py-1 text-xs")}
+                      value={Math.round(selected[k])}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        if (Number.isFinite(v)) update(selected.id, { [k]: k === "w" || k === "h" ? Math.max(6, v) : v } as Partial<Field>);
+                      }}
+                    />
+                  </label>
+                ))}
+              </div>
               {selected.role === "prefill" && (
                 <label className="block">
                   <span className="mb-1 block text-xs font-medium text-muted">Filled from</span>
@@ -426,6 +453,13 @@ export function FieldEditor({
       </aside>
     </div>
   );
+}
+
+// Show the field type on the box unless the label already says it, so a mistyped field stands out.
+function boxText(f: Field) {
+  const t = TYPE_LABEL[f.type];
+  const word = t.split(" ").pop()!.toLowerCase();
+  return f.label.toLowerCase().includes(word) || f.label === t ? f.label : `${t} · ${f.label}`;
 }
 
 function clamp(v: number, lo: number, hi: number) {

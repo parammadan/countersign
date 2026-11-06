@@ -63,6 +63,9 @@ export function SigningRoom(p: Props) {
   };
   const required = mine.filter((f) => f.required || f.type === "signature" || f.type === "initials");
   const remaining = required.filter((f) => !isDone(f));
+  // optional fields the client hasn't looked at yet (they can skip them, but we walk them through)
+  const [skipped, setSkipped] = useState<Set<string>>(new Set());
+  const optionalLeft = mine.filter((f) => !required.includes(f) && f.type !== "date" && !isDone(f) && !skipped.has(f.id));
   const progress = required.length ? Math.round(((required.length - remaining.length) / required.length) * 100) : 100;
 
   function goTo(f: SignerField | undefined) {
@@ -118,7 +121,7 @@ export function SigningRoom(p: Props) {
           </p>
           <ol className="mt-5 space-y-2 text-sm">
             <li className="flex gap-3"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand/10 text-xs font-semibold text-brand">1</span>Review the agreement</li>
-            <li className="flex gap-3"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand/10 text-xs font-semibold text-brand">2</span>Fill in the {required.length} marked field{required.length === 1 ? "" : "s"}</li>
+            <li className="flex gap-3"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand/10 text-xs font-semibold text-brand">2</span>Fill in the {required.length} required field{required.length === 1 ? "" : "s"}{mine.length - required.length > 0 ? " (and any optional ones that apply)" : ""}</li>
             <li className="flex gap-3"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand/10 text-xs font-semibold text-brand">3</span>Sign. We email you the signed copy</li>
           </ol>
           <label className="mt-6 flex items-start gap-3 rounded-lg border border-line bg-gray-50 p-3 text-sm">
@@ -128,7 +131,16 @@ export function SigningRoom(p: Props) {
               <button type="button" className="font-medium text-brand underline" onClick={() => setShowDisclosure(true)}>Read the disclosure</button>
             </span>
           </label>
-          <Button className="mt-5 w-full py-2.5" disabled={!consent} onClick={() => setStage("sign")}>Review and sign</Button>
+          <Button
+            className="mt-5 w-full py-2.5"
+            disabled={!consent}
+            onClick={() => {
+              fetch(`/api/sign/${p.token}/consent`, { method: "POST" }).catch(() => {});
+              setStage("sign");
+            }}
+          >
+            Review and sign
+          </Button>
           <button className="mt-3 w-full text-center text-xs text-muted hover:text-ink" onClick={() => setDeclining(true)}>I don&apos;t want to sign this</button>
         </div>
         <p className="mt-4 text-center text-xs text-muted">Sent to {p.clientEmail}. Secured by Countersign.</p>
@@ -150,11 +162,28 @@ export function SigningRoom(p: Props) {
               <div className="h-full bg-brand transition-all" style={{ width: `${progress}%` }} />
             </div>
           </div>
-          <span className="hidden text-xs text-muted sm:inline">{remaining.length ? `${remaining.length} left` : "Ready to sign"}</span>
+          <span className="hidden text-xs text-muted sm:inline">
+            {remaining.length ? `${remaining.length} left` : optionalLeft.length ? `${optionalLeft.length} optional` : "Ready to sign"}
+          </span>
           {remaining.length > 0 ? (
             <Button onClick={() => goTo(remaining[0])}>Next field</Button>
           ) : (
-            <Button onClick={() => setConfirm(true)}>Finish</Button>
+            <>
+              {optionalLeft.length > 0 && (
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    const f = optionalLeft[0];
+                    setSkipped((s) => new Set(s).add(f.id));
+                    goTo(f);
+                    activate(f);
+                  }}
+                >
+                  Optional field
+                </Button>
+              )}
+              <Button onClick={() => setConfirm(true)}>Finish</Button>
+            </>
           )}
         </div>
       </div>
@@ -219,7 +248,14 @@ export function SigningRoom(p: Props) {
           {remaining.length ? (
             <Button onClick={() => goTo(remaining[0])}>Go to the next required field ({remaining.length} left)</Button>
           ) : (
-            <Button className="px-6 py-2.5" onClick={() => setConfirm(true)}>Finish and sign</Button>
+            <>
+              {optionalLeft.length > 0 && (
+                <p className="mb-3 text-sm text-muted">
+                  {optionalLeft.length} optional field{optionalLeft.length === 1 ? "" : "s"} left ({optionalLeft.map((f) => f.label).slice(0, 3).join(", ")}). Fill {optionalLeft.length === 1 ? "it" : "them"} in if {optionalLeft.length === 1 ? "it applies" : "they apply"}, or finish now.
+                </p>
+              )}
+              <Button className="px-6 py-2.5" onClick={() => setConfirm(true)}>Finish and sign</Button>
+            </>
           )}
           <div className="mt-3">
             <button className="text-xs text-muted hover:text-ink" onClick={() => setDeclining(true)}>Decline to sign</button>

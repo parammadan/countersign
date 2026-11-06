@@ -22,14 +22,14 @@ export function VerifyForm() {
           setBusy(false);
         }}
       >
-        <input name="file" type="file" accept="application/pdf,.pdf" required className="min-w-0 flex-1 text-sm" />
+        <input name="file" type="file" accept="application/pdf,.pdf" required aria-label="Choose the signed PDF" className="min-w-0 flex-1 text-sm" />
         <Button disabled={busy}>{busy ? "Checking…" : "Verify"}</Button>
       </form>
       {r?.error && <Notice tone="error">{r.error}</Notice>}
       {r && !r.error && (r.match ? (
         <Notice tone="ok">
           <b>Authentic.</b> {r.kind} for “{r.title}”, sealed by Countersign for {r.firm}
-          {r.completed_at ? ` on ${new Date(r.completed_at).toLocaleString()}` : ""}.
+          {r.completed_at ? ` on ${new Date(r.completed_at).toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" })}` : ""}.
           {r.voided && <b> The sender has since voided this file.</b>}
           <div className="mt-1 break-all font-mono text-[11px] opacity-80">sha256 {r.sha256}</div>
         </Notice>

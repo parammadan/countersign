@@ -44,6 +44,7 @@ export function CsvImport() {
           name="csv"
           type="file"
           accept=".csv,text/csv"
+          aria-label="CSV file of clients"
           required
           className="text-sm"
           onChange={(e) => {
