@@ -1,5 +1,5 @@
 import { test, expect, devices, type Page } from "@playwright/test";
-import { adoptCountersignature, newFile, signup, uid, uploadAndPublish } from "./helpers";
+import { adoptCountersignature, newFile, uploadAndPublish } from "./helpers";
 
 // Visual regression: key screens on desktop and on a phone, compared against committed baselines.
 // Screenshots differ slightly between operating systems (font rendering), so the baselines are per-OS and
@@ -10,13 +10,27 @@ test.skip(!process.env.VISUAL, "set VISUAL=1 to run the visual regression suite"
 // anything that changes run to run: generated emails, times, ids in links
 function dynamic(page: Page) {
   return [
-    page.getByText(/@example\.com/),
     page.getByText(/\b\d{1,2}:\d{2}\s?(AM|PM)\b|just now|\bago\b|\bUTC\b|\d{4}-\d{2}-\d{2}/),
     page.locator('a[href*="/s/"], code'),
+    // the signing link is a random token whose rendered width varies, so mask its whole line
+    page.locator("p, div").filter({ hasText: /^Signing link:/ }),
   ];
 }
+// Fixed synthetic identities, so text widths (and form values) are identical every run. The test server's
+// database starts empty on each run, so these never collide.
+async function signupFixed(page: Page) {
+  await page.goto("/signup");
+  await page.getByLabel("Firm name").fill("Northwind Advisory");
+  await page.getByLabel("Legal entity name").fill("Northwind Advisory, LLC");
+  await page.getByLabel("Your name").fill("Avery Tester");
+  await page.getByLabel("Work email").fill("owner-visual@example.com");
+  await page.getByLabel("Password").fill("correct-horse-42");
+  await page.getByRole("button", { name: "Create workspace" }).click();
+  await expect(page).toHaveURL(/\/app$/);
+}
+
 const shot = (page: Page, name: string, fullPage = true) =>
-  expect(page).toHaveScreenshot(`${name}.png`, { fullPage, mask: dynamic(page), maxDiffPixelRatio: 0.01, animations: "disabled" });
+  expect(page).toHaveScreenshot(`${name}.png`, { fullPage, mask: dynamic(page), maxDiffPixels: 20, animations: "disabled" });
 
 test("public screens", async ({ page }) => {
   await page.goto("/");
@@ -28,7 +42,7 @@ test("public screens", async ({ page }) => {
 });
 
 test("app screens, desktop and phone", async ({ page, browser }) => {
-  await signup(page, "Northwind Advisory", "Northwind Advisory, LLC");
+  await signupFixed(page);
   await shot(page, "overview-empty");
   await uploadAndPublish(page, "02-msa-two-column.pdf");
   await page.goto("/app/agreements");
@@ -36,7 +50,7 @@ test("app screens, desktop and phone", async ({ page, browser }) => {
   await adoptCountersignature(page);
   await page.goto("/app/files/new");
   await shot(page, "new-file");
-  const { link } = await newFile(page, { name: "Jordan Sample", email: `client-${uid()}@example.com`, ref: "2026-0142" });
+  const { link } = await newFile(page, { name: "Jordan Sample", email: "client-visual@example.com", ref: "2026-0142" });
   await shot(page, "file");
   await page.goto("/app");
   await shot(page, "overview");
