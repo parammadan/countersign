@@ -12,7 +12,7 @@ export const metadata = { title: "Agreements" };
 
 const VIEW_LABEL: Record<LibraryView, string> = { all: "All", live: "Live", draft: "Drafts", archived: "Archived" };
 
-export default async function Page({ searchParams }: { searchParams: Promise<{ published?: string; error?: string; view?: string; q?: string }> }) {
+export default async function Page({ searchParams }: { searchParams: Promise<{ published?: string; error?: string; view?: string; q?: string; archived?: string; restored?: string }> }) {
   const s = await requireSession();
   const sp = await searchParams;
   const admin = s.role !== "staff";
@@ -44,6 +44,19 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
         </div>
       )}
 
+      {sp.archived && library.find((a) => a.id === sp.archived) && (
+        <div className="mb-4">
+          <Notice tone="ok">
+            “{library.find((a) => a.id === sp.archived)!.name}” is archived. It&apos;s no longer offered for new files; files already sent and signed are unaffected.{" "}
+            <Link className="font-medium underline" href="/app/agreements?view=archived">See archived agreements</Link>
+          </Notice>
+        </div>
+      )}
+      {sp.restored && library.find((a) => a.id === sp.restored) && (
+        <div className="mb-4">
+          <Notice tone="ok">“{library.find((a) => a.id === sp.restored)!.name}” is restored and can be used for new files again.</Notice>
+        </div>
+      )}
       {library.length === 0 ? (
         admin ? (
           <Card className="p-5 sm:p-6">

@@ -239,6 +239,8 @@ export async function newDraftAction(fd: FormData) {
 }
 
 export async function templateAction(_: FormState, fd: FormData): Promise<FormState> {
+  // archive and restore move the card to another tab, so they confirm on the page, not inside the card
+  let then: string | null = null;
   try {
     const sess = await requireAdmin();
     const tid = s(fd.get("templateId"));
@@ -260,18 +262,19 @@ export async function templateAction(_: FormState, fd: FormData): Promise<FormSt
       });
     } else if (op === "archive") {
       run("UPDATE templates SET archived = 1, is_default = 0 WHERE id = ?", tid);
-      done = "Archived. Files already sent are unaffected.";
+      then = `/app/agreements?archived=${encodeURIComponent(tid)}`;
     } else if (op === "restore") {
       run("UPDATE templates SET archived = 0 WHERE id = ?", tid);
-      done = "Restored.";
+      then = `/app/agreements?restored=${encodeURIComponent(tid)}`;
     } else {
       throw new AppError("Unknown action.");
     }
     revalidatePath("/app/agreements");
-    return { ok: done };
+    if (!then) return { ok: done };
   } catch (e) {
     return fail(e);
   }
+  redirect(then);
 }
 
 // ---------- settings ----------
