@@ -7,9 +7,9 @@ import { Button, Field, Input, Notice, Select } from "./ui";
 
 type T = { id: string; name: string; prefill: { key: string; label: string }[] };
 
-export function NewFileForm({ templates }: { templates: T[] }) {
+export function NewFileForm({ templates, initial }: { templates: T[]; initial?: string }) {
   const [st, act, pending] = useActionState<FormState, FormData>(createFileAction, undefined);
-  const [tid, setTid] = useState(templates[0].id);
+  const [tid, setTid] = useState(templates.find((x) => x.id === initial)?.id ?? templates[0].id);
   const t = templates.find((x) => x.id === tid) ?? templates[0];
   return (
     <ActionForm action={act} className="space-y-5">

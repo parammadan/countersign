@@ -7,8 +7,9 @@ import { NewFileForm } from "@/components/NewFileForm";
 
 export const metadata = { title: "New file" };
 
-export default async function Page() {
+export default async function Page({ searchParams }: { searchParams: Promise<{ template?: string }> }) {
   const s = await requireSession();
+  const { template } = await searchParams;
   const tpls = all<{ id: string; name: string; is_default: number; fields_json: string }>(
     `SELECT t.id, t.name, t.is_default, v.fields_json FROM templates t JOIN template_versions v ON v.id = t.active_version_id
      WHERE t.workspace_id = ? AND t.archived = 0 ORDER BY t.is_default DESC, t.created_at DESC`,
@@ -23,7 +24,7 @@ export default async function Page() {
         </Notice>
       ) : (
         <Card className="max-w-2xl p-5 sm:p-6">
-          <NewFileForm templates={tpls.map((t) => ({ id: t.id, name: t.name, prefill: customPrefillKeys(JSON.parse(t.fields_json) as Field[]) }))} />
+          <NewFileForm initial={template} templates={tpls.map((t) => ({ id: t.id, name: t.name, prefill: customPrefillKeys(JSON.parse(t.fields_json) as Field[]) }))} />
         </Card>
       )}
     </>
