@@ -12,8 +12,10 @@ const saved = (page: Page) => expect(page.getByRole("status").filter({ hasText: 
 
 async function toFirstPage(page: Page) {
   const prev = page.getByRole("button", { name: "Previous page" });
-  for (let i = 0; i < 5 && (await prev.isEnabled()); i++) await prev.click();
-  await expect(page.getByText(/^Page 1 of \d+$/)).toBeVisible();
+  await expect(async () => {
+    if (await prev.isEnabled()) await prev.click();
+    await expect(page.getByText(/^Page 1 of \d+$/)).toBeVisible({ timeout: 1000 });
+  }).toPass({ timeout: 15_000 });
 }
 
 async function dropFile(page: Page, file: string) {

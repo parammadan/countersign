@@ -221,8 +221,14 @@ export function FieldEditor({
     el?.focus({ preventScroll: true });
   }
 
+  // while a page jump scrolls smoothly, the pages it passes don't change the indicator
+  const jumping = useRef(0);
+  const onCurrentPage = useCallback((p: number) => {
+    if (Date.now() > jumping.current) setPage(p);
+  }, []);
   function goToPage(i: number) {
     const n = Math.max(0, Math.min(pages.length - 1, i));
+    jumping.current = Date.now() + 900;
     setPage(n);
     document.querySelector(`[data-page="${n}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
@@ -388,7 +394,7 @@ export function FieldEditor({
             url={pdfUrl}
             pages={pages}
             zoom={zoom}
-            onCurrentPage={setPage}
+            onCurrentPage={onCurrentPage}
             className="overflow-x-auto"
             onPageClick={(pi, x, y) => {
               if (readOnly) return;
