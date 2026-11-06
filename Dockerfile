@@ -20,7 +20,11 @@ COPY --from=build /app/public ./public
 COPY --from=build /app/node_modules/pdfjs-dist ./node_modules/pdfjs-dist
 # pdfjs needs DOMMatrix in Node, polyfilled from its optional @napi-rs/canvas dependency
 COPY --from=build /app/node_modules/@napi-rs ./node_modules/@napi-rs
-RUN mkdir -p /data && chown node:node /data
+COPY --from=build /app/scripts/converter.mjs ./converter.mjs
+# Word files are parsed by LibreOffice under a separate user that can't read /data (mode 700, owned by node).
+RUN useradd --system --no-create-home --shell /usr/sbin/nologin convert \
+ && mkdir -p /data && chown node:node /data && chmod 700 /data
+ENV CONVERTER_URL=http://127.0.0.1:8091
 EXPOSE 8080
-# Volumes (e.g. Fly) mount root-owned: fix ownership, then drop to the unprivileged node user.
-CMD ["sh", "-c", "[ \"$(stat -c %U \"$DATA_DIR\")\" = node ] || chown -R node:node \"$DATA_DIR\"; exec setpriv --reuid=node --regid=node --init-groups node server.js"]
+COPY --chmod=755 scripts/docker-start.sh /usr/local/bin/docker-start.sh
+CMD ["/usr/local/bin/docker-start.sh"]

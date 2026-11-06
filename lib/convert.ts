@@ -77,7 +77,26 @@ async function slot<T>(fn: () => Promise<T>): Promise<T> {
 
 async function convertWithLibreOffice(data: Buffer, ext: string): Promise<Buffer> {
   if (waiting.length > 10) throw new ConvertError("We're converting a lot of documents right now. Try again in a minute, or upload a PDF.");
-  return slot(() => convertOnce(data, ext));
+  // In the Docker image, conversion runs in a separate service under its own user, which can't read /data.
+  return slot(() => (process.env.CONVERTER_URL ? convertRemote(data, ext, process.env.CONVERTER_URL) : convertOnce(data, ext)));
+}
+
+async function convertRemote(data: Buffer, ext: string, base: string): Promise<Buffer> {
+  let res: Response;
+  try {
+    res = await fetch(`${base.replace(/\/$/, "")}/convert`, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream", "X-Ext": ext },
+      body: new Uint8Array(data),
+      signal: AbortSignal.timeout(75_000),
+    });
+  } catch {
+    throw new ConvertError("Word conversion isn't available right now. Upload a PDF instead, or try again in a minute.");
+  }
+  if (res.ok) return Buffer.from(await res.arrayBuffer());
+  if (res.status === 504) throw new ConvertError("Converting this Word document took too long. Save it as PDF and upload that.");
+  if (res.status === 503) throw new ConvertError("Word conversion isn't available on this server. Upload a PDF instead.");
+  throw new ConvertError("We couldn't convert this Word document. Save it as PDF and upload that.");
 }
 
 async function convertOnce(data: Buffer, ext: string): Promise<Buffer> {
