@@ -26,26 +26,54 @@ export function PdfPages({
   overlay,
   onPageClick,
   className,
+  zoom = 1,
+  onCurrentPage,
 }: {
   url: string;
   pages: PageSize[];
   overlay?: (page: number, scale: number) => ReactNode;
   onPageClick?: (page: number, x: number, y: number) => void;
   className?: string;
+  /** 1 = fit the container's width. Above 1 the pages get wider and the container scrolls sideways. */
+  zoom?: number;
+  /** the page most visible on screen, as the reader scrolls */
+  onCurrentPage?: (page: number) => void;
 }) {
   const wrap = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(0);
+  const [fit, setFit] = useState(0);
+  const width = Math.floor(fit * zoom);
   const [doc, setDoc] = useState<PdfDoc | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     const el = wrap.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => setWidth(Math.floor(el.clientWidth)));
+    const ro = new ResizeObserver(() => setFit(Math.floor(el.clientWidth)));
     ro.observe(el);
-    setWidth(Math.floor(el.clientWidth));
+    setFit(Math.floor(el.clientWidth));
     return () => ro.disconnect();
   }, []);
+
+  const current = useRef(onCurrentPage);
+  useEffect(() => {
+    current.current = onCurrentPage;
+  });
+  useEffect(() => {
+    const el = wrap.current;
+    if (!el || !current.current) return;
+    const seen = new Map<number, number>();
+    const io = new IntersectionObserver(
+      (es) => {
+        for (const e of es) seen.set(Number((e.target as HTMLElement).dataset.page), e.intersectionRatio);
+        let best = -1, ratio = 0;
+        for (const [p, r] of seen) if (r > ratio) [best, ratio] = [p, r];
+        if (best >= 0) current.current?.(best);
+      },
+      { threshold: [0, 0.1, 0.25, 0.5, 0.75, 1] },
+    );
+    el.querySelectorAll("[data-page]").forEach((p) => io.observe(p));
+    return () => io.disconnect();
+  }, [pages.length]);
 
   useEffect(() => {
     let alive = true;
@@ -67,7 +95,7 @@ export function PdfPages({
   return (
     <div ref={wrap} className={className}>
       {err && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">Couldn&apos;t load the document: {err}</div>}
-      <div className="space-y-4">
+      <div className="mx-auto space-y-4" style={zoom === 1 ? undefined : { width }}>
         {pages.map((p, i) => (
           <PageView key={i} doc={doc} index={i} size={p} width={width} overlay={overlay} onPageClick={onPageClick} />
         ))}
@@ -111,7 +139,8 @@ function PageView({
     let alive = true;
     doc.getPage(index + 1).then((page) => {
       if (!alive || !canvas.current) return;
-      const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+      // sharp on high-density screens, but never a canvas wider than browsers reliably draw
+      const dpr = Math.min(window.devicePixelRatio || 1, 2.5, 4096 / Math.max(1, width));
       const vp = page.getViewport({ scale: scale * dpr });
       const c = canvas.current;
       c.width = Math.floor(vp.width);
