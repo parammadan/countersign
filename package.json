@@ -16,7 +16,6 @@
   },
   "dependencies": {
     "next": "16.4.5",
-    "nodemailer": "^7.0.13",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^5.4.394",
     "react": "19.3.0",
@@ -29,7 +28,6 @@
     "@playwright/test": "^1.56.0",
     "@tailwindcss/turbopack": "^4",
     "@types/node": "^24.19.2",
-    "@types/nodemailer": "^8.0.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "docx": "^9.5.1",
