@@ -247,7 +247,7 @@ export function FieldEditor({
                       key={f.id}
                       role="button"
                       tabIndex={0}
-                      aria-label={`${ROLE_LABEL[f.role]}: ${f.label}`}
+                      aria-label={fieldName(f)}
                       onPointerDown={(e) => {
                         if (readOnly) return;
                         e.stopPropagation();
@@ -456,6 +456,13 @@ export function FieldEditor({
 }
 
 // Show the field type on the box unless the label already says it, so a mistyped field stands out.
+/** Accessible name for a field box: its visible text first (WCAG 2.5.3), then who fills it. */
+function fieldName(f: Field) {
+  const shown = f.type === "checkbox" ? "" : f.role === "prefill" ? `⟨${f.label}⟩` : boxText(f);
+  const who = `${ROLE_LABEL[f.role]}: ${f.label}`;
+  return shown ? `${shown}. ${who}` : who;
+}
+
 function boxText(f: Field) {
   const t = TYPE_LABEL[f.type];
   const word = t.split(" ").pop()!.toLowerCase();

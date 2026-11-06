@@ -12,7 +12,7 @@ import { DeleteWebhook, NewKeyForm, NewWebhookForm, RevokeKey } from "@/componen
 export const metadata = { title: "Integrations & API" };
 
 function Code({ children }: { children: string }) {
-  return <pre className="overflow-x-auto rounded-lg bg-[#0f1729] p-4 text-[12.5px] leading-relaxed text-slate-100"><code>{children}</code></pre>;
+  return <pre tabIndex={0} className="overflow-x-auto rounded-lg bg-[#0f1729] p-4 text-[12.5px] leading-relaxed text-slate-100"><code>{children}</code></pre>;
 }
 
 export default async function Page() {

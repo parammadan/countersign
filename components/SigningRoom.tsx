@@ -221,7 +221,7 @@ export function SigningRoom(p: Props) {
                     data-fid={f.id}
                     type="button"
                     onClick={() => activate(f)}
-                    aria-label={`${f.label}${f.required ? " (required)" : ""}`}
+                    aria-label={signFieldName(f, img ? "" : text ? text : f.type === "signature" ? "Sign here" : f.type === "initials" ? "Initial" : `${f.label}${f.required ? " *" : ""}`)}
                     className={cx(
                       "absolute flex items-center overflow-hidden rounded-[3px] border text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand",
                       done ? "border-transparent bg-emerald-50/40 hover:border-emerald-300" : "animate-[pulse_2.5s_ease-in-out_infinite] border-brand bg-brand/10 hover:bg-brand/20",
@@ -465,4 +465,10 @@ function Done({ token, firm, email }: { token: string; firm: string; email: stri
       </div>
     </div>
   );
+}
+
+/** Accessible name for a field button: what the client sees on it first (WCAG 2.5.3), then what it is. */
+function signFieldName(f: { label: string; required: boolean }, shown: string) {
+  const what = `${f.label}${f.required ? " (required)" : ""}`;
+  return shown && shown !== f.label ? `${shown}: ${what}` : what;
 }
