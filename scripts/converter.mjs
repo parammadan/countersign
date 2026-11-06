@@ -43,7 +43,8 @@ async function convert(data, ext) {
       child.on("exit", (code) => {
         clearTimeout(timer);
         killGroup();
-        code === 0 ? resolve() : reject(new Error(`soffice exited ${code}`));
+        if (code === 0) resolve();
+        else reject(new Error(`soffice exited ${code}`));
       });
     });
     return await fs.readFile(path.join(dir, "input.pdf"));

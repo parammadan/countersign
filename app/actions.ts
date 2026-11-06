@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { z } from "zod";
-import { all, one, run, tx } from "@/lib/db";
+import { one, run, tx } from "@/lib/db";
 import { createSession, destroySession, hashPassword, requireAdmin, requireSession, verifyPassword } from "@/lib/auth";
 import { AppError, countersign, createFile, getFile, getWorkspace, sendFile, voidFile } from "@/lib/files";
 import { ctxFromHeaders } from "@/lib/http";
@@ -139,7 +139,7 @@ export async function acceptInviteAction(_: FormState, fd: FormData): Promise<Fo
   redirect("/app");
 }
 
-export async function resendVerificationAction(_: FormState): Promise<FormState> {
+export async function resendVerificationAction(): Promise<FormState> {
   try {
     await throttle("verify-resend", 3);
     const sess = await requireSession();
