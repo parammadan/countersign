@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ComponentProps, ReactNode } from "react";
 import { STATUS_LABEL, type FileStatus } from "@/lib/types";
+import { BRAND } from "@/lib/brand";
 
 export function cx(...c: (string | false | null | undefined)[]) {
   return c.filter(Boolean).join(" ");
@@ -114,7 +115,7 @@ export function Logo({ className }: { className?: string }) {
         <path d="M6 15.5c1.6-3.6 3.2-5.4 4.4-5.4 1.7 0 .2 5.6 1.9 5.6 1.2 0 2-2.4 3.3-2.4.9 0 1 1.6 2.4 1.6" stroke="#fff" strokeWidth="1.7" fill="none" strokeLinecap="round" />
         <path d="M6 18.3h12" stroke="#fff" strokeOpacity=".55" strokeWidth="1.2" strokeLinecap="round" />
       </svg>
-      Countersign
+      {BRAND.name}
     </span>
   );
 }

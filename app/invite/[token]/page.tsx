@@ -3,6 +3,7 @@ import { sha256 } from "@/lib/util";
 import { AuthShell } from "@/components/AuthShell";
 import { InviteForm } from "@/components/AuthForms";
 import { Notice } from "@/components/ui";
+import { BRAND } from "@/lib/brand";
 
 export const metadata = { title: "Join workspace" };
 
@@ -20,7 +21,7 @@ export default async function Page({ params }: { params: Promise<{ token: string
     );
   const exists = !!one("SELECT 1 FROM users WHERE email = ?", inv.email);
   return (
-    <AuthShell title={`Join ${inv.ws}`} sub="You've been invited to the firm's Countersign workspace.">
+    <AuthShell title={`Join ${inv.ws}`} sub={`You've been invited to the firm's ${BRAND.name} workspace.`}>
       <InviteForm token={token} email={inv.email} exists={exists} />
     </AuthShell>
   );

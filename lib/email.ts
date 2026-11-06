@@ -1,5 +1,6 @@
 import { run } from "./db";
 import { escapeHtml, id, now } from "./util";
+import { BRAND } from "./brand";
 
 export type Attachment = { filename: string; content: Buffer };
 
@@ -53,7 +54,7 @@ export async function sendEmail(opts: {
   let providerId: string | null = null;
   let error: string | null = null;
   const mode = emailMode();
-  const fromName = (opts.fromName || "Countersign").replace(/[<>"\r\n]/g, "");
+  const fromName = (opts.fromName || BRAND.systemSender).replace(/[<>"\r\n]/g, "");
   if (mode === "smtp") {
     try {
       const info = await (await smtp()).sendMail({
@@ -124,7 +125,7 @@ function redactAll(html: string, secrets?: string[]) {
 }
 
 export function layout(opts: { brand: string; firm: string; heading: string; body: string; cta?: { href: string; label: string }; foot?: string }) {
-  const color = /^#[0-9a-f]{6}$/i.test(opts.brand) ? opts.brand : "#1f4fd1";
+  const color = /^#[0-9a-f]{6}$/i.test(opts.brand) ? opts.brand : BRAND.color;
   return `<!doctype html><html><body style="margin:0;background:#f4f5f7;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#1d2330">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:32px 12px"><tr><td align="center">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#fff;border-radius:10px;overflow:hidden;border:1px solid #e3e6ec">
@@ -138,6 +139,6 @@ ${
 <tr><td style="padding:6px 32px 0;font-size:12px;color:#8a92a1;word-break:break-all">Or paste this link into your browser: ${escapeHtml(opts.cta.href)}</td></tr>`
     : ""
 }
-<tr><td style="padding:24px 32px 28px;font-size:12px;color:#8a92a1;line-height:1.5">${opts.foot ?? "Sent with Countersign on behalf of " + escapeHtml(opts.firm) + ". Do not forward this email: the link is personal to you."}</td></tr>
+<tr><td style="padding:24px 32px 28px;font-size:12px;color:#8a92a1;line-height:1.5">${opts.foot ?? `Sent with ${BRAND.name} on behalf of ` + escapeHtml(opts.firm) + ". Do not forward this email: the link is personal to you."}</td></tr>
 </table></td></tr></table></body></html>`;
 }

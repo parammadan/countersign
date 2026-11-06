@@ -6,6 +6,7 @@ import { emailMode, layout, sendEmail } from "./email";
 import { AppError } from "./errors";
 import { appUrl } from "./paths";
 import { escapeHtml, now, sha256, token } from "./util";
+import { BRAND } from "./brand";
 
 const TTL_MS = 3 * 86400_000;
 
@@ -41,8 +42,8 @@ export async function sendVerification(user: { id: string; email: string; name: 
     to: user.email,
     subject: "Confirm your email address",
     html: layout({
-      brand: "#1f4fd1",
-      firm: "Countersign",
+      brand: BRAND.color,
+      firm: BRAND.name,
       heading: "Confirm your email",
       body: `Hi ${escapeHtml(user.name.split(" ")[0] || user.name)},<br><br>Confirm this is your address so your workspace can send agreements to clients. The link works for 3 days.`,
       cta: { href: link, label: "Confirm my email" },

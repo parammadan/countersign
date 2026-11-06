@@ -6,6 +6,7 @@ import { Modal, SignaturePad, type Adopted } from "./SignaturePad";
 import { Button, Notice, cx, inputCls } from "./ui";
 import { CONSENT_FULL, CONSENT_SUMMARY, SIGN_INTENT } from "@/lib/consent";
 import type { Field, PageSize } from "@/lib/fields";
+import { BRAND } from "@/lib/brand";
 
 export type SignerField = Field & { value?: string };
 
@@ -143,7 +144,7 @@ export function SigningRoom(p: Props) {
           </Button>
           <button className="mt-3 w-full text-center text-xs text-muted hover:text-ink" onClick={() => setDeclining(true)}>I don&apos;t want to sign this</button>
         </div>
-        <p className="mt-4 text-center text-xs text-muted">Sent to {p.clientEmail}. Secured by Countersign.</p>
+        <p className="mt-4 text-center text-xs text-muted">Sent to {p.clientEmail}. Secured by {BRAND.name}.</p>
         {showDisclosure && <Disclosure onClose={() => setShowDisclosure(false)} />}
         {declining && <Decline token={p.token} onClose={() => setDeclining(false)} />}
       </div>

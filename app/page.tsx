@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getSession } from "@/lib/auth";
 import { Logo } from "@/components/ui";
+import { BRAND } from "@/lib/brand";
 
 const steps = [
   { t: "Upload your agreement once", d: "PDF or Word, the same one you send today. We find where the client signs, initials and dates, and where your firm countersigns. You check it in a minute and publish." },
@@ -41,7 +42,7 @@ export default async function Home() {
         <p className="mb-4 text-sm font-semibold tracking-wide text-brand uppercase">For firms that start every job with a signed agreement</p>
         <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-ink sm:text-6xl">Your client agreement, signed on every file. Automatically.</h1>
         <p className="mt-6 max-w-2xl text-lg text-muted">
-          Upload the agreement you already use. Each time a new job or case opens, Countersign sends it, chases it, countersigns it and files the signed copy, so work can start without anyone stopping to do paperwork.
+          Upload the agreement you already use. Each time a new job or case opens, {BRAND.name} sends it, chases it, countersigns it and files the signed copy, so work can start without anyone stopping to do paperwork.
         </p>
         <div className="mt-8 flex flex-wrap gap-3">
           <Link href="/signup" className="rounded-lg bg-brand px-5 py-3 font-medium text-white shadow-sm hover:brightness-110">Create your workspace</Link>
@@ -73,7 +74,7 @@ export default async function Home() {
       </section>
       <footer className="border-t border-line">
         <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-6 text-xs text-muted sm:flex-row sm:justify-between sm:px-6">
-          <span>Countersign: electronic signatures under the U.S. ESIGN Act and UETA.</span>
+          <span>{BRAND.name}: electronic signatures under the U.S. ESIGN Act and UETA.</span>
           <Link href="/verify" className="hover:text-ink">Verify a signed document</Link>
         </div>
       </footer>

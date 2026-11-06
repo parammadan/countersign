@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button, Notice } from "./ui";
+import { BRAND } from "@/lib/brand";
 
 type R = { match: boolean; sha256: string; kind?: string; title?: string; firm?: string; completed_at?: string; voided?: boolean; error?: string };
 
@@ -28,14 +29,14 @@ export function VerifyForm() {
       {r?.error && <Notice tone="error">{r.error}</Notice>}
       {r && !r.error && (r.match ? (
         <Notice tone="ok">
-          <b>Authentic.</b> {r.kind} for “{r.title}”, sealed by Countersign for {r.firm}
+          <b>Authentic.</b> {r.kind} for “{r.title}”, sealed by {BRAND.name} for {r.firm}
           {r.completed_at ? ` on ${new Date(r.completed_at).toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" })}` : ""}.
           {r.voided && <b> The sender has since voided this file.</b>}
           <div className="mt-1 break-all font-mono text-[11px] opacity-80">sha256 {r.sha256}</div>
         </Notice>
       ) : (
         <Notice tone="warn">
-          <b>No match.</b> This exact file wasn&apos;t sealed by Countersign. It may have been changed after signing, or it&apos;s a different copy.
+          <b>No match.</b> This exact file wasn&apos;t sealed by {BRAND.name}. It may have been changed after signing, or it&apos;s a different copy.
           <div className="mt-1 break-all font-mono text-[11px] opacity-80">sha256 {r.sha256}</div>
         </Notice>
       ))}

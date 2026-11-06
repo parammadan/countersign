@@ -13,6 +13,7 @@ import type { FileRow, Template, TemplateVersion, Workspace } from "./types";
 
 import { AppError } from "./errors";
 import { assertCanSendTo } from "./emailverify";
+import { BRAND } from "./brand";
 export { AppError };
 
 export type Ctx = { ip?: string; ua?: string };
@@ -507,8 +508,8 @@ async function notifyFirm(ws: Workspace, f: FileRow, what: "completed" | "ready"
       kind: `firm_${what}`,
       to,
       subject: heading,
-      fromName: "Countersign",
-      html: layout({ brand: ws.brand_color, firm: ws.name, heading, body, cta: { href: url, label: "Open file" }, foot: "You get this because you're on this file in Countersign." }),
+      fromName: BRAND.systemSender,
+      html: layout({ brand: ws.brand_color, firm: ws.name, heading, body, cta: { href: url, label: "Open file" }, foot: `You get this because you're on this file in ${BRAND.name}.` }),
       attachments: pdf ? [{ filename: downloadName(f), content: pdf }] : undefined,
     });
   }

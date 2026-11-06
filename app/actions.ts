@@ -19,6 +19,7 @@ import { appUrl } from "@/lib/paths";
 import { escapeHtml } from "@/lib/util";
 import { checkWebhookUrl } from "@/lib/ssrf";
 import { confirmEmail, sendVerification, userVerified, verificationRequired, workspaceVerified } from "@/lib/emailverify";
+import { BRAND } from "@/lib/brand";
 
 export type FormState = { error?: string; ok?: string; secret?: string } | undefined;
 
@@ -338,9 +339,9 @@ export async function inviteAction(_: FormState, fd: FormData): Promise<FormStat
       workspaceId: ws.id,
       kind: "invite_member",
       to: email,
-      subject: `${sess.userName} invited you to ${ws.name} on Countersign`,
-      fromName: "Countersign",
-      html: layout({ brand: ws.brand_color, firm: ws.name, heading: `Join ${ws.name} on Countersign`, body: `${escapeHtml(sess.userName)} added you as ${role}.`, cta: { href: link, label: "Accept invite" } }),
+      subject: `${sess.userName} invited you to ${ws.name} on ${BRAND.name}`,
+      fromName: BRAND.systemSender,
+      html: layout({ brand: ws.brand_color, firm: ws.name, heading: `Join ${ws.name} on ${BRAND.name}`, body: `${escapeHtml(sess.userName)} added you as ${role}.`, cta: { href: link, label: "Accept invite" } }),
       logHtml: `<p>Invitation for ${escapeHtml(email)} (${role}). The link is withheld from the log; the admin who sent it can copy it once.</p>`,
     });
     audit(ws.id, null, "member.invited", sess.userEmail, {}, { email, role });
@@ -413,9 +414,9 @@ export async function forgotAction(_: FormState, fd: FormData): Promise<FormStat
         workspaceId: "_system",
         kind: "password_reset",
         to: email,
-        subject: "Reset your Countersign password",
-        fromName: "Countersign",
-        html: layout({ brand: "#1f4fd1", firm: "Countersign", heading: "Reset your password", body: `Hi ${escapeHtml(u.name.split(" ")[0])}, use the button below to choose a new password. The link works for one hour. If you didn't ask for this, ignore this email.`, cta: { href: `${appUrl()}/reset/${tok}`, label: "Choose a new password" } }),
+        subject: `Reset your ${BRAND.name} password`,
+        fromName: BRAND.systemSender,
+        html: layout({ brand: BRAND.color, firm: BRAND.name, heading: "Reset your password", body: `Hi ${escapeHtml(u.name.split(" ")[0])}, use the button below to choose a new password. The link works for one hour. If you didn't ask for this, ignore this email.`, cta: { href: `${appUrl()}/reset/${tok}`, label: "Choose a new password" } }),
         logHtml: "<p>Password reset email (link withheld from the log).</p>",
       });
     }
