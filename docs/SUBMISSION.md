@@ -6,7 +6,7 @@
 
 ## What I built
 
-AgreementOS (built as Countersign; the repository, Fly app and URL keep that name) is a multi-tenant SaaS product that makes "the agreement every client signs before work starts" happen by itself on every file.
+AgreementOS is a multi-tenant SaaS product that makes "the agreement every client signs before work starts" happen by itself on every file.
 
 A firm sets it up once:
 - Upload the agreement it already uses (PDF or Word).

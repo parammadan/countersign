@@ -1,7 +1,5 @@
 # AgreementOS
 
-_Formerly Countersign. The repository, Fly app (`countersign-app`), public URL, API key and webhook header names keep the original name; see [docs/BRANDING.md](docs/BRANDING.md)._
-
 **Your client agreement, signed on every file, automatically.**
 
 A firm uploads the agreement it already uses (PDF or Word) once. From then on, every new file (one job or case for one client) sends that agreement to the client, chases it, countersigns it for the firm and files the sealed copy. Nobody at the firm has to touch it.
