@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -87,18 +87,35 @@ async function convertOnce(data: Buffer, ext: string): Promise<Buffer> {
   const profile = "file://" + path.join(dir, "profile-" + token(6));
   try {
     await new Promise<void>((resolve, reject) => {
-      execFile(
-        /*turbopackIgnore: true*/ soffice(),
-        [`-env:UserInstallation=${profile}`, "--headless", "--norestore", "--convert-to", "pdf", "--outdir", dir, input],
-        // No app secrets in LibreOffice's environment; its own profile lives in the temp dir.
-        { timeout: 60_000, killSignal: "SIGKILL", maxBuffer: 1 << 20, env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: dir, LANG: "en_US.UTF-8", SAL_USE_VCLPLUGIN: "svp" } as unknown as NodeJS.ProcessEnv },
-        (err) => {
-          if (err) {
-            if ((err as NodeJS.ErrnoException).code === "ENOENT") reject(new ConvertError("Word conversion isn't available on this server. Upload a PDF instead."));
-            else reject(new ConvertError("We couldn't convert this Word document. Save it as PDF and upload that."));
-          } else resolve();
-        },
-      );
+      // Own process group, so a timeout kills soffice.bin too (soffice is a wrapper that forks it).
+      // No app secrets in its environment; its profile lives in the temp dir.
+      const child = spawn(soffice(), [`-env:UserInstallation=${profile}`, "--headless", "--norestore", "--convert-to", "pdf", "--outdir", dir, input], {
+        detached: true,
+        stdio: "ignore",
+        env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: dir, LANG: "en_US.UTF-8", SAL_USE_VCLPLUGIN: "svp" } as unknown as NodeJS.ProcessEnv,
+      });
+      const killGroup = () => {
+        try {
+          if (child.pid) process.kill(-child.pid, "SIGKILL");
+        } catch {
+          /* already gone */
+        }
+      };
+      const timer = setTimeout(() => {
+        killGroup();
+        reject(new ConvertError("Converting this Word document took too long. Save it as PDF and upload that."));
+      }, 60_000);
+      child.on("error", (err) => {
+        clearTimeout(timer);
+        if ((err as NodeJS.ErrnoException).code === "ENOENT") reject(new ConvertError("Word conversion isn't available on this server. Upload a PDF instead."));
+        else reject(new ConvertError("We couldn't convert this Word document. Save it as PDF and upload that."));
+      });
+      child.on("exit", (code) => {
+        clearTimeout(timer);
+        killGroup(); // reap any stragglers
+        if (code === 0) resolve();
+        else reject(new ConvertError("We couldn't convert this Word document. Save it as PDF and upload that."));
+      });
     });
     return await fs.readFile(path.join(dir, "input.pdf"));
   } catch (e) {

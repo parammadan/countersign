@@ -196,8 +196,14 @@ export async function fileAction(_: FormState, fd: FormData): Promise<FormState>
 
 export async function newDraftAction(fd: FormData) {
   const sess = await requireAdmin();
-  const v = draftFromVersion(sess.workspaceId, s(fd.get("versionId")), sess.userEmail);
-  redirect(`/app/agreements/${v.id}`);
+  let vid: string;
+  try {
+    vid = draftFromVersion(sess.workspaceId, s(fd.get("versionId")), sess.userEmail).id;
+  } catch (e) {
+    if (e instanceof AppError) redirect(`/app/agreements?error=${encodeURIComponent(e.message)}`);
+    throw e;
+  }
+  redirect(`/app/agreements/${vid}`);
 }
 
 export async function templateAction(_: FormState, fd: FormData): Promise<FormState> {
@@ -399,7 +405,7 @@ export async function resetAction(_: FormState, fd: FormData): Promise<FormState
     if (!m) return { error: "This account isn't part of a workspace." };
     tx(() => {
       run("UPDATE users SET password_hash = ? WHERE id = ?", hashPassword(pw), r.user_id);
-      run("UPDATE password_resets SET used_at = ? WHERE token_hash = ?", now(), sha256(tok));
+      run("UPDATE password_resets SET used_at = ? WHERE user_id = ? AND used_at IS NULL", now(), r.user_id);
       run("DELETE FROM sessions WHERE user_id = ?", r.user_id);
     });
     await createSession(r.user_id, m.workspace_id);
@@ -494,12 +500,18 @@ export async function testFileAction(fd: FormData) {
   const sess = await requireSession();
   const ws = getWorkspace(sess.workspaceId);
   const tid = s(fd.get("templateId"));
-  const f = await createFile(
+  let f;
+  try {
+    f = await createFile(
     ws,
     { templateId: tid, clientName: sess.userName, clientEmail: sess.userEmail, title: `Test: signing as a client`, ref: null, prefill: {} },
     { kind: "user", label: `${sess.userEmail} (test)`, userId: sess.userId },
     await ctxFromHeaders(),
     true,
   );
+  } catch (e) {
+    if (e instanceof AppError) redirect(`/app/agreements?error=${encodeURIComponent(e.message)}`);
+    throw e;
+  }
   redirect(`/app/files/${f.id}?created=1`);
 }

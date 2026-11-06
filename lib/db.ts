@@ -196,6 +196,10 @@ const MIGRATIONS: string[] = [
     created_at TEXT NOT NULL
   );
   `,
+  `
+  DROP INDEX files_ref;
+  CREATE UNIQUE INDEX files_ref_live ON files(workspace_id, ref) WHERE ref IS NOT NULL AND status NOT IN ('voided','declined');
+  `,
 ];
 
 function open(): DatabaseSync {

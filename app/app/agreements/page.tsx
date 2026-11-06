@@ -8,9 +8,9 @@ import { testFileAction } from "@/app/actions";
 
 export const metadata = { title: "Agreements" };
 
-export default async function Page({ searchParams }: { searchParams: Promise<{ published?: string }> }) {
+export default async function Page({ searchParams }: { searchParams: Promise<{ published?: string; error?: string }> }) {
   const s = await requireSession();
-  const { published } = await searchParams;
+  const { published, error } = await searchParams;
   const tpls = all<{ id: string; name: string; is_default: number; active_version_id: string | null; created_at: string }>(
     "SELECT * FROM templates WHERE workspace_id = ? AND archived = 0 ORDER BY is_default DESC, created_at DESC",
     s.workspaceId,
@@ -24,6 +24,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   return (
     <>
       <PageHeader title="Agreements" sub="The agreement every client signs. Upload it once, and each new file sends it out." />
+      {error && <div className="mb-4"><Notice tone="error">{error.slice(0, 300)}</Notice></div>}
       {published && <div className="mb-4"><Notice tone="ok">Published. New files now use this version. <Link className="font-medium underline" href="/app/files/new">Open a file</Link></Notice></div>}
       {tpls.length === 0 && admin && <UploadAgreement />}
       <div className="space-y-4">

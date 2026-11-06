@@ -53,6 +53,8 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const prefill = JSON.parse(f.prefill_json || "{}") as Record<string, string>;
   const fields = versionFields(v);
   const outbox = emailMode() === "outbox";
+  const lastInvite = emails.find((m) => ["invite", "resend", "reminder"].includes(m.kind));
+  const inviteFailed = !outbox && lastInvite?.status === "failed";
   const closed = ["declined", "voided", "expired"].includes(f.status);
 
   return (
@@ -70,7 +72,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
           </p>
         </div>
       </div>
-      {created && f.status === "sent" && (
+      {created && f.status === "sent" && !inviteFailed && (
         <div className="mb-4">
           <Notice tone="ok">
             Sent to {f.client_email}. You&apos;ll be notified when they sign{f.status === "sent" ? ", and reminders go out on their own" : ""}.
@@ -79,6 +81,11 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         </div>
       )}
       {f.status === "declined" && <div className="mb-4"><Notice tone="error">Declined by the client: “{f.decline_reason}”</Notice></div>}
+      {inviteFailed && (f.status === "sent" || f.status === "viewed") && (
+        <div className="mb-4">
+          <Notice tone="error">The last email to {f.client_email} wasn&apos;t delivered ({lastInvite?.error ?? "provider error"}). Use Copy signing link to send it another way, or Resend email to try again.</Notice>
+        </div>
+      )}
 
       <Card className="mb-6 p-5">
         <ol className="mb-5 grid grid-cols-5 gap-1">

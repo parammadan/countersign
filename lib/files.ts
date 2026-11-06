@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { all, one, run, tx } from "./db";
 import { audit, EVENT_TEXT, fileEvents } from "./audit";
-import { layout, sendEmail } from "./email";
+import { emailMode, layout, sendEmail } from "./email";
 import { emit } from "./webhooks";
 import { getBlob, putBlob } from "./storage";
 import { seal, unseal } from "./secret";
@@ -54,7 +54,12 @@ export function resolveTemplate(wsId: string, templateId?: string | null): { tem
 
 export function signingLink(f: FileRow): string | null {
   if (!f.token_enc) return null;
-  return `${appUrl()}/s/${unseal(f.token_enc)}`;
+  try {
+    return `${appUrl()}/s/${unseal(f.token_enc)}`;
+  } catch {
+    console.error("[signingLink] can't unseal token (APP_SECRET changed?)", f.id);
+    return null;
+  }
 }
 
 export function formatDate(iso: string): string {
@@ -77,7 +82,7 @@ export async function createFile(ws: Workspace, input: NewFile, actor: Actor, ct
   const today = one<{ n: number }>("SELECT COUNT(*) n FROM files WHERE workspace_id = ? AND created_at > ?", ws.id, new Date(Date.now() - 86400_000).toISOString())?.n ?? 0;
   if (today >= DAILY_FILE_CAP) throw new AppError(`This workspace has opened ${DAILY_FILE_CAP} files in the last 24 hours, the current limit. Contact support to raise it.`, 429);
   const { template, version } = resolveTemplate(ws.id, input.templateId);
-  if (input.ref && one("SELECT 1 FROM files WHERE workspace_id = ? AND ref = ?", ws.id, input.ref)) {
+  if (input.ref && one("SELECT 1 FROM files WHERE workspace_id = ? AND ref = ? AND status NOT IN ('voided','declined')", ws.id, input.ref)) {
     throw new AppError(`A file with reference "${input.ref}" already exists.`, 409);
   }
   const fid = id("file_");
@@ -202,10 +207,10 @@ export function markViewed(f: FileRow, ws: Workspace, ctx: Ctx) {
   emit(ws.id, "file.viewed", fileJson(getFile(ws.id, f.id)));
 }
 
-export async function sendOtp(f: FileRow, ws: Workspace, ctx: Ctx) {
+export async function sendOtp(f: FileRow, ws: Workspace, ctx: Ctx): Promise<boolean> {
   const code = String(crypto.randomInt(100000, 1000000));
   run("UPDATE files SET otp_hash = ?, otp_expires_at = ?, otp_attempts = 0 WHERE id = ?", sha256(f.id + ":" + code), new Date(Date.now() + 10 * 60_000).toISOString(), f.id);
-  await sendEmail({
+  const r = await sendEmail({
     workspaceId: ws.id,
     fileId: f.id,
     kind: "otp",
@@ -220,7 +225,8 @@ export async function sendOtp(f: FileRow, ws: Workspace, ctx: Ctx) {
     }),
     logHtml: "<p>Verification code email (code withheld from the log).</p>",
   });
-  audit(ws.id, f.id, "file.otp_sent", "system", ctx, { to: f.client_email });
+  audit(ws.id, f.id, "file.otp_sent", "system", ctx, { to: f.client_email, delivered: r.delivered });
+  return r.delivered || emailMode() === "outbox";
 }
 
 export function verifyOtp(f: FileRow, ws: Workspace, code: string, ctx: Ctx): boolean {
@@ -243,7 +249,7 @@ function parsePng(dataUrl: string | undefined, what: string): Uint8Array {
   if (!m) throw new AppError(`Add your ${what} first.`);
   const buf = Buffer.from(m[1], "base64");
   if (buf.length > 600_000) throw new AppError(`Your ${what} image is too large.`);
-  if (buf.subarray(1, 4).toString("latin1") !== "PNG" || buf.length < 24) throw new AppError(`Your ${what} image is invalid.`);
+  if (buf.length < 24 || buf.subarray(1, 4).toString("latin1") !== "PNG" || buf.subarray(12, 16).toString("latin1") !== "IHDR") throw new AppError(`Your ${what} image is invalid.`);
   const w = buf.readUInt32BE(16),
     h = buf.readUInt32BE(20);
   if (!w || !h || w > 4000 || h > 2000) throw new AppError(`Your ${what} image is too large.`);
@@ -453,7 +459,8 @@ function firmRecipients(ws: Workspace, f: FileRow): string[] {
   const set = new Set<string>();
   if (ws.countersigner_email) set.add(ws.countersigner_email.toLowerCase());
   if (f.created_by) {
-    const u = one<{ email: string }>("SELECT email FROM users WHERE id = ?", f.created_by);
+    // only while they're still on the team
+    const u = one<{ email: string }>("SELECT u.email FROM users u JOIN members m ON m.user_id = u.id AND m.workspace_id = ? WHERE u.id = ?", ws.id, f.created_by);
     if (u) set.add(u.email);
   }
   if (!set.size) for (const r of all<{ email: string }>("SELECT u.email FROM users u JOIN members m ON m.user_id = u.id WHERE m.workspace_id = ? AND m.role = 'owner'", ws.id)) set.add(r.email);

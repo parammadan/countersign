@@ -6,7 +6,19 @@ import { MAX_UPLOAD } from "@/lib/convert";
 
 export const runtime = "nodejs";
 
+let inFlight = 0;
+
 export const POST = handle(async (req: Request) => {
+  if (inFlight >= 3) throw new AppError("Lots of uploads right now. Try again in a few seconds.", 503);
+  inFlight++;
+  try {
+    return await upload(req);
+  } finally {
+    inFlight--;
+  }
+});
+
+async function upload(req: Request) {
   const { s, ws } = await sessionOr401(req);
   if (s.role === "staff") throw new AppError("Only admins can upload agreements.", 403);
   rateLimit(req, "upload", 20);
@@ -19,4 +31,4 @@ export const POST = handle(async (req: Request) => {
   const templateId = (form.get("templateId") as string | null) || undefined;
   const { template, version } = await ingestAgreement(ws, { data: Buffer.from(await file.arrayBuffer()), filename: file.name || "agreement.pdf" }, { name, templateId, actor: s.userEmail });
   return NextResponse.json({ templateId: template.id, versionId: version.id });
-});
+}

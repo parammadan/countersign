@@ -35,7 +35,7 @@ export function emit(workspaceId: string, event: string, data: Record<string, un
     ids.push(did);
   }
   // fire-and-forget first attempt; the worker retries failures
-  for (const d of ids) void attempt(d);
+  for (const d of ids) attempt(d).catch((e) => console.error("[webhook]", d, e));
 }
 
 const BACKOFF_MIN = [1, 5, 30, 120, 720];

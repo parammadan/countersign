@@ -31,7 +31,8 @@ export function seal(plain: string): string {
 
 export function unseal(sealed: string): string {
   const [iv, tag, enc] = sealed.split(".").map((p) => Buffer.from(p, "base64url"));
-  const d = crypto.createDecipheriv("aes-256-gcm", key(), iv);
+  if (!iv || !tag || !enc || tag.length !== 16) throw new Error("bad sealed value");
+  const d = crypto.createDecipheriv("aes-256-gcm", key(), iv, { authTagLength: 16 });
   d.setAuthTag(tag);
   return Buffer.concat([d.update(enc), d.final()]).toString("utf8");
 }

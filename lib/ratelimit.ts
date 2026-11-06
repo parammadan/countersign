@@ -18,6 +18,7 @@ export function limited(key: string, max: number, windowMs: number): boolean {
 export function clientIp(h: Headers): string {
   const trust = process.env.TRUST_PROXY;
   if (trust === "fly") return (h.get("fly-client-ip") || "unknown").trim();
-  if (trust === "1" || trust === "true") return (h.get("x-forwarded-for")?.split(",")[0] || h.get("x-real-ip") || "unknown").trim();
+  // the proxy appends the address it saw: the rightmost entry is the one we can trust
+  if (trust === "1" || trust === "true") return (h.get("x-forwarded-for")?.split(",").pop() || h.get("x-real-ip") || "unknown").trim();
   return "unknown";
 }

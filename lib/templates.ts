@@ -10,6 +10,7 @@ import { FieldSchema, validateForPublish, type Field } from "./fields";
 import type { Template, TemplateVersion, Workspace } from "./types";
 import { audit } from "./audit";
 import path from "node:path";
+import { ensureDiskSpace } from "./storage";
 
 export type DetectionInfo = Detection & { addedSignaturePage: boolean; ms: number };
 
@@ -19,6 +20,11 @@ export async function ingestAgreement(
   opts: { templateId?: string; name?: string; actor: string },
 ): Promise<{ template: Template; version: TemplateVersion }> {
   const t0 = Date.now();
+  const recent = one<{ n: number }>("SELECT COUNT(*) n FROM template_versions WHERE workspace_id = ? AND created_at > ?", ws.id, new Date(Date.now() - 86400_000).toISOString())?.n ?? 0;
+  if (recent >= 30) throw new AppError("This workspace has uploaded 30 agreement versions in the last 24 hours, the current limit. Try again tomorrow.", 429);
+  const total = one<{ n: number }>("SELECT COUNT(*) n FROM template_versions WHERE workspace_id = ?", ws.id)?.n ?? 0;
+  if (total >= 200) throw new AppError("This workspace has reached 200 agreement versions. Archive old ones or contact support.", 429);
+  await ensureDiskSpace(upload.data.length * 3);
   let pdf: Buffer;
   try {
     pdf = await toPdf(upload.data, upload.filename);

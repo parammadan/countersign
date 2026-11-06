@@ -8,9 +8,10 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ token: 
   rateLimit(req, "otp", 5);
   const { token } = await ctx.params;
   const { file, ws } = signerOr404(token);
-  if (file.status !== "sent" && file.status !== "viewed") throw new AppError("This agreement isn't waiting for a signature.", 409);
+  if (!["sent", "viewed", "completed"].includes(file.status)) throw new AppError("This agreement isn't available.", 409);
   if (limited(`otp-file:${file.id}`, 5, 3600_000)) throw new AppError("Too many codes requested. Try again in an hour.", 429);
-  await sendOtp(file, ws, ctxOf(req));
+  const sent = await sendOtp(file, ws, ctxOf(req));
+  if (!sent) throw new AppError("We couldn't send the code email just now. Try again in a minute, or contact the sender.", 502);
   const [user, domain] = file.client_email.split("@");
   return NextResponse.json({ ok: true, to: `${user.slice(0, 2)}***@${domain}` });
 });

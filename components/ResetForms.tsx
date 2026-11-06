@@ -40,7 +40,20 @@ export function CsvImport() {
         One row per file. Columns: <code>client_name</code>, <code>client_email</code>, and optionally <code>company</code>, <code>ref</code>, <code>title</code>. Any other column fills the agreement blank with the same name. Each row is sent straight away.
       </p>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <input name="csv" type="file" accept=".csv,text/csv" required className="text-sm" />
+        <input
+          name="csv"
+          type="file"
+          accept=".csv,text/csv"
+          required
+          className="text-sm"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f && f.size > 1_000_000) {
+              alert("CSV files up to 1 MB (about 5,000 rows). Split it and import in parts.");
+              e.target.value = "";
+            }
+          }}
+        />
         <Button variant="secondary" disabled={pending}>{pending ? "Importing…" : "Import and send"}</Button>
       </div>
     </form>

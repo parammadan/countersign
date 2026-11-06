@@ -362,6 +362,10 @@ function Decline({ token, onClose }: { token: string; onClose: () => void }) {
   );
 }
 
+export function VerifyThenDownload({ token, email }: { token: string; email: string }) {
+  return <Otp token={token} email={email} onOk={() => location.reload()} />;
+}
+
 function Otp({ token, email, onOk }: { token: string; email: string; onOk: () => void }) {
   const [sent, setSent] = useState<string | null>(null);
   const [code, setCode] = useState("");

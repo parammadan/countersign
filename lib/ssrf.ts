@@ -3,22 +3,18 @@ import net from "node:net";
 import { Agent, fetch as ufetch } from "undici";
 import { AppError } from "./errors";
 
+// separate lists: a mixed list matches IPv4 addresses against IPv6 rules like ::/96
+const BL4 = new net.BlockList();
+const BL6 = new net.BlockList();
+for (const [a, p] of [["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10], ["127.0.0.0", 8], ["169.254.0.0", 16], ["172.16.0.0", 12], ["192.0.0.0", 24], ["192.0.2.0", 24], ["192.168.0.0", 16], ["198.18.0.0", 15], ["198.51.100.0", 24], ["203.0.113.0", 24], ["224.0.0.0", 3]] as const) BL4.addSubnet(a, p, "ipv4");
+// ::/96 covers ::1 and IPv4-compatible forms; ::ffff:0:0/96 covers every IPv4-mapped address
+for (const [a, p] of [["::", 96], ["::ffff:0:0", 96], ["64:ff9b::", 96], ["100::", 64], ["2001:db8::", 32], ["fc00::", 7], ["fe80::", 10], ["fec0::", 10], ["ff00::", 8]] as const) BL6.addSubnet(a, p, "ipv6");
+
 export function privateIp(ip: string): boolean {
-  if (net.isIPv4(ip)) {
-    const [a, b] = ip.split(".").map(Number);
-    return (
-      a === 0 || a === 10 || a === 127 || a >= 224 ||
-      (a === 100 && b >= 64 && b <= 127) ||
-      (a === 169 && b === 254) ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168) ||
-      (a === 192 && b === 0) ||
-      (a === 198 && (b === 18 || b === 19))
-    );
-  }
-  const l = ip.toLowerCase();
-  if (l.startsWith("::ffff:")) return privateIp(l.slice(7));
-  return l === "::1" || l === "::" || /^(fc|fd|fe[89ab]|fec|fed|fee|fef|ff)/.test(l) || l.startsWith("64:ff9b:") || l.startsWith("2001:db8");
+  const v = net.isIP(ip);
+  if (v === 4) return BL4.check(ip, "ipv4");
+  if (v === 6) return BL6.check(ip, "ipv6");
+  return true; // not an IP: treat as unsafe
 }
 
 const BLOCKED = "Webhook URLs must point at a public internet address.";
@@ -36,7 +32,8 @@ export async function checkWebhookUrl(raw: string): Promise<URL> {
   if (u.username || u.password) throw new AppError("Don't put credentials in the URL.");
   if (allowPrivate()) return u;
   const host = u.hostname.replace(/^\[|\]$/g, "");
-  if (net.isIP(host) && privateIp(host)) throw new AppError(BLOCKED);
+  // IP literals skip DNS (and so the connect-time guard): require a hostname
+  if (net.isIP(host)) throw new AppError("Use a hostname, not an IP address, for webhook URLs.");
   const addrs = await dns.promises.lookup(host, { all: true }).catch(() => []);
   if (!addrs.length || addrs.some((a) => privateIp(a.address))) throw new AppError(BLOCKED);
   return u;

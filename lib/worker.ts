@@ -12,7 +12,7 @@ export async function tick(): Promise<{ deliveries: number; expired: number; rem
     await attempt(d);
     deliveries++;
   }
-  const open = all<FileRow>("SELECT * FROM files WHERE status IN ('sent','viewed') LIMIT 500");
+  const open = all<FileRow>("SELECT * FROM files WHERE status IN ('sent','viewed') ORDER BY COALESCE(expires_at, sent_at) LIMIT 1000");
   const t = Date.now();
   for (const f of open) {
     try {

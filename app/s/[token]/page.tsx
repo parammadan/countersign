@@ -3,7 +3,7 @@ import { loadByToken, expireIfDue, prefillValues, formatDate } from "@/lib/files
 import { signerVerified } from "@/lib/signer";
 import { one } from "@/lib/db";
 import { now } from "@/lib/util";
-import { SigningRoom, type SignerField } from "@/components/SigningRoom";
+import { SigningRoom, VerifyThenDownload, type SignerField } from "@/components/SigningRoom";
 
 export const metadata: Metadata = { title: "Review and sign", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -56,6 +56,8 @@ export default async function Page({ params }: { params: Promise<{ token: string
   if (file.status === "draft") return shell(<Message title="Not ready yet" body={`${ws.name} hasn't sent this agreement yet.`} />);
   if (file.status === "signed")
     return shell(<Message title="You've signed" body={`Thanks. ${ws.name} is countersigning now. You'll get the completed copy by email as soon as they do.`} />);
+  if (file.status === "completed" && !(await signerVerified(file, ws)))
+    return shell(<VerifyThenDownload token={token} email={file.client_email.replace(/^(.{2}).*(@.*)$/, "$1***$2")} />);
   if (file.status === "completed")
     return shell(
       <Message title="This agreement is complete" body="Both parties have signed. Download your copy, with its audit certificate, below.">

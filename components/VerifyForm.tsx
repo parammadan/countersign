@@ -17,9 +17,7 @@ export function VerifyForm() {
           const f = (e.currentTarget.elements.namedItem("file") as HTMLInputElement).files?.[0];
           if (!f) return;
           setBusy(true);
-          const fd = new FormData();
-          fd.append("file", f);
-          const res = await fetch("/api/verify", { method: "POST", body: fd });
+          const res = await fetch("/api/verify", { method: "POST", body: f, headers: { "Content-Type": "application/pdf" } });
           setR((await res.json()) as R);
           setBusy(false);
         }}

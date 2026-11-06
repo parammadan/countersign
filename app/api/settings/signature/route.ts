@@ -12,7 +12,7 @@ export const POST = handle(async (req: Request) => {
   const m = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(body.signature ?? "");
   if (!m) throw new AppError("Draw or type a signature first.");
   const buf = Buffer.from(m[1], "base64");
-  if (buf.length > 600_000 || buf.length < 24 || buf.subarray(1, 4).toString("latin1") !== "PNG") throw new AppError("Invalid signature image.");
+  if (buf.length > 600_000 || buf.length < 24 || buf.subarray(1, 4).toString("latin1") !== "PNG" || buf.subarray(12, 16).toString("latin1") !== "IHDR") throw new AppError("Invalid signature image.");
   if (buf.readUInt32BE(16) > 4000 || buf.readUInt32BE(20) > 2000) throw new AppError("Signature image is too large.");
   const name = (body.name ?? "").trim().slice(0, 120);
   const email = (body.email ?? "").trim().toLowerCase().slice(0, 320);

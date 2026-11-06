@@ -67,6 +67,7 @@ export function FieldEditor({
     setCanUndo(history.current.length > 0);
   }, []);
   const first = useRef(true);
+  const publishingRef = useRef(false);
 
   const selected = fields.find((f) => f.id === sel) ?? null;
   const problems = useMemo(() => validateForPublish(fields, pages), [fields, pages]);
@@ -94,7 +95,9 @@ export function FieldEditor({
       return;
     }
     setSaved("dirty");
-    const t = setTimeout(() => save(fields), 700);
+    const t = setTimeout(() => {
+      if (!publishingRef.current) save(fields);
+    }, 700);
     return () => clearTimeout(t);
   }, [fields, readOnly, save]);
 
@@ -161,15 +164,18 @@ export function FieldEditor({
   });
 
   async function publish() {
+    publishingRef.current = true;
     setPublishing(true);
     setErr(null);
     if (!(await save(fields))) {
+      publishingRef.current = false;
       setPublishing(false);
       return;
     }
     const r = await fetch(`/api/versions/${versionId}/publish`, { method: "POST" });
     setPublishing(false);
     if (!r.ok) {
+      publishingRef.current = false;
       setErr(((await r.json().catch(() => ({}))) as { error?: string }).error ?? "Couldn't publish");
       return;
     }
