@@ -1,6 +1,6 @@
 # Branding: where the name lives, and how to change it
 
-The public name is still **Countersign**. It changes only once the product owner picks a new one.
+The public name is **AgreementOS** (chosen by the product owner on 2026-11-06). It was **Countersign** until then.
 
 ## Where the product name lives now
 
@@ -34,7 +34,7 @@ Running `grep -rn '"Countersign"' app components lib` should return only `lib/br
 3. Run `npm test`, `npm run build` and `npx playwright test`. The E2E tests don't depend on the brand name.
 4. If you get a domain, set `APP_URL` and `EMAIL_FROM`. Existing signing links keep working on the old host as long as it stays up.
 
-## Name candidates
+## Name candidates (historical; AgreementOS was chosen instead)
 
 These are checked only by a web search on 2026-11-06. **None of this is a trademark clearance**; do a USPTO/EUIPO search and a domain check before choosing.
 
@@ -51,7 +51,9 @@ Also checked and rejected:
 - **Accordant:** an existing ERP reseller, plus a facility-software product.
 - **Inkline:** several small products already use the name.
 
-**Recommendation:** Clausewell. Mandato is the second choice, subject to trademark and domain checks.
+**Earlier recommendation:** Clausewell, then Mandato. Firmloom was also considered and set aside (firmloom.com taken; FAIRLOOM software applications pending).
+
+**AgreementOS check (2026-11-06, web search only, not a trademark search):** no software product of that name found; agreementos.com is registered by someone else (since 2025-11-02); agreementos.ai and agreementos.io were unregistered. A professional trademark search is still recommended.
 
 ## Design direction (for the rename and the future modules)
 

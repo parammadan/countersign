@@ -7,13 +7,15 @@
 //   Integrations already depend on them; a rename would break every customer's webhook verification.
 // - Infrastructure: the GitHub repo, the Fly app (countersign-app), the database file and public URLs.
 // - Completed documents: certificates already sealed keep the name they were sealed with (their SHA-256 is
-//   the evidence; rewriting them would break verification).
+//   the evidence; rewriting them would break verification). The certificate itself carries no product name.
 export const BRAND = {
-  name: "Countersign",
+  name: "AgreementOS",
+  /** the earlier public name. Shown where people may hold documents or emails sent under it (verify page). */
+  formerly: "Countersign",
   tagline: "Your client agreement, signed on every file. Automatically.",
   description: "Upload your client agreement once. Every new file sends it, collects the signature, countersigns and files the signed copy automatically.",
   /** default accent for new workspaces and system emails; each firm can set its own */
   color: "#1f4fd1",
   /** used as the sender name on system emails (password reset, invites, confirmations) */
-  systemSender: "Countersign",
+  systemSender: "AgreementOS",
 } as const;

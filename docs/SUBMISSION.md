@@ -1,4 +1,4 @@
-# Countersign: submission
+# AgreementOS: submission
 
 - **Submission URL:** https://countersign-app.fly.dev
 - **Repository:** https://github.com/parammadan/countersign (private; `theastraway` invited as a collaborator)
@@ -6,11 +6,11 @@
 
 ## What I built
 
-Countersign is a multi-tenant SaaS product that makes "the agreement every client signs before work starts" happen by itself on every file.
+AgreementOS (built as Countersign; the repository, Fly app and URL keep that name) is a multi-tenant SaaS product that makes "the agreement every client signs before work starts" happen by itself on every file.
 
 A firm sets it up once:
 - Upload the agreement it already uses (PDF or Word).
-- Check the signature, date and blank fields Countersign found.
+- Check the signature, date and blank fields AgreementOS found.
 - Adopt a countersignature.
 
 After that, every new file, whether opened in the app, imported from CSV, posted by a CRM or n8n, or created through the REST API, does all of this with nobody at the firm touching it:

@@ -245,9 +245,24 @@ export function LogoMark({ size = 22 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden>
       <rect width="24" height="24" rx="6.5" fill="var(--brand)" />
-      <path d="M6 15.5c1.6-3.6 3.2-5.4 4.4-5.4 1.7 0 .2 5.6 1.9 5.6 1.2 0 2-2.4 3.3-2.4.9 0 1 1.6 2.4 1.6" stroke="#fff" strokeWidth="1.7" fill="none" strokeLinecap="round" />
-      <path d="M6 18.3h12" stroke="#fff" strokeOpacity=".55" strokeWidth="1.2" strokeLinecap="round" />
+      {/* a page with its corner turned, checked off: an agreement that's done */}
+      <path d="M8 5h5.6L17 8.4v9.9a.7.7 0 0 1-.7.7H8a.7.7 0 0 1-.7-.7V5.7A.7.7 0 0 1 8 5z" fill="#fff" />
+      <path d="M13.4 5v3.6H17" fill="none" stroke="var(--brand)" strokeOpacity=".35" strokeWidth="1.1" strokeLinejoin="round" />
+      <path d="m9.6 13.4 1.8 1.8 3.4-3.7" fill="none" stroke="var(--brand)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
+  );
+}
+
+/** The product name, with the trailing "OS" picked out in the accent. Reads as one word to screen readers. */
+export function Wordmark() {
+  const m = BRAND.name.match(/^(.*?)(OS)$/);
+  return m ? (
+    <span>
+      {m[1]}
+      <span className="text-brand">{m[2]}</span>
+    </span>
+  ) : (
+    <span>{BRAND.name}</span>
   );
 }
 
@@ -255,7 +270,7 @@ export function Logo({ className }: { className?: string }) {
   return (
     <span className={cx("inline-flex items-center gap-2 text-[15px] font-semibold tracking-tight text-ink", className)}>
       <LogoMark />
-      {BRAND.name}
+      <Wordmark />
     </span>
   );
 }
