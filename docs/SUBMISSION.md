@@ -83,27 +83,32 @@ So an unseen agreement always ends in a signed, sealed document, and usually wit
 | **SSO/SAML, SOC 2 artifacts, data-residency options** | Enterprise-sales features, not needed to buy and run it at small-firm size. |
 | **Native mobile apps** | Clients sign in the browser, and the signing room is built mobile-first. Nobody installs anything to sign one agreement. |
 | **Collecting a payment or retainer at signing** | A separate product decision, and easy to add after signing. |
-| **Account email verification and per-user workspace switching** | Sign-ups can send straight away (with a daily cap per workspace) so a firm, or the grader, can try it in minutes. Verification is the next step before opening sign-ups to the public. A person belonging to several firms signs in to the first one. |
+| **Per-user workspace switching** | A person belonging to several firms signs in to the first one. Rare for a firm's staff; worth adding once firms share contractors. |
 | **Postgres and multi-instance hosting** | One instance with SQLite in WAL mode on a persistent volume handles thousands of files a day for a firm and is simpler to run and back up. The SQL is plain enough to move to Postgres when there are many tenants. |
 
 ## Security review
 
-Before launch I had a separate Claude Code session do a read-only security and correctness review, with no hand-off of my own reasoning. It found no critical issues, 5 high, 9 medium and 12 low. I fixed all the high and medium ones. The riskiest have automated tests: rotated-page stamping at all four rotations, SSRF at connect time, one-time codes kept out of the log, webhook claim and retry, and double countersign. The rest were verified by reading the code and by a second, independent audit. The fixes:
+Before launch I had a separate Claude Code session do a read-only security and correctness review, with no hand-off of my own reasoning. It found no critical issues, 5 high, 9 medium and 12 low. I fixed all the high and medium ones. The riskiest have automated tests: rotated-page stamping at all four rotations, SSRF at connect time, one-time codes kept out of the log, webhook claim and retry, double countersign, failed email delivery, the sign-up verification gate, readiness re-checks, and HTTP-level tests for sign-in, sessions, roles, CSRF and isolation between workspaces. CI runs all of them on every push. The rest were verified by reading the code and by a second, independent audit. The fixes:
 
 - **Sensitive emails:** one-time codes, invite links and password-reset links are never stored in the in-app email log (staff could otherwise have read a link and taken over an account).
 - **Rotated pages:** stamps are mapped through the page's `/Rotate` and crop box, so signatures on landscape or rotated pages land where the editor showed them. This is tested at all four rotations, with and without crop boxes, including that the text reads upright.
 - **Request size:** bodies are capped while streaming, before parsing, so an oversized upload can't take down the server.
-- **LibreOffice:** runs without the app's secrets in its environment, with a timeout and at most two conversions at once.
+- **LibreOffice:** Word files are converted by a separate small service running as its own OS user, which cannot read `/data` (the database, every firm's PDFs, the app secret). It has no app secrets in its environment, a 60-second timeout that kills the whole process group, and at most two conversions at once. Verified in the Docker image: the converter user gets "Permission denied" on `/data`, and Word uploads still sign end to end.
 - **Email code:** the verified code is tied to the client's browser (an httpOnly cookie), not to the file, so a forwarded link alone can't sign. Nothing about the agreement is sent to the browser before verification.
 - **Countersigning:** it is atomic. A double click, or a void during auto-countersign, can't produce two sealed copies, and the audit event is written only once the sealed PDF exists. If auto-countersign fails, the client still sees success and the firm is asked to countersign by hand.
 - **Webhooks:** deliveries are claimed before sending, so there are no duplicates. Removed webhooks stop retrying. DNS is checked at connect time, so a hostname can't pass the check and then point at an internal address.
 - **Client IPs:** they come only from the trusted proxy (Fly), so they can't be spoofed into the audit trail.
 - **Team:** admins can remove members and change roles, and invites expire after 7 days.
+- **Email delivery is reported honestly:** if the provider rejects or can't reach an email, the file records the failure and the error, the audit trail says "Email to client failed" instead of "sent", the `file.sent` webhook isn't fired, and the file page tells the firm to copy the link or retry.
+- **Sign-up abuse:** when real email is configured, a new workspace must confirm its owner's address (one-click link, a button rather than a GET so mail scanners can't trigger it) before it can email anyone outside its own team, or invite teammates. "Send a test to me" works straight away.
+- **Signing links:** they are withheld from the stored copy of every email, so staff reading the Email log can't use a client's link. A completed file's link opens the client's copy for 30 days, then closes (the copy is also emailed).
+- **Ready for work:** a completed file is only shown as ready after re-checking consent, the client's signature, the firm's countersignature, and that the sealed PDF on disk still matches its recorded SHA-256. The same check is in `GET /api/v1/files/:id`.
 - **Smaller fixes:** signature images are capped by pixel size; each workspace has a daily cap on new files; the "client opened it" event is recorded from the browser, so email link scanners don't fake it; `/verify` says when a file was voided; fillable PDF form fields are flattened so they can't hide stamps.
 
 **Residual risks, accepted for now and written down here:**
-- LibreOffice still runs as the same OS user as the app. The right production fix is a separate, network-isolated conversion worker.
-- New sign-ups aren't email-verified before they can send, which is mitigated by the daily cap.
+- The Word converter is isolated from the data by OS user, not by a separate machine or network namespace. A sandbox (gVisor, a separate Fly machine) is the next step for high-volume use.
+- One machine: locks, rate limits and the reminder loop live in the app process, and SQLite is on one volume (Fly's scheduled volume snapshots are on, kept 5 days; restores have not been rehearsed). That is deliberate for this stage; moving to several machines needs Postgres and a job queue first.
+- No MFA for firm users yet.
 
 ## How well it handles an agreement it has never seen
 
@@ -131,7 +136,7 @@ Every tuning PDF (14, including the scanned ones) goes through the full browser 
 - **Data:** SQLite through Node's built-in `node:sqlite`
 - **PDF:** pdf.js (Mozilla) for text and vector extraction and in-browser rendering; pdf-lib for stamping and the certificate
 - **Word documents:** LibreOffice (headless), to convert them to PDF
-- **Email:** Nodemailer over SMTP (the demo uses a Gmail account, so no domain is needed), or Resend
+- **Email:** Nodemailer over SMTP (works with a Gmail account and an app password, so no domain is needed), or Resend
 - **Hosting:** Docker on Fly.io
 - **Testing:** Vitest and Playwright
 - **AI assistant:** Claude Code (Anthropic), for planning, writing code and generating the fake test agreements. Two of the test sets were written by separate Claude Code agent sessions that were not allowed to read the detector's source, so their scores are a fair test.

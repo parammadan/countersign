@@ -46,6 +46,8 @@ new file (UI · CSV · REST API · inbound webhook · n8n) ─┤
   | `fixtures/final`, after general fixes | 8 | same | 0.97 | 0.91 |
 
   The first run on `final` is the honest number for an agreement it has never seen. Client signature lines were found in 8 of 8 documents in that first run. Whatever the detector misses, the admin fixes in the editor before publishing, and publishing is blocked until there is a client signature. Run `npm run test:detect` for the full per-field report.
+- **Ready for work, earned.** A file is shown as ready only after re-checking consent, the client's signature, the firm's countersignature, and that the sealed PDF on disk still matches its recorded SHA-256 (file page and `GET /api/v1/files/:id`).
+- **Honest delivery.** Every client email's result (sent, failed with the provider's error, or logged when no provider is configured) is recorded on the file and in the audit trail. With real email on, a new workspace confirms its owner's address before it can email anyone outside its team.
 - **Legal trail.** An ESIGN-style consumer disclosure with logged consent, explicit intent-to-sign, an optional emailed one-time code, an append-only audit log (SQLite triggers reject UPDATE/DELETE) with IP, user agent and timestamps, and SHA-256 of the original, client-signed and final PDFs. The certificate of completion is appended to the final PDF.
 
 ## Stack
@@ -57,7 +59,7 @@ Next.js 16 (App Router, server actions, route handlers) · React 19 · TypeScrip
 ```bash
 npm install
 npm run dev            # http://localhost:3000. Data goes to ./data; emails go to the in-app Email log
-npm test               # unit + lifecycle + detector report
+npm test               # unit + lifecycle + delivery + detector report
 npm run test:detect    # detector on all three corpora
 npm run build && npx playwright test   # browser E2E on a production build (uses installed Google Chrome; PW_CHANNEL=chromium to change)
 E2E_FIXTURES=$(ls fixtures/agreements/*.pdf | xargs -n1 basename | paste -sd, -) npx playwright test --project=desktop
@@ -86,6 +88,8 @@ docker build -t countersign . && docker run -p 8080:8080 -e APP_URL=http://local
 | `DAILY_FILE_CAP` | `300` | New files per workspace per 24 h (abuse limit) |
 | `SOFFICE_PATH` | `soffice` | LibreOffice binary for Word conversion |
 | `ALLOW_PRIVATE_WEBHOOKS` | unset | Dev/test only: allow `http://` and private addresses as webhook targets |
+| `CONVERTER_URL` | unset; `http://127.0.0.1:8091` in the Docker image | Word conversion service (`scripts/converter.mjs`, run as its own OS user with no access to `DATA_DIR`). Unset: the app runs LibreOffice itself (local dev) |
+| `AUTH_RATE_LIMIT_X` | unset | Test servers only: multiplies the per-minute sign-up / sign-in limits |
 
 ## API
 
@@ -111,5 +115,7 @@ lib/detect.ts   field detector            lib/pdf/extract.ts  pdf.js text + vect
 lib/pdf/stamp.ts  stamping + certificate  lib/files.ts        file lifecycle (send, sign, countersign, seal)
 lib/templates.ts  upload + versions       lib/db.ts           schema + migrations (node:sqlite)
 fixtures/       fake agreements + ground truth (agreements = tuning, holdout, final)
-e2e/            Playwright: the grader path end to end
+e2e/            Playwright: the grader path end to end, plus HTTP security tests (auth, roles, CSRF, tenant isolation)
+lib/brand.ts    product name and identity in one place (see docs/BRANDING.md)
+.github/        CI: typecheck, lint, unit, build, Playwright on every push
 ```
