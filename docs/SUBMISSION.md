@@ -2,7 +2,7 @@
 
 - **Submission URL:** https://countersign-app.fly.dev
 - **Repository:** https://github.com/parammadan/countersign (private; `theastraway` invited as a collaborator)
-- **Email on the demo:** see "Email delivery" below. If an email doesn't arrive, every message is also under **Email log**, and each file has **Copy signing link**.
+- **Email on the demo:** if an email doesn't arrive (check spam), every message is also under **Email log**, and each file has **Copy signing link**.
 
 ## What I built
 
@@ -131,7 +131,7 @@ Every tuning PDF (14, including the scanned ones) goes through the full browser 
 - **Data:** SQLite through Node's built-in `node:sqlite`
 - **PDF:** pdf.js (Mozilla) for text and vector extraction and in-browser rendering; pdf-lib for stamping and the certificate
 - **Word documents:** LibreOffice (headless), to convert them to PDF
-- **Email:** Resend
+- **Email:** Nodemailer over SMTP (the demo uses a Gmail account, so no domain is needed), or Resend
 - **Hosting:** Docker on Fly.io
 - **Testing:** Vitest and Playwright
 - **AI assistant:** Claude Code (Anthropic), for planning, writing code and generating the fake test agreements. Two of the test sets were written by separate Claude Code agent sessions that were not allowed to read the detector's source, so their scores are a fair test.

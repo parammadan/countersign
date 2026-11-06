@@ -30,7 +30,7 @@ export default async function Page() {
         </Card>
         <Card className="p-5 sm:p-6">
           <h2 className="mb-4 text-lg font-semibold">Workspace</h2>
-          <SettingsForm ws={ws} emailOn={emailMode() === "resend"} />
+          <SettingsForm ws={ws} emailOn={emailMode() !== "outbox"} />
         </Card>
         <Card className="p-5 sm:p-6">
           <h2 className="mb-4 text-lg font-semibold">Team</h2>

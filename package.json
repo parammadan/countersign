@@ -15,7 +15,9 @@
     "test:detect": "FIXTURE_DIR=fixtures/agreements vitest run test/detect.test.ts && FIXTURE_DIR=fixtures/holdout vitest run test/detect.test.ts && FIXTURE_DIR=fixtures/final vitest run test/detect.test.ts"
   },
   "dependencies": {
+    "@types/nodemailer": "^8.0.2",
     "next": "16.4.5",
+    "nodemailer": "^7.0.10",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^5.4.394",
     "react": "19.3.0",

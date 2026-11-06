@@ -3,8 +3,32 @@ import { escapeHtml, id, now } from "./util";
 
 export type Attachment = { filename: string; content: Buffer };
 
-export function emailMode(): "resend" | "outbox" {
-  return process.env.RESEND_API_KEY ? "resend" : "outbox";
+export function emailMode(): "resend" | "smtp" | "outbox" {
+  if (process.env.RESEND_API_KEY) return "resend";
+  if (process.env.SMTP_USER && process.env.SMTP_PASS) return "smtp";
+  return "outbox";
+}
+
+type Mailer = { sendMail(m: Record<string, unknown>): Promise<{ messageId?: string }> };
+const g = globalThis as unknown as { __csmailer?: Mailer };
+
+// Any SMTP server works (a Gmail account with an app password needs no domain).
+async function smtp(): Promise<Mailer> {
+  if (g.__csmailer) return g.__csmailer;
+  const nodemailer = (await import("nodemailer")).default;
+  const port = Number(process.env.SMTP_PORT || 465);
+  g.__csmailer = nodemailer.createTransport({
+    host: process.env.SMTP_HOST || "smtp.gmail.com",
+    port,
+    secure: port === 465,
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    connectionTimeout: 15_000,
+    greetingTimeout: 15_000,
+    socketTimeout: 30_000,
+    pool: true,
+    maxConnections: 2,
+  }) as unknown as Mailer;
+  return g.__csmailer;
 }
 
 // Every email is recorded (the outbox doubles as a delivery log). If a provider
@@ -26,9 +50,28 @@ export async function sendEmail(opts: {
   let status = "logged";
   let providerId: string | null = null;
   let error: string | null = null;
-  if (process.env.RESEND_API_KEY) {
+  const mode = emailMode();
+  const fromName = (opts.fromName || "Countersign").replace(/[<>"\r\n]/g, "");
+  if (mode === "smtp") {
     try {
-      const from = `${(opts.fromName || "Countersign").replace(/[<>"]/g, "")} <${process.env.EMAIL_FROM || "onboarding@resend.dev"}>`;
+      const info = await (await smtp()).sendMail({
+        from: { name: fromName, address: process.env.EMAIL_FROM || process.env.SMTP_USER },
+        to: opts.to,
+        subject: opts.subject,
+        html: opts.html,
+        replyTo: opts.replyTo || undefined,
+        attachments: opts.attachments?.map((a) => ({ filename: a.filename, content: a.content, contentType: "application/pdf" })),
+      });
+      status = "sent";
+      providerId = info.messageId ?? null;
+    } catch (e) {
+      status = "failed";
+      error = String((e as Error).message || e).slice(0, 300);
+    }
+  }
+  if (mode === "resend") {
+    try {
+      const from = `${fromName} <${process.env.EMAIL_FROM || "onboarding@resend.dev"}>`;
       const res = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },

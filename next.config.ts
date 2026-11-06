@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
-  serverExternalPackages: ["pdfjs-dist"],
+  serverExternalPackages: ["pdfjs-dist", "nodemailer"],
   experimental: { serverActions: { bodySizeLimit: "2mb" } },
   turbopack: {
     rules: {

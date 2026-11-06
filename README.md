@@ -50,7 +50,7 @@ new file (UI · CSV · REST API · inbound webhook · n8n) ─┤
 
 ## Stack
 
-Next.js 16 (App Router, server actions, route handlers) · React 19 · TypeScript · Tailwind 4 · SQLite via Node's built-in `node:sqlite` (WAL) · pdf.js (extraction + in-browser rendering) · pdf-lib (stamping, certificate) · LibreOffice headless (Word → PDF) · Resend (email) · Docker on Fly.io with a persistent volume · Vitest + Playwright.
+Next.js 16 (App Router, server actions, route handlers) · React 19 · TypeScript · Tailwind 4 · SQLite via Node's built-in `node:sqlite` (WAL) · pdf.js (extraction + in-browser rendering) · pdf-lib (stamping, certificate) · LibreOffice headless (Word → PDF) · Nodemailer SMTP or Resend (email) · Docker on Fly.io with a persistent volume · Vitest + Playwright.
 
 ## Run locally
 
@@ -78,7 +78,8 @@ docker build -t countersign . && docker run -p 8080:8080 -e APP_URL=http://local
 | `APP_URL` | `http://localhost:3000` | Public base URL, used in emails and signing links |
 | `DATA_DIR` | `./data` | SQLite database + stored PDFs (mount a volume here) |
 | `APP_SECRET` | generated into `DATA_DIR/.secret` | Encrypts signing tokens at rest |
-| `RESEND_API_KEY` / `EMAIL_FROM` | unset | Without them, emails are recorded in the Email log instead of sent |
+| `SMTP_USER` / `SMTP_PASS` (+ `SMTP_HOST`, `SMTP_PORT`) | unset; host defaults to `smtp.gmail.com:465` | Send through any SMTP server. A Gmail account with an app password works with no domain of your own |
+| `RESEND_API_KEY` / `EMAIL_FROM` | unset | Send through Resend instead (needs a verified domain). With neither set, emails are recorded in the Email log instead of sent |
 | `APP_TZ` | `America/New_York` | Time zone for dates written into agreements |
 | `DISABLE_WORKER` | unset | Turns off the reminder/expiry/webhook-retry loop |
 | `TRUST_PROXY` | unset | `fly` to read the client IP from Fly's proxy, `1` for a generic X-Forwarded-For proxy. Unset: IPs are recorded as "unknown" (safe default, since headers could be spoofed) |

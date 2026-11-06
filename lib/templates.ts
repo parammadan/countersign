@@ -1,3 +1,4 @@
+import { documentTitle } from "./pdf/title";
 import { one, run, tx } from "./db";
 import { ConvertError, toPdf } from "./convert";
 import { extractPdf } from "./pdf/extract";
@@ -68,8 +69,14 @@ export async function ingestAgreement(
     } else {
       const tid = id("tpl_");
       const isFirst = !one("SELECT 1 FROM templates WHERE workspace_id = ? AND archived = 0", ws.id);
+      const fromFile = path
+        .parse(upload.filename)
+        .name.replace(/[_-]+/g, " ")
+        .replace(/^\s*\d+\s+/, "")
+        .replace(/\s+/g, " ")
+        .trim();
       const nm =
-        (opts.name || path.parse(upload.filename).name)
+        (opts.name || documentTitle(ex) || fromFile.charAt(0).toUpperCase() + fromFile.slice(1))
           .replace(/[_-]+/g, " ")
           .replace(/^\s*\d+\s+/, "")
           .replace(/\s+/g, " ")
