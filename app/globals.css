@@ -1,30 +1,64 @@
 @import "tailwindcss";
 
+/*
+  Design tokens. One accent (--brand, which each firm can set; the app shell re-scopes it per workspace),
+  calm cool neutrals, and semantic colours that always travel with an icon or text, never colour alone.
+  Contrast: --ink, --ink-2 and --muted all pass WCAG AA (4.5:1) on --panel and --bg. --faint is for
+  decorative or non-essential text only.
+*/
 :root {
-  --bg: #f6f7f9;
+  --bg: #f5f6f8;
   --panel: #ffffff;
-  --ink: #141a26;
+  --subtle: #fafbfc;
+  --ink: #0f1729;
+  --ink-2: #2b3445;
   --muted: #5b6474;
-  --line: #e3e6ec;
+  --faint: #8a93a3;
+  --line: #e4e7ec;
+  --line-strong: #d0d5dd;
   --brand: #1f4fd1;
   --brand-ink: #ffffff;
-  --ok: #0f7a4a;
+  --ok: #067647;
+  --ok-bg: #ecfdf3;
   --warn: #a35a00;
+  --warn-bg: #fffaeb;
   --bad: #b42318;
+  --bad-bg: #fef3f2;
+
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --shadow-1: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow-2: 0 1px 3px rgba(16, 24, 40, 0.06), 0 8px 24px -8px rgba(16, 24, 40, 0.12);
+  --shadow-3: 0 2px 6px rgba(16, 24, 40, 0.06), 0 24px 48px -12px rgba(16, 24, 40, 0.18);
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
 @theme inline {
   --color-bg: var(--bg);
   --color-panel: var(--panel);
+  --color-subtle: var(--subtle);
   --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
   --color-muted: var(--muted);
+  --color-faint: var(--faint);
   --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
   --color-brand: var(--brand);
+  --color-brand-soft: color-mix(in srgb, var(--brand) 9%, white);
   --color-ok: var(--ok);
+  --color-ok-bg: var(--ok-bg);
   --color-warn: var(--warn);
+  --color-warn-bg: var(--warn-bg);
   --color-bad: var(--bad);
+  --color-bad-bg: var(--bad-bg);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-instrument-serif), ui-serif, Georgia, serif;
+  --shadow-1: var(--shadow-1);
+  --shadow-2: var(--shadow-2);
+  --shadow-3: var(--shadow-3);
+  --ease-out-soft: var(--ease);
 }
 
 html { color-scheme: light; }
@@ -32,7 +66,37 @@ body {
   background: var(--bg);
   color: var(--ink);
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: "cv11", "ss01";
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 ::selection { background: color-mix(in srgb, var(--brand) 22%, transparent); }
 .tabular { font-variant-numeric: tabular-nums; }
+
+/* One visible focus style everywhere keyboard users land. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+@keyframes cs-fade-in { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+@keyframes cs-slide-in { from { transform: translateX(-100%); } to { transform: none; } }
+@keyframes cs-shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
+.cs-fade-in { animation: cs-fade-in 180ms var(--ease) both; }
+.cs-slide-in { animation: cs-slide-in 220ms var(--ease) both; }
+.cs-skeleton {
+  background: linear-gradient(90deg, #eef0f3 0px, #f6f7f9 160px, #eef0f3 320px);
+  background-size: 800px 100%;
+  animation: cs-shimmer 1.4s linear infinite;
+}
+
+/* Respect the OS setting: no movement for people who asked for less of it. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -20,7 +20,7 @@ export function SettingsForm({ ws, emailOn = true }: { ws: Workspace; emailOn?: 
         <Field label="Legal entity name" hint="Used to recognise your signature block in agreements."><Input name="legal_name" defaultValue={ws.legal_name} required /></Field>
         <Field label="Email sender name"><Input name="sender_name" defaultValue={ws.sender_name} required /></Field>
         <Field label="Reply-to email" hint="Where client replies go."><Input name="reply_to" type="email" defaultValue={ws.reply_to ?? ""} /></Field>
-        <Field label="Brand color" hint="Used on the signing page and in emails."><Input name="brand_color" type="color" defaultValue={ws.brand_color} className="h-10 w-20 cursor-pointer p-1" /></Field>
+        <Field label="Brand color" hint="Used on the signing page and in emails."><input name="brand_color" type="color" defaultValue={ws.brand_color} className="block h-10 w-20 cursor-pointer rounded-lg border border-line-strong bg-white p-1 shadow-1" /></Field>
       </section>
       <section>
         <h3 className="mb-3 font-semibold">Countersigner</h3>
@@ -104,7 +104,7 @@ export function InviteForm() {
       )}
       <div className="flex flex-col gap-2 sm:flex-row">
         <Input name="email" type="email" placeholder="colleague@example.com" required />
-        <select name="role" className="rounded-lg border border-line bg-white px-3 py-2 text-sm">
+        <select name="role" aria-label="Role for the new teammate" className="rounded-lg border border-line bg-white px-3 py-2 text-sm">
           <option value="staff">Staff: opens files</option>
           <option value="admin">Admin: also edits agreements & settings</option>
         </select>
@@ -127,7 +127,7 @@ export function MemberRow({ m, self }: { m: { user_id: string; name: string; ema
       ) : (
         <form action={act} className="flex items-center gap-2">
           <input type="hidden" name="userId" value={m.user_id} />
-          <select name="role" defaultValue={m.role} className="rounded-md border border-line bg-white px-2 py-1 text-xs" onChange={(e) => e.currentTarget.form?.requestSubmit()}>
+          <select name="role" aria-label={`Role for ${m.name}`} defaultValue={m.role} className="rounded-md border border-line bg-white px-2 py-1 text-xs" onChange={(e) => e.currentTarget.form?.requestSubmit()}>
             <option value="staff">Staff</option>
             <option value="admin">Admin</option>
           </select>
