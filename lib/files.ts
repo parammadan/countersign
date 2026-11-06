@@ -469,7 +469,7 @@ async function countersignOnce(f: FileRow, ws: Workspace, actor: Actor, ctx: Ctx
     attachments: [{ filename, content: finalBuf }],
   });
   if (copy.delivered) run("UPDATE files SET copy_emailed_at = ? WHERE id = ?", now(), f.id);
-  else audit(ws.id, f.id, "file.email_failed", "system", {}, { to: done.client_email, kind: "completed", error: copy.error });
+  else if (copy.error) audit(ws.id, f.id, "file.email_failed", "system", {}, { to: done.client_email, kind: "completed", error: copy.error });
   await notifyFirm(ws, done, "completed", finalBuf);
   emit(ws.id, "file.completed", { ...fileJson(done), sha256: hash });
   return done;

@@ -4,6 +4,8 @@ import { Notice } from "@/components/ui";
 import { emailMode } from "@/lib/email";
 
 export const metadata = { title: "Reset password" };
+// Email can be switched on after the build (a runtime secret), so decide on every request, not at build time.
+export const dynamic = "force-dynamic";
 
 export default function Page() {
   return (

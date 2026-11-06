@@ -91,4 +91,23 @@ test("signup, confirm, invite, sign and receive the copy, all through delivered 
   await page.goto(fileUrl);
   await expect(page.getByRole("heading", { name: "Ready for work" })).toBeVisible();
   await expect(page.locator("li", { hasText: "Passed: Client emailed their signed copy" })).toBeVisible();
+
+  // password reset through the delivered email. The server was built without email settings, so this also
+  // checks that /forgot decides at request time (it was once prerendered as "email isn't configured").
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await page.goto("/forgot");
+  await page.getByLabel("Work email").fill(owner);
+  await page.getByRole("button", { name: "Email me a reset link" }).click();
+  await expect(page.getByText(/a reset link is on its way/)).toBeVisible();
+  const resetMail = await waitForMail("Choose a new password");
+  const resetLink = resetMail.match(/https?:\/\/[^\s"'<>]+\/reset\/[A-Za-z0-9_-]+/)![0];
+  await page.goto(resetLink);
+  await page.getByLabel("New password").fill("new-correct-horse-43");
+  await page.getByRole("button", { name: "Save and sign in" }).click();
+  await expect(page).toHaveURL(/\/app/);
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await page.getByLabel("Work email").fill(owner);
+  await page.getByLabel("Password").fill("new-correct-horse-43");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page).toHaveURL(/\/app$/);
 });

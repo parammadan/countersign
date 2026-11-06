@@ -67,6 +67,7 @@ describe("file lifecycle", () => {
 
     // no email provider here: the invite was logged, not delivered, and the stored copy has no usable link
     expect(done.email_status).toBe("logged");
+    expect(events).not.toContain("file.email_failed"); // logged is not a failure
     const stored = db.all<{ html: string }>("SELECT html FROM emails WHERE file_id = ?", f.id);
     for (const m of stored) expect(m.html).not.toContain(tok);
     expect(stored.some((m) => m.html.includes("withheld from the log"))).toBe(true);
