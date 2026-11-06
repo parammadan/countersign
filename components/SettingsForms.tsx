@@ -102,7 +102,7 @@ export function InviteForm() {
         </Notice>
       )}
       <div className="flex flex-col gap-2 sm:flex-row">
-        <Input name="email" type="email" placeholder="colleague@yourfirm.com" required />
+        <Input name="email" type="email" placeholder="colleague@example.com" required />
         <select name="role" className="rounded-lg border border-line bg-white px-3 py-2 text-sm">
           <option value="staff">Staff: opens files</option>
           <option value="admin">Admin: also edits agreements & settings</option>
