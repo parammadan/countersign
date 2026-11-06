@@ -32,7 +32,7 @@ export default async function Page() {
         <Card className="p-5 sm:p-6">
           <h2 className="text-lg font-semibold">1. No-code: inbound webhook</h2>
           <p className="mt-1 mb-4 text-sm text-muted">
-            Point your CRM&apos;s &ldquo;new deal / new matter&rdquo; automation, a Zapier zap or an n8n HTTP node at this URL. Each POST opens a file and emails the agreement. Accepts JSON or form posts with <code>client_name</code>/<code>name</code>, <code>client_email</code>/<code>email</code>, and optional <code>company</code>, <code>ref</code>, <code>title</code>, <code>prefill</code>.
+            Point your CRM&apos;s &ldquo;new deal / new matter&rdquo; automation, a Zapier zap or an n8n HTTP node at this URL. Each POST opens a file and emails the agreement. Accepts JSON or form posts with <code>client_name</code>/<code>name</code>, <code>client_email</code>/<code>email</code>, and optional <code>company</code>, <code>ref</code>, <code>title</code>. <code>prefill</code> (the agreement&apos;s blanks) needs JSON. A repeated <code>ref</code> is rejected, so retries never double-send.
           </p>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <code className="min-w-0 flex-1 truncate rounded-lg border border-line bg-gray-50 px-3 py-2 font-mono text-xs">{inbound}</code>
@@ -48,7 +48,7 @@ export default async function Page() {
           </div>
           <p className="mt-3 text-sm">
             <a className="font-medium text-brand" href="/integrations/n8n-countersign.json" download>Download the n8n workflow</a>
-            <span className="text-muted">: &ldquo;new CRM record → send agreement → when signed, update the CRM and post to Slack&rdquo;.</span>
+            <span className="text-muted">: &ldquo;new CRM record → send agreement → when signed, update the CRM; if declined, alert Slack&rdquo;.</span>
           </p>
         </Card>
 

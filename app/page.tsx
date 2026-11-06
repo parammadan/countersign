@@ -5,7 +5,7 @@ import { Logo } from "@/components/ui";
 const steps = [
   { t: "Upload your agreement once", d: "PDF or Word, the same one you send today. We find where the client signs, initials and dates, and where your firm countersigns. You check it in a minute and publish." },
   { t: "Open a file, and it goes out", d: "From the app, your CRM, n8n or our API. The agreement is filled in with the client's details and emailed for signature right away." },
-  { t: "Client signs on any device", d: "No account, no download. Consent, review, sign: about two minutes. Reminders go out on their own until it's done." },
+  { t: "Client signs on any device", d: "No account, no download. Consent, review, sign: about two minutes. Reminders go out on their own, on a schedule you set." },
   { t: "Countersigned and filed", d: "Your adopted signature is applied the moment they sign. Both sides get the sealed PDF with an audit certificate, and your systems get a webhook." },
 ];
 

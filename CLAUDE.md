@@ -8,5 +8,5 @@ Automates getting a firm's standard client agreement signed on every new file (o
 - Commit messages are short and imperative (`add field detector`, `fix stamp offset`). Commit small and often.
 - **Test data only.** No real names, emails, phone numbers, addresses or signatures anywhere: seeds, fixtures, screenshots, test PDFs. Use `example.com` / `example.test` and obviously fake names.
 - Field detection must work without an LLM; no paid model API calls.
-- Before changing `lib/detect.ts`, run `npm run test:detect`. The tuning corpus (`fixtures/agreements`) must stay at or above its floor. `fixtures/holdout` and `fixtures/final` were written by someone who never saw the detector, so they are the honest measure. Don't tune against `final`.
+- Before changing `lib/detect.ts`, run `npm run test:detect`. The tuning corpus (`fixtures/agreements`) must stay at or above its floor. `fixtures/holdout` and `fixtures/final` were written by agents that never saw the detector. Holdout was later used for tuning, and final got one round of general fixes after its first run (0.89 / 0.85, reproducible at commit `d9b03cd`). Neither is unseen any more: the next new set is the honest measure.
 - Next.js 16: read `node_modules/next/dist/docs/` before using an API you're unsure of (see `AGENTS.md`).

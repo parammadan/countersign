@@ -160,9 +160,13 @@ Buffer: Days 6–7 absorb slips. If Day 3 slips, cut from Day 5 (CSV, branding, 
 
 ## What changed while building (2026-11-05)
 
-- **Supabase → SQLite (`node:sqlite`) + files on a volume, with our own auth.** One container with no external services means fewer ways for the grader's run to fail, and it can run anywhere. Tenancy is enforced in every query by `workspace_id` rather than by RLS.
-- **Schedule compressed.** The grader path worked end to end on day 1; the remaining days go to detector accuracy on unseen agreements, polish and a live deploy, well before the deadline.
-- **Detector accuracy measured on held-out sets** written by agents that couldn't read the detector (see `docs/SUBMISSION.md`).
+Sections 1–9 above are the original plan, kept as written. What actually shipped is described in `docs/SUBMISSION.md`. The differences:
+
+- **Storage:** Supabase was replaced by SQLite (`node:sqlite`) plus files on a volume, with password auth and password reset (no magic links). One container with no external services means fewer ways for the grader's run to fail. Tenancy is enforced in every query by `workspace_id` rather than by RLS. Documents are served only through authenticated or token-checked routes, not signed bucket URLs.
+- **Schedule:** built and deployed on day 1. The rest of the time went to detector accuracy on unseen agreements and hardening (an independent security review, then a second audit).
+- **Accuracy:** detector accuracy was measured on held-out sets written by agents that couldn't read the detector (see `docs/SUBMISSION.md`). The test enforces a recall floor per corpus; there's no CI pipeline. E2E runs locally, against the Docker image, and against the live URL.
+- **Email code:** **off** by default (the plan said on), and it can only be turned on when an email provider is configured, since otherwise the client could never receive the code.
+- **Naming and schema:** the event is `file.completed` (not `file.agreement_completed`) and the state is `signed` (not `signed_by_client`). The n8n template lives at `public/integrations/n8n-countersign.json`. Signatures, reminders and webhook retries live on `files` and `webhook_deliveries` rather than separate `signatures` and `jobs` tables.
 
 ## Status
 - [x] Plan written, repo initialized (2026-11-05)

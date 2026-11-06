@@ -4,8 +4,8 @@ export const CONSENT_SUMMARY =
 export const CONSENT_FULL = [
   "Electronic Record and Signature Disclosure",
   "The sender has asked you to review and sign an agreement electronically. Before you do, please read this disclosure.",
-  "Paper copies. You may ask the sender for a paper copy of the agreement at any time. You will also be able to download the signed agreement as a PDF when it is complete, and it will be emailed to you.",
-  "Withdrawing consent. You may withdraw your consent to use electronic records and signatures before you sign by closing this page and contacting the sender, or by clicking Decline. Withdrawing consent after signing does not undo a signature already given.",
+  "Paper copies. You may ask the sender for a paper copy of the agreement at any time, at no charge. You will also be able to download the signed agreement as a PDF when it is complete, and it will be emailed to you.",
+  "Withdrawing consent. You may withdraw your consent to use electronic records and signatures before you sign, at no charge, by closing this page and contacting the sender, or by clicking Decline. If you withdraw, the sender will arrange to complete the agreement with you on paper instead, which may take longer. Withdrawing consent after signing does not undo a signature already given.",
   "Scope. Your consent applies to this agreement only.",
   "Hardware and software. You need a current web browser, an email account, and a way to open PDF files. If these requirements change in a way that affects your ability to access the record, the sender will tell you.",
   "Updating your contact information. If your email address changes, tell the sender directly.",

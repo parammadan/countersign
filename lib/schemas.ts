@@ -1,6 +1,8 @@
 import { z } from "zod";
 
 const str = (max: number) => z.string().trim().max(max);
+// CRMs often send numeric ids; accept them as strings
+const strish = (max: number) => z.union([z.string(), z.number()]).transform((v) => String(v).trim()).pipe(z.string().max(max));
 
 // Accepts both our names and common CRM/webhook names, so n8n/Zapier can post raw records.
 export const NewFileBody = z
@@ -13,8 +15,8 @@ export const NewFileBody = z
     email: str(320).optional(),
     client_company: str(200).optional(),
     company: str(200).optional(),
-    ref: str(120).optional(),
-    external_ref: str(120).optional(),
+    ref: strish(120).optional(),
+    external_ref: strish(120).optional(),
     title: str(200).optional(),
     prefill: z.record(z.string().max(60), z.union([z.string().max(2000), z.number(), z.boolean()])).optional(),
     send: z.boolean().optional(),

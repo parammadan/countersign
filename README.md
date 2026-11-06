@@ -42,11 +42,11 @@ new file (UI · CSV · REST API · inbound webhook · n8n) ─┤
   |---|---|---|---|---|
   | `fixtures/agreements` (tuning) | 17 (incl. 3 DOCX) | written alongside the detector | 0.99 | 0.96 |
   | `fixtures/holdout` | 9 | written without seeing the detector; then used for tuning | 0.96 | 0.90 |
-  | `fixtures/final`, **first run** | 8 | written without seeing the detector; AI-services agreements in Google Docs / Word styles | **0.89** | **0.85** |
+  | `fixtures/final`, **first run** | 8 | written without seeing the detector; 4 AI/software-consulting agreements in Google Docs / Word layouts + 4 other services agreements | **0.89** | **0.85** |
   | `fixtures/final`, after one round of general fixes | 8 | same | 0.96 | 0.92 |
 
   The first run on `final` is the honest number for an agreement it has never seen. Client signature lines were found in 8 of 8 documents in that first run. Whatever the detector misses, the admin fixes in the editor before publishing, and publishing is blocked until there is a client signature. Run `npm run test:detect` for the full per-field report.
-- **Legal trail.** ESIGN/UETA consent with the full disclosure, explicit intent-to-sign, an optional emailed one-time code, an append-only audit log (SQLite triggers reject UPDATE/DELETE) with IP, user agent and timestamps, and SHA-256 of the original, client-signed and final PDFs. The certificate of completion is appended to the final PDF.
+- **Legal trail.** An ESIGN-style consumer disclosure with logged consent, explicit intent-to-sign, an optional emailed one-time code, an append-only audit log (SQLite triggers reject UPDATE/DELETE) with IP, user agent and timestamps, and SHA-256 of the original, client-signed and final PDFs. The certificate of completion is appended to the final PDF.
 
 ## Stack
 
@@ -59,8 +59,10 @@ npm install
 npm run dev            # http://localhost:3000. Data goes to ./data; emails go to the in-app Email log
 npm test               # unit + lifecycle + detector report
 npm run test:detect    # detector on all three corpora
-npm run build && npx playwright test   # browser E2E: the full grader path on a production build
+npm run build && npx playwright test   # browser E2E on a production build (uses installed Google Chrome; PW_CHANNEL=chromium to change)
 E2E_FIXTURES=$(ls fixtures/agreements/*.pdf | xargs -n1 basename | paste -sd, -) npx playwright test --project=desktop
+# Word uploads through LibreOffice: run the Docker image, then
+E2E_BASE_URL=http://localhost:8080 E2E_FIXTURES=15-docx-table-two-column.docx,16-docx-tabstop-signature.docx,17-docx-border-lines-body-blanks.docx npx playwright test --project=desktop e2e/grader-path.spec.ts
 ```
 
 Word uploads need LibreOffice (`soffice`) on the PATH locally. The Docker image includes it.
@@ -79,6 +81,10 @@ docker build -t countersign . && docker run -p 8080:8080 -e APP_URL=http://local
 | `RESEND_API_KEY` / `EMAIL_FROM` | unset | Without them, emails are recorded in the Email log instead of sent |
 | `APP_TZ` | `America/New_York` | Time zone for dates written into agreements |
 | `DISABLE_WORKER` | unset | Turns off the reminder/expiry/webhook-retry loop |
+| `TRUST_PROXY` | unset | `fly` to read the client IP from Fly's proxy, `1` for a generic X-Forwarded-For proxy. Unset: IPs are recorded as "unknown" (safe default, since headers could be spoofed) |
+| `DAILY_FILE_CAP` | `300` | New files per workspace per 24 h (abuse limit) |
+| `SOFFICE_PATH` | `soffice` | LibreOffice binary for Word conversion |
+| `ALLOW_PRIVATE_WEBHOOKS` | unset | Dev/test only: allow `http://` and private addresses as webhook targets |
 
 ## API
 
@@ -86,14 +92,14 @@ Create a key under **Integrations & API**. All endpoints take `Authorization: Be
 
 | | |
 |---|---|
-| `POST /api/v1/files` | `{client_name, client_email, company?, ref?, title?, prefill?: {key: value}, send?: true}` → creates the file and sends it |
-| `GET /api/v1/files?status=&ref=` · `GET /api/v1/files/:id` | status, timestamps, signing URL |
+| `POST /api/v1/files` | `{client_name, client_email, agreement_id?, company?, ref?, title?, prefill?: {key: value}, send?: true}` → creates the file and sends it. `agreement_id` comes from `GET /api/v1/agreements` (default agreement if omitted). `ref` is unique per workspace, so a retried request returns 409 instead of double-sending. Errors: 422 `{error}` for validation, 429 for limits |
+| `GET /api/v1/files?status=&ref=&limit=` · `GET /api/v1/files/:id` | status, timestamps, signing URL (`limit` defaults to 50, max 100) |
 | `GET /api/v1/files/:id/document` | the sealed PDF (`X-Content-SHA256` header) |
 | `POST /api/v1/files/:id/remind` · `POST /api/v1/files/:id/void` | |
 | `GET /api/v1/agreements` | agreements, and the prefill blanks each one expects |
-| `POST /api/inbound/:token` | no-auth URL for CRMs / Zapier / n8n; accepts JSON or form posts |
+| `POST /api/inbound/:token` | no-auth URL for CRMs / Zapier / n8n; same body as `POST /api/v1/files`. Form posts take the flat fields only (`prefill` and `send` need JSON) |
 
-Outbound webhooks (`file.sent`, `file.viewed`, `file.signed`, `file.completed`, `file.declined`, `file.expired`, `file.voided`) are signed with `X-Countersign-Signature: t=<unix>,v1=<hex HMAC-SHA256 of "t.body">` and retried with backoff. A ready-made n8n workflow is at `public/integrations/n8n-countersign.json`.
+Outbound webhooks (`file.created`, `file.sent`, `file.viewed`, `file.signed`, `file.completed`, `file.declined`, `file.expired`, `file.voided`) POST `{id, event, created_at, data: <file object>}` (`file.completed` adds `data.sha256`). They are signed with `X-Countersign-Signature: t=<unix>,v1=<hex HMAC-SHA256 of "t.body">` and retried with backoff. A ready-made n8n workflow is at `public/integrations/n8n-countersign.json`.
 
 ## Layout
 
