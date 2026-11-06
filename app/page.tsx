@@ -22,7 +22,8 @@ const features = [
 export default async function Home() {
   const s = await getSession();
   return (
-    <div className="min-h-screen bg-white">
+    // overflow-x-clip: the hero glow bleeds past the edge of narrow phones; clip, don't scroll
+    <div className="min-h-screen overflow-x-clip bg-white">
       <header className="mx-auto flex max-w-6xl items-center justify-between px-4 py-5 sm:px-6">
         <Logo className="text-lg" />
         <nav className="flex items-center gap-2 text-sm">
@@ -37,7 +38,7 @@ export default async function Home() {
           )}
         </nav>
       </header>
-      <section className="mx-auto grid max-w-6xl items-center gap-12 px-4 pt-14 pb-16 sm:px-6 sm:pt-20 lg:grid-cols-[1.15fr_1fr]">
+      <section className="mx-auto grid max-w-6xl grid-cols-1 items-center gap-12 px-4 pt-14 pb-16 sm:px-6 sm:pt-20 lg:grid-cols-[1.15fr_1fr]">
         <div>
         <p className="mb-4 text-sm font-semibold tracking-wide text-brand uppercase">For firms that start every job with a signed agreement</p>
         <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-ink sm:text-6xl">Your client agreement, signed on every file. Automatically.</h1>

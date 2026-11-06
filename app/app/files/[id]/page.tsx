@@ -110,8 +110,8 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         </ol>
         <FileActions fileId={f.id} status={f.status} link={link} isAdmin={s.role !== "staff"} hasFinal={docs.some((d) => d.kind === "final")} />
         {link && (f.status === "sent" || f.status === "viewed") && (
-          <div className="mt-3 truncate text-xs text-muted">
-            Signing link: <a className="text-brand underline" href={link} target="_blank" rel="noreferrer">{link}</a>
+          <div className="mt-3 text-xs text-muted">
+            Signing link: <a className="break-all text-brand underline" href={link} target="_blank" rel="noreferrer">{link}</a>
           </div>
         )}
       </Card>
@@ -140,7 +140,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         </Card>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="space-y-6">
           <Card>
             <h2 className="border-b border-line px-5 py-3 font-semibold">Audit trail</h2>
