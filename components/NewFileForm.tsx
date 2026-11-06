@@ -1,5 +1,6 @@
 "use client";
 
+import { ActionForm } from "./ActionForm";
 import { useActionState, useState } from "react";
 import { createFileAction, type FormState } from "@/app/actions";
 import { Button, Field, Input, Notice, Select } from "./ui";
@@ -11,7 +12,7 @@ export function NewFileForm({ templates }: { templates: T[] }) {
   const [tid, setTid] = useState(templates[0].id);
   const t = templates.find((x) => x.id === tid) ?? templates[0];
   return (
-    <form action={act} className="space-y-5">
+    <ActionForm action={act} className="space-y-5">
       {st?.error && <Notice tone="error">{st.error}</Notice>}
       {templates.length > 1 && (
         <Field label="Agreement">
@@ -56,6 +57,6 @@ export function NewFileForm({ templates }: { templates: T[] }) {
         <Button name="intent" value="send" disabled={pending}>{pending ? "Sending…" : "Create and send for signature"}</Button>
         <Button name="intent" value="draft" variant="secondary" disabled={pending}>Save as draft</Button>
       </div>
-    </form>
+    </ActionForm>
   );
 }

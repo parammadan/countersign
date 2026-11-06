@@ -1,5 +1,6 @@
 "use client";
 
+import { ActionForm } from "./ActionForm";
 import { useActionState } from "react";
 import { apiKeyAction, webhookAction, type FormState } from "@/app/actions";
 import { Button, Input, Notice } from "./ui";
@@ -24,13 +25,13 @@ function Secret({ st }: { st: FormState }) {
 export function NewKeyForm() {
   const [st, act, pending] = useActionState<FormState, FormData>(apiKeyAction, undefined);
   return (
-    <form action={act} className="space-y-3">
+    <ActionForm action={act} className="space-y-3">
       <Secret st={st} />
       <div className="flex flex-col gap-2 sm:flex-row">
         <Input name="name" placeholder="Key name, e.g. CRM sync" maxLength={60} />
         <Button name="op" value="create" disabled={pending} className="shrink-0 whitespace-nowrap">Create API key</Button>
       </div>
-    </form>
+    </ActionForm>
   );
 }
 
@@ -47,7 +48,7 @@ export function RevokeKey({ id }: { id: string }) {
 export function NewWebhookForm({ events }: { events: readonly string[] }) {
   const [st, act, pending] = useActionState<FormState, FormData>(webhookAction, undefined);
   return (
-    <form action={act} className="space-y-3">
+    <ActionForm action={act} className="space-y-3">
       <Secret st={st} />
       <Input name="url" type="url" placeholder="https://your-n8n.example.com/webhook/countersign" required />
       <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-sm">
@@ -58,7 +59,7 @@ export function NewWebhookForm({ events }: { events: readonly string[] }) {
         ))}
       </div>
       <Button name="op" value="create" disabled={pending}>Add webhook</Button>
-    </form>
+    </ActionForm>
   );
 }
 

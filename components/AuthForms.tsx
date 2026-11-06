@@ -1,5 +1,6 @@
 "use client";
 
+import { ActionForm } from "./ActionForm";
 import { useActionState } from "react";
 import Link from "next/link";
 import { acceptInviteAction, loginAction, signupAction, type FormState } from "@/app/actions";
@@ -8,7 +9,7 @@ import { Button, Field, Input, Notice } from "./ui";
 export function LoginForm({ next, canReset = true }: { next?: string; canReset?: boolean }) {
   const [st, act, pending] = useActionState<FormState, FormData>(loginAction, undefined);
   return (
-    <form action={act} className="space-y-4">
+    <ActionForm action={act} className="space-y-4">
       {st?.error && <Notice tone="error">{st.error}</Notice>}
       <input type="hidden" name="next" value={next ?? ""} />
       <Field label="Work email">
@@ -21,14 +22,14 @@ export function LoginForm({ next, canReset = true }: { next?: string; canReset?:
       <p className="text-center text-sm text-muted">
         New here? <Link className="font-medium text-brand" href="/signup">Create a workspace</Link>
       </p>
-    </form>
+    </ActionForm>
   );
 }
 
 export function SignupForm() {
   const [st, act, pending] = useActionState<FormState, FormData>(signupAction, undefined);
   return (
-    <form action={act} className="space-y-4">
+    <ActionForm action={act} className="space-y-4">
       {st?.error && <Notice tone="error">{st.error}</Notice>}
       <Field label="Firm name" hint="Shown to clients on emails and the signing page.">
         <Input name="firm" required placeholder="Northwind Advisory" autoFocus />
@@ -51,14 +52,14 @@ export function SignupForm() {
       <p className="text-center text-sm text-muted">
         Already have one? <Link className="font-medium text-brand" href="/login">Sign in</Link>
       </p>
-    </form>
+    </ActionForm>
   );
 }
 
 export function InviteForm({ token, email, exists }: { token: string; email: string; exists: boolean }) {
   const [st, act, pending] = useActionState<FormState, FormData>(acceptInviteAction, undefined);
   return (
-    <form action={act} className="space-y-4">
+    <ActionForm action={act} className="space-y-4">
       {st?.error && <Notice tone="error">{st.error}</Notice>}
       <input type="hidden" name="token" value={token} />
       <Field label="Email">
@@ -73,6 +74,6 @@ export function InviteForm({ token, email, exists }: { token: string; email: str
         <Input name="password" type="password" required minLength={exists ? 1 : 8} />
       </Field>
       <Button className="w-full" disabled={pending}>{pending ? "Joining…" : "Join workspace"}</Button>
-    </form>
+    </ActionForm>
   );
 }

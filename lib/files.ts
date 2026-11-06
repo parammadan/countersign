@@ -566,7 +566,7 @@ export async function readiness(f: FileRow): Promise<{ ready: boolean; checks: R
   const checks: ReadinessCheck[] = [
     { key: "consent", label: "Client consented to sign electronically", ok: !!f.consent_at, required: true },
     { key: "client_signed", label: "Client signed every required field", ok: !!f.client_signed_at && has("file.signed"), required: true },
-    { key: "countersigned", label: "Firm countersigned", ok: has("file.countersigned"), required: true },
+    { key: "countersigned", label: "Your firm's countersignature applied", ok: has("file.countersigned"), required: true },
     { key: "sealed", label: "Final PDF sealed and intact", ok: sealed, required: true, detail: sealDetail },
     { key: "not_voided", label: "File is still active (not voided)", ok: f.status !== "voided", required: true },
     {

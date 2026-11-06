@@ -1,5 +1,6 @@
 "use client";
 
+import { ActionForm } from "./ActionForm";
 import { useActionState, useState } from "react";
 import { useRouter } from "next/navigation";
 import { inviteAction, memberAction, settingsAction, type FormState } from "@/app/actions";
@@ -11,7 +12,7 @@ import type { Workspace } from "@/lib/types";
 export function SettingsForm({ ws, emailOn = true }: { ws: Workspace; emailOn?: boolean }) {
   const [st, act, pending] = useActionState<FormState, FormData>(settingsAction, undefined);
   return (
-    <form action={act} className="space-y-6">
+    <ActionForm action={act} className="space-y-6">
       {st?.error && <Notice tone="error">{st.error}</Notice>}
       {st?.ok && <Notice tone="ok">{st.ok}</Notice>}
       <section className="grid gap-4 sm:grid-cols-2">
@@ -45,7 +46,7 @@ export function SettingsForm({ ws, emailOn = true }: { ws: Workspace; emailOn?: 
         </div>
       </section>
       <Button disabled={pending}>{pending ? "Saving…" : "Save settings"}</Button>
-    </form>
+    </ActionForm>
   );
 }
 
@@ -94,7 +95,7 @@ export function CountersignForm({ ws, current }: { ws: Workspace; current: strin
 export function InviteForm() {
   const [st, act, pending] = useActionState<FormState, FormData>(inviteAction, undefined);
   return (
-    <form action={act} className="space-y-3">
+    <ActionForm action={act} className="space-y-3">
       {st?.error && <Notice tone="error">{st.error}</Notice>}
       {st?.ok && (
         <Notice tone="ok">
@@ -109,7 +110,7 @@ export function InviteForm() {
         </select>
         <Button disabled={pending}>Invite</Button>
       </div>
-    </form>
+    </ActionForm>
   );
 }
 

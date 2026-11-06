@@ -25,9 +25,12 @@ export type FormState = { error?: string; ok?: string; secret?: string } | undef
 const s = (v: FormDataEntryValue | null) => (typeof v === "string" ? v.trim() : "");
 const DUMMY_HASH = hashPassword("not-a-real-password");
 
+// AUTH_RATE_LIMIT_X multiplies every per-minute limit below (test servers only; unset in production)
+const LIMIT_X = Math.max(1, Number(process.env.AUTH_RATE_LIMIT_X) || 1);
+
 async function throttle(bucket: string, max: number) {
   const ip = clientIp(await headers());
-  if (limited(`${bucket}:${ip}`, max, 60_000)) throw new AppError("Too many attempts. Wait a minute and try again.", 429);
+  if (limited(`${bucket}:${ip}`, max * LIMIT_X, 60_000)) throw new AppError("Too many attempts. Wait a minute and try again.", 429);
 }
 
 function fail(e: unknown): FormState {
