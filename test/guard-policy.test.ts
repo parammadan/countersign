@@ -45,6 +45,8 @@ describe("material: default deny and critical paths", () => {
     ".github/workflows/new.yml", ".github/agent-guard/routine-paths.txt", "CLAUDE.md", "docs/agents/TASKS.md",
     "playwright.config.ts", "e2e/helpers.ts", "e2e/support/smtp-sink.ts", "test/support/seed.ts",
     "test/guard-policy.test.ts", "test/detect.test.ts", "fixtures/holdout/a.expected.json", "some-new-file.ts",
+    "components/DevForms.tsx", "public/logo.svg", "e2e/security.spec.ts", "e2e/signing-room.spec.ts", "e2e/mail-flow-otp.spec.ts",
+    "e2e/countersignature.spec.ts", "test/flow.test.ts", "test/gates.test.ts", "test/stamp.test.ts", "test/ssrf.test.ts",
   ])("%s", (name) => {
     expect(kinds(classify([f(name)]))).toEqual(["MATERIAL"]);
   });
@@ -66,6 +68,18 @@ describe("material: content of routine code", () => {
     ["a new import of the audit trail", "import { audit } from '@/lib/audit';"],
     ["a new relative import of signing code", 'import { voidFile } from "../../lib/files";'],
     ["a dynamic import of auth", 'const { requireSession } = await import("@/lib/auth");'],
+    ["an import through ..", 'import { run } from "@/lib/../lib/db";'],
+    ["an import through ./", 'import { getFile } from "@/./lib/files";'],
+    ["an import with an extension", 'import { one } from "@/lib/db.js";'],
+    ["the live database handle", '(globalThis as any).__csdb.prepare("x").run();'],
+    ["node:sqlite directly", 'import { DatabaseSync } from "node:sqlite";'],
+    ["child processes", 'import { execSync } from "node:child_process";'],
+    ["the filesystem", 'import fs from "node:fs";'],
+    ["lowercase SQL writes", 'all("delete from audit_events where workspace_id = ? returning seq", ws.id);'],
+    ["lowercase SQL reads", 'one("select * from files where id = ?", id);'],
+    ["a quoted table in an update", "run('update \"files\" set status = ?')"],
+    ["workspace scoping", "const f = getFile(params.ws, id); // was s.workspaceId"],
+    ["roles", "const canEdit = s.role !== 'staff' || true;"],
   ])("%s", (_what, line) => {
     expect(kinds(classify([f("components/outbox/query.ts", { status: "added" })], [["components/outbox/query.ts", line]]))).toEqual(["MATERIAL"]);
   });
@@ -99,7 +113,29 @@ describe("material: weakening the checks", () => {
   });
 });
 
+describe("material: neutralizing an existing test by adding lines", () => {
+  it.each([
+    ["an early return", "    return; // temporarily"],
+    ["mocking out what it checks", 'vi.mock("@/lib/pdf/stamp", () => ({ stampFields: async (b) => b }));'],
+    ["leaving the process", "process.exit(0);"],
+    ["intercepting the network", 'await page.route("**/api/**", (r) => r.fulfill({ status: 200 }));'],
+    ["skip through an alias", `const { ${"skip"}: later } = test;`],
+    ["only through an alias", `const focus = test.${"only"};`],
+  ])("%s", (_what, line) => {
+    expect(kinds(classify([f("e2e/overview.spec.ts")], [["e2e/overview.spec.ts", line]]))).toContain("MATERIAL");
+  });
+  it("adding ordinary assertions to an existing, non-critical test stays routine", () => {
+    expect(classify([f("e2e/overview.spec.ts")], [["e2e/overview.spec.ts", '  await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();']])).toEqual([]);
+  });
+  it("the same early return in a brand-new test file isn't neutralizing anything", () => {
+    expect(classify([f("e2e/new-feature.spec.ts", { status: "added" })], [["e2e/new-feature.spec.ts", "  if (!el) return;"]])).toEqual([]);
+  });
+});
+
 describe("blocked: focused tests and uninspectable changes", () => {
+  it("'.only' inside a test title is not a focused test", () => {
+    expect(kinds(classify([f("e2e/new.spec.ts", { status: "added" })], [["e2e/new.spec.ts", `${T}("shows the file${"."}${ONLY} once", async () => {});`]]))).not.toContain("BLOCK");
+  });
   it.each([`${T}.${ONLY}("x", async () => {});`, `${T}.describe.serial.${ONLY}(`, `${T}.describe.parallel.${ONLY}("x", () => {})`, `${T}.${ONLY} ("x", fn)`, `${T}["${ONLY}"]("x", fn)`, `it.${ONLY}("x", fn)`, `f${"describe"}("x", fn)`])("%s", (line) => {
     expect(kinds(classify([f("e2e/new.spec.ts", { status: "added" })], [["e2e/new.spec.ts", line]]))).toContain("BLOCK");
   });

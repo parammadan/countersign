@@ -18,7 +18,7 @@
 ^README\.md$
 ^docs/[A-Za-z0-9._-]+\.md$
 ^docs/agents/reports/
-^public/[A-Za-z0-9._/-]+\.(json|svg|png|ico|jpg|webp|txt)$
+^public/[A-Za-z0-9._/-]+\.(json|png|ico|jpg|webp|txt)$
 ^public/samples/[A-Za-z0-9._-]+\.pdf$
 
 # tests (changing or deleting existing tests is checked separately), fixtures for new work, visual baselines

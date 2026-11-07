@@ -38,7 +38,7 @@
 ^app/(reset|invite|confirm-email)/
 ^app/(.*/)?route\.(ts|js)$
 ^app/(app/)?layout\.tsx$
-^components/(AuthForms|ResetForms|ActionForm)\.tsx$
+^components/(AuthForms|ResetForms|ActionForm|DevForms)\.tsx$
 
 # production data: the schema, stored files and data paths
 ^lib/(db|storage|paths|schemas|errors|dashboard|library|csv|filepage)\.ts$
@@ -59,3 +59,6 @@
 ^e2e/support/
 ^fixtures/(holdout|final|agreements)/
 ^test/(guard-policy|detect)\.test\.ts$
+# the security and signing tests themselves: changing them needs the owner, however small the change
+^e2e/(security|signing-room|signing-room-mobile|signing-mobile|mail-flow|mail-flow-otp|mail-flow-race|countersignature|api|webhook|grader-path|auth-pages)\.spec\.ts$
+^test/(flow|gates|stamp|sendonce|ssrf|sign-fields|delivery|copyresend|automation)\.test\.ts$
