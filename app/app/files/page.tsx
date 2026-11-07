@@ -1,20 +1,22 @@
 import Link from "next/link";
 import { requireSession } from "@/lib/auth";
-import { all } from "@/lib/db";
+import { all, one } from "@/lib/db";
 import type { FileRow } from "@/lib/types";
-import { Card, LinkButton, PageHeader, cx, inputCls } from "@/components/ui";
+import { Card, LinkButton, PageHeader, inputCls } from "@/components/ui";
+import { FilesTabs } from "@/components/files/FilesTabs";
+import { FilesEmpty } from "@/components/files/FilesEmpty";
 import { FileTable } from "@/components/FileTable";
 import { CsvImport } from "@/components/ResetForms";
 
 export const metadata = { title: "Files" };
 
-const TABS: { key: string; label: string; where: string }[] = [
-  { key: "all", label: "All", where: "1=1" },
-  { key: "open", label: "Waiting on client", where: "status IN ('sent','viewed')" },
-  { key: "signed", label: "Awaiting countersign", where: "status = 'signed'" },
-  { key: "completed", label: "Completed", where: "status = 'completed'" },
-  { key: "closed", label: "Declined / expired / voided", where: "status IN ('declined','expired','voided')" },
-  { key: "draft", label: "Drafts", where: "status = 'draft'" },
+const TABS: { key: string; label: string; where: string; statuses: string[] | null }[] = [
+  { key: "all", label: "All", where: "1=1", statuses: null },
+  { key: "open", label: "Waiting on client", where: "status IN ('sent','viewed')", statuses: ["sent", "viewed"] },
+  { key: "signed", label: "Awaiting countersign", where: "status = 'signed'", statuses: ["signed"] },
+  { key: "completed", label: "Completed", where: "status = 'completed'", statuses: ["completed"] },
+  { key: "closed", label: "Declined / expired / voided", where: "status IN ('declined','expired','voided')", statuses: ["declined", "expired", "voided"] },
+  { key: "draft", label: "Drafts", where: "status = 'draft'", statuses: ["draft"] },
 ];
 
 export default async function Page({ searchParams }: { searchParams: Promise<{ status?: string; q?: string }> }) {
@@ -29,6 +31,18 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ s
      ORDER BY f.created_at DESC LIMIT 200`,
     s.workspaceId, q, like, like, like, like, like,
   );
+  const byStatus = new Map(
+    all<{ status: string; n: number }>(
+      `SELECT status, COUNT(*) AS n FROM files
+       WHERE workspace_id = ? AND (? = '' OR title LIKE ? OR client_name LIKE ? OR client_email LIKE ? OR ref LIKE ? OR client_company LIKE ?)
+       GROUP BY status`,
+      s.workspaceId, q, like, like, like, like, like,
+    ).map((r) => [r.status, r.n]),
+  );
+  const count = (statuses: string[] | null) => (statuses ? statuses.reduce((n, k) => n + (byStatus.get(k) ?? 0), 0) : [...byStatus.values()].reduce((n, v) => n + v, 0));
+  // The tab counts follow the search; whether the workspace has any files at all does not.
+  const hasAny = count(null) > 0 || (q !== "" && one("SELECT 1 FROM files WHERE workspace_id = ? LIMIT 1", s.workspaceId) !== undefined);
+  const tabs = TABS.map((t) => ({ key: t.key, label: t.label, count: count(t.statuses) }));
   return (
     <>
       <PageHeader
@@ -42,20 +56,23 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ s
         }
       />
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-wrap gap-1.5">
-          {TABS.map((t) => (
-            <Link key={t.key} href={`/app/files?status=${t.key}${q ? `&q=${encodeURIComponent(q)}` : ""}`} className={cx("rounded-full border px-3 py-1 text-sm", t.key === tab.key ? "border-brand bg-brand/10 font-medium text-brand" : "border-line bg-white text-muted hover:text-ink")}>
-              {t.label}
-            </Link>
-          ))}
-        </div>
-        <form className="lg:w-72">
+        <FilesTabs tabs={tabs} active={tab.key} q={q} />
+        <form role="search" className="w-full lg:w-72">
           <input type="hidden" name="status" value={tab.key} />
-          <input name="q" defaultValue={q} placeholder="Search client, company, email, ref…" aria-label="Search files" className={inputCls} />
+          <input name="q" type="search" defaultValue={q} placeholder="Search client, company, email, ref…" aria-label="Search files" className={inputCls} />
         </form>
       </div>
+      <p className="mb-2 text-[13px] text-muted" aria-live="polite">
+        {files.length === 200 ? "Showing the latest 200" : `${files.length} ${files.length === 1 ? "file" : "files"}`}
+        {q && (
+          <>
+            {" "}matching “{q}” ·{" "}
+            <Link href={`/app/files?status=${tab.key}`} className="font-medium text-brand hover:underline">Clear search</Link>
+          </>
+        )}
+      </p>
       <Card>
-        <FileTable files={files} empty={q ? "No files match that search." : "Nothing here yet."} />
+        <FileTable files={files} empty={<FilesEmpty q={q} tabLabel={tab.label} hasAny={hasAny} />} />
       </Card>
       <details className="mt-6 rounded-xl border border-line bg-white p-4">
         <summary className="cursor-pointer text-sm font-medium">Import a backlog of files from CSV</summary>
