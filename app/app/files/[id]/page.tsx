@@ -48,7 +48,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const tpl = one<{ id: string; name: string; active_version_id: string | null }>("SELECT id, name, active_version_id FROM templates WHERE id = ?", v.template_id)!;
   const liveVersion = tpl.active_version_id && tpl.active_version_id !== v.id ? one<{ version: number }>("SELECT version FROM template_versions WHERE id = ?", tpl.active_version_id)?.version : null;
   const events = fileEvents(f.id);
-  const emails = all<Email>("SELECT id, kind, to_email, subject, status, created_at, error FROM emails WHERE file_id = ? ORDER BY created_at DESC", f.id);
+  const emails = all<Email>("SELECT id, kind, to_email, subject, status, created_at, error FROM emails WHERE file_id = ? ORDER BY created_at DESC, rowid DESC", f.id);
   const docs = all<{ kind: string; sha256: string; created_at: string }>("SELECT kind, sha256, created_at FROM documents WHERE file_id = ? ORDER BY created_at", f.id);
   const final = docs.find((d) => d.kind === "final");
   const clientSigned = docs.find((d) => d.kind === "client_signed");
