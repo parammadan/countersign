@@ -69,7 +69,9 @@ mods='(db|audit|auth|http|files|templates|signer|secret|storage|util|emailverify
 imp="$(grep -E "[\"'][^\"']*lib/+(\./)*${mods}(\.[cm]?[jt]sx?)?[\"']" "${tmp}/code-lines" | cut -f1 | list || true)"
 [[ -n "$imp" ]] && printf 'MATERIAL\tAdds imports of data, auth or signing modules in: %s\n' "$imp"
 # reaching the database, the filesystem or processes directly, around lib/
-raw="$(grep -E 'node:sqlite|DatabaseSync|__csdb|globalThis|child_process|execSync|spawnSync|node:fs|fs/promises|["'"'"']fs["'"'"']|process\.binding' "${tmp}/code-lines" | cut -f1 | list || true)"
+# (fixture generators, scripts/make-*.mjs, run only by hand, may write files; nothing else is exempt)
+raw="$( { grep -E 'node:sqlite|DatabaseSync|__csdb|globalThis|child_process|execSync|spawnSync|process\.binding' "${tmp}/code-lines"
+  grep -E 'node:fs|fs/promises|["'"'"']fs["'"'"']' "${tmp}/code-lines" | grep -vE '^scripts/make-[a-z0-9-]+\.mjs'"$(printf '\t')"; } | cut -f1 | list || true)"
 [[ -n "$raw" ]] && printf 'MATERIAL\tReaches the database, filesystem or processes directly in: %s\n' "$raw"
 # tenancy and permissions: which workspace and which role a request acts for
 ten="$(grep -E 'workspaceId|workspace_id|\.role\b|requireSession|sessionOr401|requireAdmin|isAdmin' "${tmp}/code-lines" | cut -f1 | list || true)"

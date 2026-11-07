@@ -25,6 +25,13 @@ describe("routine: no owner review", () => {
   it("UI pages and components, docs, static assets, new tests, fixtures for new work, visual baselines", () => {
     expect(classify([f("components/files/FilesTabs.tsx"), f("app/app/files/page.tsx"), f("e2e/files-list.spec.ts", { status: "added" }), f("test/brand-color.test.ts", { status: "added" }), f("docs/API.md", { status: "added" }), f("public/openapi.json", { status: "added" }), f("fixtures/next/01-a.pdf", { status: "added", patch: false }), f("e2e/visual.spec.ts-snapshots/settings-desktop-darwin.png", { patch: false }), f("scripts/make-next.mjs", { status: "added" })])).toEqual([]);
   });
+  it("a fixture generator (run only by hand) may write files", () => {
+    expect(classify([f("scripts/make-next.mjs", { status: "added" })], [["scripts/make-next.mjs", 'import fs from "node:fs";']])).toEqual([]);
+  });
+  it("…but may not start processes or open the database", () => {
+    expect(kinds(classify([f("scripts/make-next.mjs", { status: "added" })], [["scripts/make-next.mjs", 'import { execSync } from "node:child_process";']]))).toEqual(["MATERIAL"]);
+    expect(kinds(classify([f("scripts/make-next.mjs", { status: "added" })], [["scripts/make-next.mjs", 'import { DatabaseSync } from "node:sqlite";']]))).toEqual(["MATERIAL"]);
+  });
   it("adding lines to an existing test file without deleting any", () => {
     expect(classify([f("test/brand-color.test.ts", { deletions: 0 })], [["test/brand-color.test.ts", "  expect(contrastWithWhite(bg)).toBeGreaterThanOrEqual(4.5);"]])).toEqual([]);
   });
