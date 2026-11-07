@@ -170,9 +170,18 @@ Sections 1–9 above are the original plan, kept as written. What actually shipp
 
 ## Status
 - [x] Plan written, repo initialized (2026-11-05)
-- [x] Grader path end to end (browser E2E on all tuning fixtures, incl. Word via LibreOffice in Docker)
-- [x] Detector measured on held-out + final sets
-- [x] API, inbound webhook, outbound webhooks, n8n template, CSV import/export, reminders/expiry, team, password reset
-- [x] Deployed to Fly.io: https://countersign-app.fly.dev (live E2E passing)
+- [x] Grader path end to end: `e2e/grader-path.spec.ts` on the tuning PDFs (`E2E_FIXTURES`), Word through LibreOffice in the Docker image, and on a phone (`e2e/signing-mobile.spec.ts`)
+- [x] Detector measured on the tuning, holdout and final sets (`npm run test:detect`: 0.99 / 0.96, 0.95 / 0.89, 0.97 / 0.91; first run on final at `d9b03cd`: 0.89 / 0.85)
+- [x] API, inbound webhook, outbound webhooks, n8n template, CSV import/export, reminders/expiry, team, password reset (built; the parts without an automated test are listed in `docs/SUBMISSION.md`, "Not covered by automated tests yet")
+- [x] CI on pull requests and pushes to `main` (`.github/workflows/ci.yml`): typecheck, lint, Vitest, build, Playwright
+- [x] M1 workspace redesign, steps 0–5:
+  - [x] Design system: `app/globals.css`, `components/ui.tsx`, `components/icons.tsx`
+  - [x] App shell and navigation: `lib/nav.ts`, `components/Nav.tsx`
+  - [x] Overview: `lib/dashboard.ts`; tested by `test/dashboard.test.ts` and `e2e/overview.spec.ts`
+  - [x] Agreement library and field editor: `lib/library.ts`, `components/FieldEditor.tsx`; tested by `test/library.test.ts` and `e2e/agreements.spec.ts`
+  - [x] Client file workspace: `lib/filepage.ts`; tested by `test/filepage.test.ts`, `test/copyresend.test.ts` and `e2e/file-workspace.spec.ts`
+  - [x] Accessibility and responsive checks: `e2e/a11y.spec.ts`, `e2e/responsive.spec.ts`
+- [x] Deployed to Fly.io: https://countersign-app.fly.dev (production checks are run by the owner, locally)
 - [ ] Resend domain for real email
 - [x] Private repo + `theastraway` collaborator invited
+- [ ] Next, on the agent task board (`docs/agents/TASKS.md`): unseen detector set (Q2), API reference (Q4), Email log (Q5), client files list (Q3), Integrations & API page (Q6), sign-in pages (Q7), accessibility audit (Q8)
