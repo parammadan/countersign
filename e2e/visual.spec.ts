@@ -47,8 +47,27 @@ async function rendered(page: Page) {
   await page.waitForTimeout(300);
 }
 
-const shot = (page: Page, name: string, fullPage = true) =>
-  expect(page).toHaveScreenshot(`${name}.png`, { fullPage, mask: dynamic(page), maxDiffPixels: 20, animations: "disabled" });
+// Calendar dates are masked, but a mask is as wide as the text under it, and "Nov 6, 2026" and "Nov 7, 2026"
+// have different widths in a proportional font, so the mask's edge moved from day to day (a 32 px drift on
+// the agreement library). Pin every date in the app's main area to one fixed date before comparing.
+async function pinDates(page: Page) {
+  await page.evaluate(() => {
+    const re = /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}, \d{4}\b/g;
+    const root = document.getElementById("main");
+    if (!root) return;
+    const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+      const t = n.nodeValue ?? "";
+      const pinned = t.replace(re, "Jan 1, 2026");
+      if (pinned !== t) n.nodeValue = pinned;
+    }
+  });
+}
+
+async function shot(page: Page, name: string, fullPage = true) {
+  await pinDates(page);
+  await expect(page).toHaveScreenshot(`${name}.png`, { fullPage, mask: dynamic(page), maxDiffPixels: 20, animations: "disabled" });
+}
 
 test("public screens", async ({ page }) => {
   await page.goto("/");
