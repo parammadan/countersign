@@ -48,7 +48,8 @@ skips="$(grep -E '\.(skip|fixme|fail|fails|todo|skipIf|runIf)([^A-Za-z0-9_]|$)|\
 #    process, intercepting the network, or reaching skip/only/fail through an alias
 RE="$tests_re" awk -F'\t' 'NR==FNR { if (($3 == "modified" || $3 == "changed") && $1 ~ ENVIRON["RE"]) m[$1] = 1; next } ($1 in m)' "$files" "${tmp}/test-lines" > "${tmp}/modified-test-lines"
 neut="$(awk -F'\t' '{ l = $0; sub(/^[^\t]*\t/, "", l) }
-  l ~ /vi\.(mock|doMock|unmock|spyOn|stubGlobal|stubEnv|useFakeTimers)/ || l ~ /^[ \t]*return[ \t]*;/ || l ~ /process\.exit/ \
+  l ~ /vi\.(mock|doMock|unmock|spyOn|stubGlobal|stubEnv|useFakeTimers)/ || l ~ /(^|[^A-Za-z0-9_$])return([^A-Za-z0-9_$]|$)/ \
+  || l ~ /expect\.extend/ || l ~ /process\.exit/ \
   || l ~ /\.route[ \t]*\(/ || l ~ /\{[^}]*(skip|fixme|only|fail|fails|todo)[^}]*\}[ \t]*=/ \
   || l ~ /=[ \t]*(test|it|describe)\.(skip|fixme|only|fail)[ \t]*;?[ \t]*$/ { print $1 }' "${tmp}/modified-test-lines" | list || true)"
 [[ -n "$neut" ]] && printf 'MATERIAL\tAdds lines that can neutralize an existing test (early return, mocks, aliases): %s\n' "$neut"
@@ -61,16 +62,16 @@ RE="$tests_re" CODE="$code_re" awk -F'\t' '$1 !~ ENVIRON["RE"] && $1 ~ ENVIRON["
 srv="$(grep -E '["'"'"']use server["'"'"']' "${tmp}/code-lines" | cut -f1 | list || true)"
 [[ -n "$srv" ]] && printf 'MATERIAL\tAdds server actions ("use server"): %s\n' "$srv"
 sql="$( { grep -E '\b(SELECT|INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP|ALTER|PRAGMA|ATTACH|VACUUM)\b' "${tmp}/code-lines"
-  grep -iE '\b(insert|replace)[[:space:]]+(or[[:space:]]+[a-z]+[[:space:]]+)?into\b|\bdelete[[:space:]]+from\b|\bupdate[[:space:]]+["`]?[a-z_.]+["`]?[[:space:]]+set\b|\b(drop|create)[[:space:]]+(temp[[:space:]]+)?(table|index|view|trigger)\b|\balter[[:space:]]+table\b|\b(pragma|attach[[:space:]]+database|vacuum[[:space:]]+into)\b|\bselect[[:space:]]+.+[[:space:]]+from[[:space:]]' "${tmp}/code-lines"; } \
+  grep -iE '\b(insert|replace)[[:space:]]+(or[[:space:]]+[a-z]+[[:space:]]+)?into\b|\bdelete[[:space:]]+from\b|\bupdate[[:space:]]+["`]?[a-z_.]+["`]?[[:space:]]+set\b|\b(drop|create)[[:space:]]+(temp[[:space:]]+)?(table|index|view|trigger)\b|\balter[[:space:]]+table\b|\b(pragma|attach[[:space:]]+database|vacuum[[:space:]]+into)\b|\bselect[[:space:]]+(\*|[a-z_."]+([[:space:]]*,[[:space:]]*[a-z_."]+)*)[[:space:]]+from[[:space:]]+[a-z_."]+[[:space:]]*(where|join|order|group|limit|left|inner|as|;|["'"'"'`]|$)' "${tmp}/code-lines"; } \
   | cut -f1 | list || true)"
 [[ -n "$sql" ]] && printf 'MATERIAL\tAdds SQL (data access or writes) in: %s\n' "$sql"
 mods='(db|audit|auth|http|files|templates|signer|secret|storage|util|emailverify|email|webhooks|library|dashboard|csv|consent|ratelimit|ssrf|worker|convert|fields|detect|schemas|filepage|paths|errors|pdf(/[a-z-]+)?)'
 # any string naming one of these modules under lib/, however the path is spelled (@/lib/../lib/db, @/./lib/x, .js)
-imp="$(grep -E "[\"'][^\"']*lib/+(\./)*${mods}(\.[cm]?[jt]sx?)?[\"']" "${tmp}/code-lines" | cut -f1 | list || true)"
+imp="$(grep -E "[\"'\`][^\"'\`]*lib/+(\./)*${mods}(\.[cm]?[jt]sx?)?[\"'\`]" "${tmp}/code-lines" | cut -f1 | list || true)"
 [[ -n "$imp" ]] && printf 'MATERIAL\tAdds imports of data, auth or signing modules in: %s\n' "$imp"
 # reaching the database, the filesystem or processes directly, around lib/
 # (fixture generators, scripts/make-*.mjs, run only by hand, may write files; nothing else is exempt)
-raw="$( { grep -E 'node:sqlite|DatabaseSync|__csdb|globalThis|child_process|execSync|spawnSync|process\.binding' "${tmp}/code-lines"
+raw="$( { grep -E 'node:sqlite|DatabaseSync|__csdb|globalThis|\bglobal\b|getBuiltinModule|module\.require|\beval\b|new[[:space:]]+Function|child_process|execSync|spawnSync|process\.binding' "${tmp}/code-lines"
   grep -E 'node:fs|fs/promises|["'"'"']fs["'"'"']' "${tmp}/code-lines" | grep -vE '^scripts/make-[a-z0-9-]+\.mjs'"$(printf '\t')"; } | cut -f1 | list || true)"
 [[ -n "$raw" ]] && printf 'MATERIAL\tReaches the database, filesystem or processes directly in: %s\n' "$raw"
 # tenancy and permissions: which workspace and which role a request acts for

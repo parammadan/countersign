@@ -35,6 +35,9 @@ describe("routine: no owner review", () => {
   it("adding lines to an existing test file without deleting any", () => {
     expect(classify([f("test/brand-color.test.ts", { deletions: 0 })], [["test/brand-color.test.ts", "  expect(contrastWithWhite(bg)).toBeGreaterThanOrEqual(4.5);"]])).toEqual([]);
   });
+  it("UI copy that reads like a query isn't one", () => {
+    expect(classify([f("components/UploadAgreement.tsx")], [["components/UploadAgreement.tsx", "<p>Select a file from the list, or drop it here.</p>"]])).toEqual([]);
+  });
   it("UI text that merely contains words like Delete or Update", () => {
     expect(classify([f("components/FileActions.tsx")], [["components/FileActions.tsx", '<Button variant="danger">Delete draft</Button> {"Update settings"}']])).toEqual([]);
   });
@@ -54,6 +57,7 @@ describe("material: default deny and critical paths", () => {
     "test/guard-policy.test.ts", "test/detect.test.ts", "fixtures/holdout/a.expected.json", "some-new-file.ts",
     "components/DevForms.tsx", "public/logo.svg", "e2e/security.spec.ts", "e2e/signing-room.spec.ts", "e2e/mail-flow-otp.spec.ts",
     "e2e/countersignature.spec.ts", "test/flow.test.ts", "test/gates.test.ts", "test/stamp.test.ts", "test/ssrf.test.ts",
+    "test/dashboard.test.ts", "test/library.test.ts", "test/filepage.test.ts", "test/csv.test.ts", "test/outbox-log.test.ts",
   ])("%s", (name) => {
     expect(kinds(classify([f(name)]))).toEqual(["MATERIAL"]);
   });
@@ -87,6 +91,12 @@ describe("material: content of routine code", () => {
     ["a quoted table in an update", "run('update \"files\" set status = ?')"],
     ["workspace scoping", "const f = getFile(params.ws, id); // was s.workspaceId"],
     ["roles", "const canEdit = s.role !== 'staff' || true;"],
+    ["the global alias with a built-up name", '(global as any)["__cs" + "db"].prepare("x").run();'],
+    ["process.getBuiltinModule", 'const M = process.getBuiltinModule("node:" + "sqlite");'],
+    ["a backtick import", "const { all } = await import(`@/lib/db`);"],
+    ["eval", 'eval("1")'],
+    ["new Function", 'new Function("return 1")()'],
+    ["a column-list read", 'one("select id, status from files where id = ?", id);'],
   ])("%s", (_what, line) => {
     expect(kinds(classify([f("components/outbox/query.ts", { status: "added" })], [["components/outbox/query.ts", line]]))).toEqual(["MATERIAL"]);
   });
@@ -126,6 +136,8 @@ describe("material: neutralizing an existing test by adding lines", () => {
     ["mocking out what it checks", 'vi.mock("@/lib/pdf/stamp", () => ({ stampFields: async (b) => b }));'],
     ["leaving the process", "process.exit(0);"],
     ["intercepting the network", 'await page.route("**/api/**", (r) => r.fulfill({ status: 200 }));'],
+    ["a conditional early return", "    if (Date.now() > 0) return;"],
+    ["redefining matchers", 'expect.extend({ toEqual: () => ({ pass: true, message: () => "" }) });'],
     ["skip through an alias", `const { ${"skip"}: later } = test;`],
     ["only through an alias", `const focus = test.${"only"};`],
   ])("%s", (_what, line) => {

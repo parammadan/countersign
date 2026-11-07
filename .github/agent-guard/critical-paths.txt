@@ -61,4 +61,4 @@
 ^test/(guard-policy|detect)\.test\.ts$
 # the security and signing tests themselves: changing them needs the owner, however small the change
 ^e2e/(security|signing-room|signing-room-mobile|signing-mobile|mail-flow|mail-flow-otp|mail-flow-race|countersignature|api|webhook|grader-path|auth-pages)\.spec\.ts$
-^test/(flow|gates|stamp|sendonce|ssrf|sign-fields|delivery|copyresend|automation)\.test\.ts$
+^test/(flow|gates|stamp|sendonce|ssrf|sign-fields|delivery|copyresend|automation|dashboard|library|filepage|csv|outbox-log)\.test\.ts$
