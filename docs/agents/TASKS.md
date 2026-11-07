@@ -1,119 +1,183 @@
 # Agent task board
 
-Cloud agents (Claude Code on the web) work from GitHub Issues. One issue is one task, owned by one agent,
-on one branch, delivered as one pull request that the repository owner reviews and merges. Agents never
-merge, deploy or touch production. The rules agents follow are in `CLAUDE.md` ("Rules for cloud agents");
-what GitHub actually enforces is listed at the end of this file.
+Cloud agents (Claude Code on the web) work from GitHub Issues. One issue is one task, owned by one agent, on
+one branch, delivered as one pull request that the repository owner reviews and merges. Agents never merge,
+deploy or touch production. The rules agents follow are in `CLAUDE.md` ("Rules for cloud agents"); what is
+actually enforced is listed at the end of this file. Nothing here starts without the owner's go-ahead.
+
+## Queue and rollout
+
+| Order | Task | Lane | Est. agent time | Starts when |
+|---|---|---|---|---|
+| Pilot | **Q1** Submission documentation | `lane:docs` | 1.5–2 h | owner approves the pilot (alone) |
+| Wave 1 | **Q2** Unseen agreement set + honest detector score | `lane:detector` | 2–3 h | pilot signed off |
+| Wave 1 | **Q4** API reference | `lane:api-docs` | 1.5–2.5 h | pilot signed off |
+| Wave 1 | **Q5** Email log redesign | `lane:ui-outbox` | 2–3 h | pilot signed off |
+| Wave 2 | **Q3** Client files list redesign | `lane:ui-files` | 2–3 h | a wave-1 slot frees up |
+| Wave 2 | **Q6** Integrations & API page redesign | `lane:ui-developers` | 2.5–3.5 h | a slot frees up (Q4 merged first is better) |
+| Wave 2 | **Q7** Sign-in and account pages polish | `lane:ui-auth` | 2.5–3.5 h | a slot frees up |
+| Last | **Q8** Accessibility and UX audit (report only) | `lane:audit` | 1–2 h | Q3, Q5, Q6, Q7 merged |
+
+- At most **three tasks in progress at once**, at most one per lane, and no two in-progress tasks may own the same path.
+- **No new task starts in the 24 hours before the submission freeze** (`AGENT_FREEZE_AT`), and nothing is
+  pushed after it.
+- Owner-only, not agent work: deploys and production checks, the duplicate-send race fix, the Settings page,
+  the signing room, anything on `.github/agent-guard/protected-paths.txt`, and any M2 / AI work.
 
 ## Labels
 
 | Label | Meaning | Who sets it |
 |---|---|---|
-| `agent:ready` | Specified, files assigned, free to claim | Owner |
-| `agent:in-progress` | Claimed; an agent is working on its branch | Agent (when it claims) |
+| `agent:ready` | Specified and free to claim | Owner |
+| `agent:in-progress` | Claimed; an agent is working on its branch | Agent |
 | `agent:review` | PR open, CI green, waiting for the owner | Agent |
 | `agent:blocked` | The agent stopped and asked a question in the issue | Agent |
-| `lane:docs`, `lane:detector-fixtures`, `lane:ui-outbox`, `lane:ui-developers` | Which lane the task belongs to | Owner |
+| `lane:*` | The task's lane (one per task, see the queue) | Owner |
 | `owner-approved-paths` | The owner reviewed a change to a protected path (PR only) | Owner, by hand, after the last push |
-| `freeze-exception` | The owner allows a merge after the submission freeze (PR only) | Owner, by hand, after the last push |
+| `freeze-exception` | The owner allows a merge after the freeze (PR only) | Owner, by hand, after the last push |
 
-## Rules of the board
+## How an agent works a task
 
-- At most **one open task per lane**, and no two open tasks may own the same path. The owner checks this
-  before labelling a task `agent:ready`.
-- An agent claims a task by commenting `claiming` and switching the label to `agent:in-progress`. If the
-  issue is already in progress, it stops.
-- Branch: `claude/T<n>-<short-slug>` from the latest `main`. Draft PR early, marked ready only when CI is green.
-- An agent may change **only** the paths under "Owns". Needing anything else, especially a protected path
-  (`.github/agent-guard/protected-paths.txt`), means: stop, label `agent:blocked`, explain in the issue.
-- Progress notes go in the issue (one comment per session: what was done, what's next, test results).
-  A session that ends unfinished leaves the branch pushed and the next step written down, so any later
-  session can continue with "continue T<n> on branch claude/T<n>-...".
-- After another PR merges, rebase the branch on `main` and re-run the tests before asking for review.
-- The pilot runs T1 alone. T2 to T4 start only after the owner signs off the pilot.
+1. Read `CLAUDE.md`, `AGENTS.md` and the issue. Comment `claiming` and switch the label to
+   `agent:in-progress`; if it's already in progress, stop.
+2. Branch `claude/Q<n>-<slug>` from the latest `main`. Change **only** the paths under "Owns".
+3. `npm ci`, then before every push: `npx tsc --noEmit`, `npm run lint`, `npx vitest run`, `npm run build`,
+   `npx playwright install chromium` (once) and `PW_CHANNEL=chromium npx playwright test`. Visual tests skip
+   themselves; don't update or commit snapshots.
+4. Draft PR from the template early; mark it ready, and label the issue `agent:review`, only when CI is green.
+5. End of every session: a comment in the issue with what changed, the test results and the next step.
+   An unfinished session leaves the branch pushed, so a later session can "continue Q<n> on branch …".
+6. Needing a path outside "Owns", or any protected path: stop, label `agent:blocked`, explain.
+7. After another PR merges: rebase on `main`, re-run the tests.
 
-## Lifecycle
+The owner reviews (pulling UI work locally and regenerating macOS visual baselines where screenshots
+change), squash-merges, closes the issue, and deploys only through the local controlled path with
+production verification.
 
-`agent:ready` → claim → `agent:in-progress` → draft PR → tests green → `agent:review` → owner review
-(pull locally, visual baselines on macOS for UI) → owner squash-merges → issue closed. Deployment stays on
-the owner's local controlled path, with production verification, as before.
+## Field names other tests depend on
+
+`e2e/helpers.ts` (protected) drives the app by accessible names. UI tasks must keep these exactly:
+sign-up "Firm name", "Legal entity name", "Your name", "Work email", "Password", "Create workspace";
+sign-in "Work email", "Password", "Sign in", "Sign out"; invite "Your name", "Choose a password",
+"Join workspace"; forgot "Work email", "Email me a reset link"; reset "New password", "Save and sign in";
+"Confirm my email"; files "Client full name", "Client email", "File / matter reference",
+"Create and send for signature", "Copy signing link"; settings placeholders "Full name",
+"Managing Partner", "colleague@example.com" and buttons "Adopt signature", "Save settings", "Invite".
 
 ---
 
-## T1: Submission documentation refresh (pilot)
+## Q1: Submission documentation (pilot)
 
-- **Lane:** docs
-- **Goal:** README and the submission notes describe AgreementOS as it is today on `main` (M1 steps 0 to 5:
-  design system, overview dashboard, agreement library and field editor, client file workspace), with
-  accurate test commands and numbers. No "formerly" or rename notes. Plain, factual, no marketing claims
-  that the code doesn't back.
-- **Owns:** `README.md`, `docs/SUBMISSION.md`, `docs/PLAN.md` (the "Status" section only).
-- **May read:** everything else.
-- **Acceptance:** every feature named exists on `main` (cite the file or test for each); every command
-  shown runs as written in the cloud environment; links resolve; no real names or emails; `npx tsc
-  --noEmit`, `npm run lint` and `npx vitest run` still pass (docs-only change, but proves the environment).
-- **Out of scope:** code, tests, branding decisions, `CLAUDE.md`, the agent docs, screenshots.
+- **Owns:** `README.md`, `docs/SUBMISSION.md`, and the "Status" section of `docs/PLAN.md`.
+- **Depends on:** nothing.
+- **Goal:** the docs describe AgreementOS as it is on `main` today (M1 steps 0–5: design system, overview,
+  agreement library and editor, client file workspace), with accurate commands and numbers, no rename notes,
+  and no claims the code doesn't back.
+- **Acceptance:** every feature named cites the file or test that implements it; every command shown runs as
+  written in the cloud environment; links resolve; synthetic names only.
+- **Tests:** `npx tsc --noEmit`, `npm run lint`, `npx vitest run` (docs-only, but proves the environment works).
 
-## T2: Fresh unseen agreement set and an honest detector measurement
+## Q2: Unseen agreement set and an honest detector score
 
-- **Lane:** detector-fixtures
-- **Goal:** a new set of 8 synthetic client agreements the detector has never seen, with ground truth, and
-  one measurement run, reported honestly. Following `CLAUDE.md`: the agent must **not open
-  `lib/detect.ts`, `lib/pdf/`, `test/detect.test.ts` internals or the existing fixture sets** while writing
-  the documents and ground truth (it may read `scripts/make-final.mjs` only for the output format and
-  coordinate conventions described in its header).
-- **Owns:** `scripts/make-next.mjs` (new), `fixtures/next/**` (new), `docs/agents/reports/T2-detector-next.md` (new).
-- **Acceptance:** `node scripts/make-next.mjs` regenerates the set; `FIXTURE_DIR=fixtures/next npx vitest
-  run test/detect.test.ts` is run once and its full summary (precision, recall, per-document misses) is
-  copied into the report, pass or fail; all names, firms, emails and addresses are invented
-  (example.com / .test).
+- **Owns:** `scripts/make-next.mjs` (new), `fixtures/next/**` (new), `docs/agents/reports/Q2-detector-next.md` (new).
+- **Depends on:** nothing.
+- **Goal:** eight new synthetic client agreements with ground truth that the detector has never seen, and one
+  measurement, reported as it comes out. While writing them the agent must **not open `lib/detect.ts`,
+  `lib/pdf/`, the existing fixture sets or `test/detect.test.ts` beyond running it**; it may read only the
+  header comment of `scripts/make-final.mjs` for the file format and coordinate conventions.
+- **Acceptance:** `node scripts/make-next.mjs` regenerates the set; the report contains the full output of one
+  `FIXTURE_DIR=fixtures/next npx vitest run test/detect.test.ts` run (precision, recall, misses per document).
+  That run passes by construction (a new folder has no floor), so the numbers are the result. All people,
+  firms, emails and addresses invented (example.com / .test).
+- **Tests:** the measurement run above, plus `npx vitest run` and `npm run lint`.
 - **Out of scope:** any change to the detector, its tests, floors or other fixture sets. A low score is a
-  finding to report, not something to fix in this task.
+  finding to report, not to fix.
 
-## T3: Email log redesign (`/app/outbox`)
+## Q3: Client files list redesign (`/app/files`)
 
-- **Lane:** ui-outbox
-- **Goal:** the email log list and the single-email view use the M1 design system (status badges,
-  readable delivery states, empty state, phone and tablet layouts), showing the same data as today.
-- **Owns:** `app/app/outbox/page.tsx`, `app/app/outbox/[id]/page.tsx`, new components under
-  `components/outbox/` (new), a new test `e2e/outbox.spec.ts` (new).
-- **May read:** `components/ui.tsx`, `lib/email.ts`, the file page for patterns. **Must not change**
-  `components/ui.tsx` (build any new piece inside `components/outbox/`), `lib/**`, `app/actions.ts`.
-- **Acceptance:** the signing-link redaction and "withheld" behaviour of logged emails is unchanged and
-  covered by the new test; no horizontal scroll at 360 px, Pixel 7 and iPad Mini; the existing
-  accessibility checks pass; `tsc`, lint, vitest, build and the Playwright suite (minus visual) pass.
-- **Out of scope:** sending, resending or changing emails; new server actions; visual baselines (the owner
-  regenerates them on macOS).
+- **Owns:** `app/app/files/page.tsx`, `components/FileTable.tsx`, `components/files/**` (new), `e2e/files-list.spec.ts` (new).
+- **Must not change:** `components/ResetForms.tsx` (owned by Q7, used by this page for CSV import),
+  `app/app/files/new/**`, `app/app/files/[id]/**`.
+- **Depends on:** nothing, but `FileTable` is shared with the overview page, so the overview must keep working.
+- **Goal:** the M1 design system on the list: tabs, search, status badges, empty and no-results states,
+  phone and tablet layouts, the same data and links as today.
+- **Acceptance:** tabs and search return the same files as before (new test); `e2e/overview.spec.ts` still
+  passes unchanged; no sideways scroll at 360 px, Pixel 7 and iPad Mini; the accessibility checks pass.
+- **Tests:** full suite minus visual. The owner regenerates the overview screenshot on macOS.
 
-## T4: Integrations & API page redesign (`/app/developers`)
+## Q4: API reference
 
-- **Lane:** ui-developers
-- **Goal:** the API keys, webhooks and inbound-webhook sections use the M1 design system, with clear
-  copy-once secrets, empty states and phone layouts, calling the existing server actions unchanged.
-- **Owns:** `app/app/developers/page.tsx`, `components/DevForms.tsx`, new components under
-  `components/developers/` (new), a new test `e2e/developers.spec.ts` (new).
-- **May read:** `app/actions.ts` (to call existing actions), `lib/webhooks.ts`, `components/ui.tsx`.
-  **Must not change** them.
-- **Acceptance:** creating and revoking an API key and adding a webhook still work end to end (new test);
-  a key is shown once and never again; staff still can't reach the page; no horizontal scroll at 360 px,
-  Pixel 7 and iPad Mini; accessibility checks pass; `tsc`, lint, vitest, build and Playwright (minus
-  visual) pass.
-- **Out of scope:** API or webhook behaviour, signing secrets, new endpoints, `app/actions.ts`.
+- **Owns:** `docs/API.md` (new), `public/openapi.json` (new), `test/openapi.test.ts` (new).
+- **May read:** `app/api/**`, `lib/schemas.ts`, `lib/files.ts` (`fileJson`), `lib/webhooks.ts`.
+- **Depends on:** nothing.
+- **Goal:** a complete, accurate reference for the public API (`/api/v1/*`), the inbound webhook and the
+  outbound webhook events, signatures and retries, for integrators (n8n included).
+- **Acceptance:** every route file under `app/api/v1` has an entry; request and response fields match the
+  code; `test/openapi.test.ts` fails if a route file exists with no spec entry, or the JSON isn't valid OpenAPI 3.
+- **Tests:** `npx vitest run`, `npm run lint`, `npx tsc --noEmit`.
+- **Out of scope:** any change to the API, schemas or webhooks.
+
+## Q5: Email log redesign (`/app/outbox`)
+
+- **Owns:** `app/app/outbox/page.tsx`, `app/app/outbox/[id]/page.tsx`, `components/outbox/**` (new), `e2e/outbox.spec.ts` (new).
+- **Must not change:** `components/ui.tsx`, anything under `lib/`.
+- **Depends on:** nothing.
+- **Goal:** list and detail views in the M1 design system: clear delivery states (delivered, failed with
+  reason, logged only), filtering by status, empty state, phone and tablet layouts.
+- **Acceptance:** signing links stay redacted and the "withheld" note stays (new test asserts the token
+  never appears); no sideways scroll at 360 px, Pixel 7 and iPad Mini; the accessibility checks pass.
+- **Tests:** full suite minus visual.
+- **Out of scope:** sending or resending email, new server actions.
+
+## Q6: Integrations & API page redesign (`/app/developers`)
+
+- **Owns:** `app/app/developers/page.tsx`, `components/DevForms.tsx`, `components/developers/**` (new), `e2e/developers.spec.ts` (new).
+- **May read:** `app/actions.ts` (to call the existing actions), `lib/webhooks.ts`, `components/ui.tsx`.
+- **Depends on:** nothing; if Q4 has merged, link to `docs/API.md`.
+- **Goal:** API keys, outbound webhooks and the inbound webhook in the M1 design system, with copy-once
+  secrets, empty states and phone layouts, using the existing server actions unchanged.
+- **Acceptance:** create and revoke a key, add a webhook and see a delivery, all end to end (new test); a new
+  key is shown once and never again; staff still can't open the page; layouts and accessibility as above.
+- **Tests:** full suite minus visual, including `e2e/webhook.spec.ts` unchanged.
+
+## Q7: Sign-in and account pages polish
+
+- **Owns:** `app/login/page.tsx`, `app/signup/page.tsx`, `app/forgot/page.tsx`, `app/reset/[token]/page.tsx`,
+  `app/invite/[token]/page.tsx`, `app/confirm-email/**/page.tsx`, `components/AuthForms.tsx`,
+  `components/ResetForms.tsx`, `components/auth/**` (new), `e2e/auth-pages.spec.ts` (new).
+- **Must not change:** `app/actions.ts`, `lib/auth.ts`, `lib/emailverify.ts`, `lib/ratelimit.ts`.
+- **Depends on:** nothing; Q3 must not be editing `ResetForms.tsx` at the same time (it doesn't own it).
+- **Goal:** the sign-in, sign-up, password-reset, invitation and email-confirmation pages in the M1 design
+  system, with clear errors, loading states and phone layouts, and identical behaviour.
+- **Acceptance:** every accessible name in "Field names other tests depend on" is unchanged; the whole
+  existing suite passes untouched; wrong-password, expired-link and already-used-invite states are shown and
+  tested; layouts and accessibility as above.
+- **Tests:** full suite minus visual. The owner regenerates the login and signup screenshots on macOS.
+
+## Q8: Accessibility and UX audit (report only)
+
+- **Owns:** `docs/agents/reports/Q8-audit.md` (new).
+- **Depends on:** Q3, Q5, Q6 and Q7 merged.
+- **Goal:** a prioritised list of accessibility and usability problems across every page (axe results plus
+  a manual pass: keyboard order, focus, contrast, labels, phone layouts), each with file and line, severity,
+  and a suggested fix, to become the next tasks.
+- **Acceptance:** covers every route in `app/`; no code changes.
+- **Tests:** `npx playwright test e2e/a11y.spec.ts` results quoted in the report.
 
 ---
 
 ## What is enforced, and by what
 
-Instructions in `CLAUDE.md` and this file are **requests**, not a security boundary. The enforced
-controls are:
+Instructions in `CLAUDE.md` and this file are **requests**, not a security boundary.
 
 | Control | Enforced by |
 |---|---|
-| No direct push, force-push or deletion on `main`; changes only by PR | GitHub branch protection (owner setting) |
-| A PR can't merge unless `test` and `guardrails/policy` pass (source: GitHub Actions) | GitHub branch protection + `.github/workflows/agent-guard.yml` |
-| Protected paths, attribution trailers, secret-looking values, real-looking emails, the submission freeze | `agent-guard` policy, run from `main` (a PR can't edit the rules that judge it) |
+| No direct push, force-push or deletion on `main`; changes only by PR | GitHub branch protection or ruleset (owner setting) |
+| A PR merges only if `test` and `guardrails/policy` pass (source: GitHub Actions) | GitHub branch protection + `.github/workflows/agent-guard.yml` |
+| Protected paths, attribution lines, secret-looking values, real-looking emails, the freeze | `agent-guard`, run from `main` (a PR can't edit the rules that judge it) |
+| Owner approval labels count only if applied by the owner directly, after the latest push | `agent-guard` (relies on GitHub's `performed_via_github_app`, verified in the pilot) |
 | No Fly or SMTP credentials, customer data or production database in reach | Not given to the cloud environment; deploys only from the owner's laptop |
-| No network access to production or mail servers | The cloud environment's custom network allowlist (owner setting) |
-| Claude can reach only this repository | Claude GitHub App installed on this repository only |
-| No merges by agents | **Not technically enforceable** while agents act as the owner's GitHub account: required checks still pass for a correct PR. Mitigated by the deny rules in `.claude/settings.json`, the owner-only merge rule, notifications, and the pilot check of how agent actions appear on GitHub. |
-| Bash and WebFetch deny rules in `.claude/settings.json` | Claude Code permission rules: friction, not a boundary (other spellings of a command aren't matched) |
+| No network access to production or mail servers | The cloud environment's network allowlist (owner setting) |
+| Claude reaches only this repository | Claude GitHub App installed on this repository only |
+| Cloud-session command and file rules | `.claude/hooks/cloud-guard.mjs` (cloud sessions only; friction, not a boundary) |
+| **Not enforceable** | An agent acting as the owner's account merging a PR whose checks pass; and a PR that edits a workflow forging `guardrails/policy` (it fails the check first, but always review `.github/` changes by hand). Mitigated by owner-only merges, the hook, notifications and review. |

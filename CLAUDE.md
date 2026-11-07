@@ -17,7 +17,7 @@ These are instructions, not the security boundary. GitHub branch protection and 
 check (run from `main`) are what enforce them; see `docs/agents/TASKS.md`, "What is enforced".
 
 - **Work only from an issue labelled `agent:ready`** (task board: `docs/agents/TASKS.md`). One task, one
-  branch `claude/T<n>-<slug>` from the latest `main`, one pull request. Claim it in the issue first.
+  branch `claude/Q<n>-<slug>` from the latest `main`, one pull request. Claim it in the issue first.
 - **Change only the paths the issue lists under "Owns".** If the task needs anything else, or any path in
   `.github/agent-guard/protected-paths.txt`, stop, label the issue `agent:blocked` and explain why.
 - **Never push to `main`, force-push, delete branches, merge a pull request, or change repository
@@ -38,7 +38,10 @@ check (run from `main`) are what enforce them; see `docs/agents/TASKS.md`, "What
   baselines are macOS-only: don't run `--update-snapshots` and don't commit snapshot images. Never weaken,
   skip or delete a test to get green; report the failure instead.
 - **Commits:** small, short imperative messages, no co-author/"Generated with"/session lines (see the top
-  of this file). Don't edit `.claude/settings.json`, which turns those off.
+  of this file). Don't edit `.claude/settings.json`, which turns those off, or `.claude/hooks/`.
+- **Cloud guard hook:** in cloud sessions (`CLAUDE_CODE_REMOTE=true`), `.claude/hooks/cloud-guard.mjs`
+  refuses production, deploy, merge, settings and protected-path actions. It does nothing in local sessions,
+  so the owner's local development and deployment workflow is unchanged. Don't try to work around it.
 - **Report in the issue:** at the end of every session, what changed, test results, and the next step, so
   another session can continue from the pushed branch.
 - **Submission freeze:** after the time in the repository variable `AGENT_FREEZE_AT`, stop all work: no

@@ -1,13 +1,13 @@
 name: Agent task
 description: One task for one cloud agent, with the files it owns. See docs/agents/TASKS.md.
-title: "[T?] "
+title: "[Q?] "
 labels: ["agent:ready"]
 body:
   - type: input
     id: lane
     attributes:
       label: Lane
-      description: docs | detector-fixtures | ui:<route> (at most one open task per lane)
+      description: one lane label from docs/agents/TASKS.md (at most one open task per lane)
     validations:
       required: true
   - type: textarea

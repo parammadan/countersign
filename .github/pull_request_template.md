@@ -1,6 +1,6 @@
 ## Task
 
-Closes #<!-- issue number -->. Lane: <!-- docs | detector-fixtures | ui:<route> | local-controlled -->
+Closes #<!-- issue number -->. Lane: <!-- the lane:* label from docs/agents/TASKS.md, or local-controlled -->
 
 <!-- What changed and why, in two or three sentences. No "Generated with" line. -->
 
