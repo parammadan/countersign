@@ -1,6 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { DatabaseSync } from "node:sqlite";
+import crypto from "node:crypto";
+import path from "node:path";
 import { signup, uid } from "./helpers";
 
 // WCAG 2.1 A + AA rules in axe-core, as in a11y.spec.ts
@@ -20,6 +22,10 @@ async function inviteTeammate(page: Page, email: string, role: "staff" | "admin"
   await expect(code).toBeVisible();
   return (await code.textContent())!.trim();
 }
+
+// the test server's database (E2E_DATA_DIR when the suite runs against a server started elsewhere)
+const dbPath = () => path.join(process.env.E2E_DATA_DIR ?? ".e2e-data", "countersign.db");
+const sha256 = (s: string) => crypto.createHash("sha256").update(s).digest("hex");
 
 const inviteRow = (page: Page, email: string) => page.getByRole("listitem").filter({ hasText: email });
 
@@ -43,6 +49,50 @@ test("an unknown or used reset link says so and offers a new one", async ({ page
   await expect(page.getByText(/invalid, has expired, or was already used/)).toBeVisible();
   await page.getByRole("link", { name: "Request a new reset link" }).click();
   await expect(page).toHaveURL(/\/forgot$/);
+});
+
+test("reset links: a valid one shows the form and works once; expired, used and unknown ones don't", async ({ page, browser }) => {
+  const email = await signup(page);
+  // three links for this account, as the forgot-password email would create them (only the hash is stored)
+  const db = new DatabaseSync(dbPath());
+  const user = db.prepare("SELECT id FROM users WHERE email = ?").get(email) as { id: string };
+  const tok = { valid: `rv-${uid()}${uid()}`, expired: `re-${uid()}${uid()}`, used: `ru-${uid()}${uid()}`, late: `rl-${uid()}${uid()}` };
+  const at = (ms: number) => new Date(Date.now() + ms).toISOString();
+  const add = db.prepare("INSERT INTO password_resets (token_hash, user_id, expires_at, used_at, created_at) VALUES (?,?,?,?,?)");
+  add.run(sha256(tok.valid), user.id, at(3600_000), null, at(0));
+  add.run(sha256(tok.late), user.id, at(3600_000), null, at(0));
+  add.run(sha256(tok.expired), user.id, at(-60_000), null, at(-3660_000));
+  add.run(sha256(tok.used), user.id, at(3600_000), at(-60_000), at(-120_000));
+  db.close();
+
+  const ctx = await browser.newContext();
+  const p = await ctx.newPage();
+  for (const t of [tok.expired, tok.used]) {
+    await p.goto(`/reset/${t}`);
+    await expect(p.getByRole("heading", { name: "Reset link not valid" })).toBeVisible();
+    await expect(p.getByLabel("New password")).toHaveCount(0);
+  }
+
+  // a form opened while the link was valid is refused by the server once the link has expired
+  await p.goto(`/reset/${tok.late}`);
+  await expect(p.getByRole("heading", { name: "Choose a new password" })).toBeVisible();
+  const d2 = new DatabaseSync(dbPath());
+  d2.prepare("UPDATE password_resets SET expires_at = ? WHERE token_hash = ?").run(at(-1000), sha256(tok.late));
+  d2.close();
+  await p.getByLabel("New password").fill("correct-horse-43");
+  await p.getByRole("button", { name: "Save and sign in" }).click();
+  await expect(p.getByText("This reset link is invalid or has expired. Ask for a new one.")).toBeVisible();
+
+  // the valid link shows the form, sets the password and signs in; then it no longer works
+  await p.goto(`/reset/${tok.valid}`);
+  await expect(p.getByRole("heading", { name: "Choose a new password" })).toBeVisible();
+  await axe(p, "reset (valid)");
+  await p.getByLabel("New password").fill("correct-horse-44");
+  await p.getByRole("button", { name: "Save and sign in" }).click();
+  await expect(p).toHaveURL(/\/app/);
+  await p.goto(`/reset/${tok.valid}`);
+  await expect(p.getByRole("heading", { name: "Reset link not valid" })).toBeVisible();
+  await ctx.close();
 });
 
 test("a valid invite can be accepted and the teammate lands signed in with the invited role", async ({ page, browser }) => {
@@ -86,7 +136,7 @@ test("an expired invite shows the expired state with a next step, and accepting 
   await tm.getByLabel("Choose a password").fill("correct-horse-42");
 
   // eight days pass (the window is seven): move the invite's date into the past, as time would
-  const db = new DatabaseSync(".e2e-data/countersign.db");
+  const db = new DatabaseSync(dbPath());
   db.prepare("UPDATE invites SET created_at = ? WHERE email = ? AND accepted_at IS NULL").run(new Date(Date.now() - 8 * 86400_000).toISOString(), email);
   db.close();
 
@@ -136,7 +186,7 @@ test("a revoked invite shows the not-valid state, and accepting it is refused", 
   await expect(inviteRow(page, email)).toHaveCount(0);
 
   // revoking deletes the invite row, so the product can't tell a revoked link from a made-up one
-  const db = new DatabaseSync(".e2e-data/countersign.db");
+  const db = new DatabaseSync(dbPath());
   expect(db.prepare("SELECT COUNT(*) AS n FROM invites WHERE email = ?").get(email)).toEqual({ n: 0 });
   db.close();
 
