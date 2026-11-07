@@ -20,7 +20,7 @@ export function SettingsForm({ ws, emailOn = true }: { ws: Workspace; emailOn?: 
         <Field label="Legal entity name" hint="Used to recognise your signature block in agreements."><Input name="legal_name" defaultValue={ws.legal_name} required /></Field>
         <Field label="Email sender name"><Input name="sender_name" defaultValue={ws.sender_name} required /></Field>
         <Field label="Reply-to email" hint="Where client replies go."><Input name="reply_to" type="email" defaultValue={ws.reply_to ?? ""} /></Field>
-        <Field label="Brand color" hint="Used on the signing page and in emails."><input name="brand_color" type="color" defaultValue={ws.brand_color} className="block h-10 w-20 cursor-pointer rounded-lg border border-line-strong bg-white p-1 shadow-1" /></Field>
+        <Field label="Brand color" hint="Used on the signing page and in emails. A light colour is darkened where needed so buttons stay readable."><input name="brand_color" type="color" defaultValue={ws.brand_color} className="block h-10 w-20 cursor-pointer rounded-lg border border-line-strong bg-white p-1 shadow-1" /></Field>
       </section>
       <section>
         <h3 className="mb-3 font-semibold">Countersigner</h3>

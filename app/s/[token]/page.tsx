@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { loadByToken, expireIfDue, prefillValues, formatDate, copyLinkClosed } from "@/lib/files";
 import { signerVerified } from "@/lib/signer";
+import { readableBrand } from "@/lib/brand-color";
 import { one } from "@/lib/db";
 import { now } from "@/lib/util";
 import { SigningRoom, VerifyThenDownload, type SignerField } from "@/components/SigningRoom";
@@ -48,7 +49,7 @@ export default async function Page({ params }: { params: Promise<{ token: string
   const { ws, version, fields, pages } = l;
   const file = expireIfDue(l.file, ws);
   const tpl = one<{ name: string }>("SELECT name FROM templates WHERE id = ?", version.template_id)?.name ?? "agreement";
-  const shell = (c: React.ReactNode) => <Shell brand={ws.brand_color} firm={ws.name}>{c}</Shell>;
+  const shell = (c: React.ReactNode) => <Shell brand={readableBrand(ws.brand_color)} firm={ws.name}>{c}</Shell>;
 
   if (file.status === "voided") return shell(<Message title="This agreement was withdrawn" body={`${ws.name} cancelled this signing request. Contact them if you think this is a mistake.`} />);
   if (file.status === "declined") return shell(<Message title="You declined this agreement" body={`We let ${ws.name} know. They'll be in touch.`} />);
