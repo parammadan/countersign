@@ -124,6 +124,10 @@ test("signing room: progress, field list, focus, validation, drawn signature and
   await expect(nameBox.getByRole("alert")).toHaveCount(0);
   await nameBox.getByRole("button", { name: "Save" }).click();
   await expect(nameBox).toBeHidden();
+  // the dialog's input took focus on open; closing still returns focus to what opened it (the list jumps to the
+  // field on the document first, so that's the opener), not to the page body
+  await expect(c.locator("[data-fid]:focus")).toHaveCount(1);
+  expect(await c.locator("[data-fid]:focus").getAttribute("aria-label")).toMatch(/Name/);
 
   // the optional title can be left empty
   await list.getByRole("button", { name: /^Title.*Optional$/ }).click();

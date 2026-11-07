@@ -246,6 +246,9 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([t
 
 export function Modal({ title, children, onClose, wide }: { title: string; children: React.ReactNode; onClose: () => void; wide?: boolean }) {
   const box = useRef<HTMLDivElement>(null);
+  // What opened the dialog, read on the first render: by the time effects run, content with autoFocus (the
+  // publish checkbox, a field's text input) has already taken focus, and restoring to that would lose it.
+  const [opener] = useState(() => (typeof document === "undefined" ? null : (document.activeElement as HTMLElement | null)));
   useEffect(() => {
     const k = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", k);
@@ -254,13 +257,12 @@ export function Modal({ title, children, onClose, wide }: { title: string; child
   // Focus moves into the dialog when it opens (its first input, otherwise the dialog itself, so its title
   // is read) and back to whatever opened it when it closes.
   useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null;
     const el = box.current;
     if (el && !el.contains(document.activeElement)) (el.querySelector<HTMLElement>('input:not([type="hidden"]):not([disabled]), textarea, select') ?? el).focus();
     return () => {
       if (opener && opener !== document.body && opener.isConnected) opener.focus({ preventScroll: true });
     };
-  }, []);
+  }, [opener]);
   // Tab and Shift+Tab stay inside the dialog while it is open.
   const trap = (e: React.KeyboardEvent) => {
     if (e.key !== "Tab" || !box.current) return;
