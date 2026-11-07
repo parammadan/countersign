@@ -187,10 +187,78 @@ So cloud agents get **no access to this repository at all**:
 |---|---|
 | Agents can't push to, merge in or change this repository | **They have no credentials for it**: the app is installed on the sandbox only (verified in the pilot) |
 | Agents can't deploy or reach production | No Fly or SMTP credentials anywhere in the cloud environment, and its network allowlist excludes production and mail hosts (verified in the pilot) |
-| Nothing reaches `main` here without the owner | Only the owner (and the grader, who has write access) can push here; promotion and merge are manual |
-| Promoted pull requests: protected paths, attribution lines, secrets, real-looking emails, the freeze | `agent-guard`, run from `main`. **Advisory on Free**: it can't be made a required check, so the owner merges only when `test` and `guardrails/policy` are both green |
+| Nothing reaches `main` here without passing the merge policy | Only the owner's account (and the grader) can push here. Merges follow "Merging" below: never with a red `test` or `guardrails/policy` |
+| Promoted pull requests: material changes, attribution lines, secrets, real-looking emails, the freeze | `agent-guard`, run from the base branch, which must be `main`; re-checked at merge time by `scripts/agents/merge.sh`. **Advisory on Free**: it can't be made a required check, so nothing merges unless `test` and `guardrails/policy` are both green |
 | Cloud-session command and file rules | `.claude/hooks/cloud-guard.mjs`: friction, not a boundary |
 | **Not enforceable on Free** | Direct pushes to `main` here by anyone with write access (the owner, the grader, or a leaked token); a promoted PR that edits `.github/workflows/` forging `guardrails/policy` (always review `.github/` changes by hand). Agents in the sandbox can push to the sandbox's `main`, force-push or delete branches there; the owner resets the sandbox from this repository whenever needed. |
+
+## Merging (risk-based)
+
+The owner has given standing authorization for routine engineering: the local lead session (Claude Code on
+the owner's machine) promotes reviewed sandbox work and merges pull requests here without a per-PR approval.
+Production (deploying, secrets, restoring or changing production data) is outside this policy and needs the
+owner's approval once per release.
+
+**Classification** (`.github/agent-guard/classify.sh`, tested by `test/guard-policy.test.ts`). It is **default
+deny**: a change is routine only if every file is on `routine-paths.txt`, none is on `critical-paths.txt`, and
+no content rule fires.
+- **Material** (needs the owner's review: the `owner-approved-paths` label, applied by the owner by hand
+  after the last push):
+  - any path on `critical-paths.txt`, or not on `routine-paths.txt`. That covers `lib/` (apart from a few
+    presentation modules), every route handler and layout, server actions, scripts, configs, signing, auth,
+    data, secrets, infrastructure, dependencies, and the checks themselves (this guard, CI, agent rules, test
+    runners and helpers, scoring fixtures, the policy's own test), the security and signing test files,
+    `DevForms.tsx` (it shows new API keys and webhook secrets), and SVGs (they can carry scripts);
+  - in routine code: an added `"use server"`, SQL in any case, a reference to a data, auth or signing module
+    under `lib/` however the path is spelled, direct database, filesystem or process access (`node:sqlite`,
+    `globalThis`, `node:fs`, `child_process`), or anything touching workspace scoping or roles
+    (`workspaceId`, `.role`, `requireSession`);
+  - any deletion in an existing test file, removing or renaming one, or any skip, fixme, fail, todo, skipIf or
+    runIf, conditional or not; and in an existing test, added lines that can neutralize it (an early `return`,
+    `vi.mock`/`spyOn`, `process.exit`, `page.route`, or skip/only/fail through an alias);
+  - a file whose diff GitHub doesn't show (other than binary fixtures, images and visual baselines).
+- **Blocked**: focused tests (`.only` in any form; Playwright also has `forbidOnly` in CI), a PR not into
+  `main`, a file list GitHub truncates, secrets, attribution lines, AI-authored commits, real-looking emails,
+  and anything after the freeze without the owner's `freeze-exception`.
+- **Routine**: pages and components that don't touch data, docs, static assets, new tests and added test
+  lines, fixtures for new work, and reviewed visual baselines.
+
+**How a pull request merges.** Only through `main`'s copy of `scripts/agents/merge.sh <n>`. It refuses to run
+as any other version, and reads the rules from `parammadan/countersign@main` through the API, never from a
+local clone. At merge time it re-checks:
+1. the PR is open into `main`, and its head is the exact commit that was reviewed;
+2. `test` (from GitHub Actions) and `guardrails/policy` are green on that commit. The status must come from
+   the `agent-guard` workflow run on `pull_request_target` for this PR and this commit, posted by GitHub
+   Actions;
+3. the freeze, read from the repository variable at that moment; any error other than "not set" refuses;
+4. main's `classify.sh` on the PR as it is now (nothing blocks; anything material carries the owner's label);
+5. a line of its own, `Independent review: PASS at <full 40-character head sha>`, recorded after the review.
+
+It then squash-merges pinned to that commit (`--match-head-commit`) and waits for CI on `main`. If `main`
+goes red, nothing else merges until it is fixed.
+
+**Freeze.** `AGENT_FREEZE_AT` is the real submission deadline minus 12 hours, in UTC, ending in `Z` or an
+offset, and set only by the owner; it is never guessed. Unset means no freeze (the check notes it).
+`guardrails/policy` is computed on pull request events, so a status from before the freeze can stay green
+after it; `merge.sh` closes that gap for the lead session by reading the variable at merge time.
+
+**Limits (GitHub Free).**
+- There is no branch protection and no required check. `guardrails/policy` is advisory, so the rules above
+  bind the lead session through `merge.sh` and the owner by discipline. A merge from the GitHub UI, or a
+  direct push to `main`, bypasses everything here.
+- The lead session uses the owner's own token, so GitHub can't tell its actions from the owner's. A label it
+  applied would look exactly like the owner's approval. It never applies `owner-approved-paths` or
+  `freeze-exception`; a separate collaborator account for the lead session would make that enforceable.
+- The classification is a heuristic over the files GitHub lists and the lines a PR adds. It can't judge
+  intent. Logic changed in a routine page through calls it already makes (for example passing a different
+  workspace id to an existing helper without naming it), or a fixture script doing something unexpected
+  when run by hand, is caught only by the independent review.
+- CI tests a pull request against `main` as it was when CI ran. If `main` has moved since, the squashed
+  result is first tested after the merge; `merge.sh` then waits for CI on `main` and nothing else merges
+  until it is green. That review is recorded on the PR but, being done with
+  the same token, can't be proven independent by GitHub.
+- A PR that edits `.github/workflows/` could post its own `guardrails/policy`. `.github/` is always material,
+  and `merge.sh` re-runs the classification itself rather than trusting the status.
 
 ## Owner procedures (local, by hand)
 
