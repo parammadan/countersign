@@ -34,10 +34,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # The base branch's CURRENT tip (main: see `branches` above), not the base commit recorded when the pull
+      # request was opened: that one can be older than the latest policy, and older rules would judge it.
       - name: Check out the base branch only (never the pull request)
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ github.event.pull_request.base.ref }}
           persist-credentials: false
           sparse-checkout: .github/agent-guard
       - name: Policy
