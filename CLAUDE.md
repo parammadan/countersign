@@ -24,8 +24,9 @@ and the owner promotes reviewed branches here by hand; see `docs/agents/TASKS.md
 - **Never push to `main`, force-push, delete branches, merge a pull request, or change repository
   settings, labels meant for the owner (`owner-approved-paths`, `freeze-exception`), secrets or variables.**
   Cloud agents never merge. Pull requests in this repository merge under the risk-based policy in
-  `docs/agents/TASKS.md`, "Merging": routine changes on green checks and an independent review, material ones
-  (signing, auth, data, secrets, infrastructure, the checks themselves) only after the owner's review.
+  `docs/agents/TASKS.md`, "Merging" (default deny, through `scripts/agents/merge.sh`): routine changes on green
+  checks and a recorded independent review; material ones (signing, auth, data access, secrets,
+  infrastructure, the checks themselves) only after the owner's review.
 - **No production, ever:** no `fly`/`flyctl`, no `scripts/deploy-fly.sh`, no requests to `*.fly.dev`,
   `fly.io` or mail servers, no `fly ssh`, no production database or volume. Deployment and production
   verification are done only by the owner, locally.
