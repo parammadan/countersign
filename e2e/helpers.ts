@@ -64,7 +64,12 @@ export async function copySigningLink(page: Page) {
   return link;
 }
 
+let clientN = 0;
 export async function signAsClient(ctx: BrowserContext, link: string) {
+  // each client signs from their own address (the test server trusts X-Forwarded-For, like the proxy in
+  // production), so a suite full of signings doesn't trip the per-IP limit that protects real signing links
+  clientN++;
+  await ctx.setExtraHTTPHeaders({ "x-forwarded-for": `198.51.100.${(clientN % 250) + 1}` });
   const page = await ctx.newPage();
   await page.goto(link);
   // a client who already consented (consent is saved on the server) goes straight to the fields

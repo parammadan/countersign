@@ -12,6 +12,8 @@ function dynamic(page: Page) {
   return [
     page.getByText(/\b\d{1,2}:\d{2}\s?(AM|PM)\b|just now|\bago\b|\bUTC\b|\d{4}-\d{2}-\d{2}/),
     // calendar days ("Nov 6, 2026") inside the app, such as published dates in the agreement library
+    // client IP addresses (each simulated client gets its own; see helpers.ts signAsClient)
+    page.getByText(/\bIP \d+\.\d+\.\d+\.\d+/),
     // SHA-256 fingerprints of freshly sealed PDFs differ every run
     page.getByText(/\b[0-9a-f]{12,}/),
     // the short fingerprint in the checklist is proportional text, so mask its whole row (its width varies)
