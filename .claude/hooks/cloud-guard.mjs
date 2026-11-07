@@ -40,6 +40,10 @@ function protectedRegexes() {
 }
 const rel = (p) => path.relative(root, path.resolve(root, String(p ?? ""))).split(path.sep).join("/");
 
+// any tool that asks for access to another repository (e.g. the cloud session's add_repo): agents work in this
+// sandbox only, never in the production repository
+if (/add[_-]?repo/i.test(tool)) block("Agents may not request access to other repositories.");
+
 if (tool === "Bash") {
   const cmd = String(ti.command ?? "");
   const rules = [
