@@ -7,7 +7,8 @@
 #
 # Fails the `guardrails/policy` commit status when a PR:
 #   1. changes a protected path (protected-paths.txt) without an owner approval label,
-#   2. carries AI co-author, "Generated with" or session trailers,
+#   2. carries AI attribution: co-author or session trailers, "Generated with/by Claude" lines in commits or the
+#      PR description (the PR template's own checklist lines are ignored), or commits authored by Claude,
 #   3. adds secret-looking values or secret/data files,
 #   4. adds real-looking email addresses (test data must use example.com / .test / .invalid),
 #   5. arrives after the submission freeze (repo variable AGENT_FREEZE_AT) without a freeze exception.
@@ -73,18 +74,24 @@ if [[ -n "$hits" ]]; then
   fi
 fi
 
-# ---- 2. attribution trailers (commits and PR body) ----
+# ---- 2. AI attribution (commits and PR body) ----
+attr_re='(^|[^a-z])(co-authored-by:|claude-session:)|generated (with|by) \[?claude'
 gh api --paginate "${API}/pulls/${PR_NUMBER}/commits" --jq '.[] | .sha[0:7] + " " + (.commit.message | gsub("\n"; "\u001f"))' > "${WORK}/commits.txt"
-bad_commits="$(grep -iE $'(^|\x1f)(co-authored-by:|claude-session:)|generated with \\[?claude' "${WORK}/commits.txt" | cut -c1-7 | tr '\n' ' ' || true)"
-[[ -n "$bad_commits" ]] && problems+=("Commit messages carry co-author/Generated-with/session trailers (CLAUDE.md forbids them): ${bad_commits}")
-if jq -r '.body // ""' "${WORK}/pr.json" | grep -qiE 'generated with \[?claude|co-authored-by:|claude-session:'; then
-  problems+=("The PR description carries a Generated-with/co-author/session line.")
+bad_commits="$(tr '\037' '\n' < "${WORK}/commits.txt" | awk '/^[0-9a-f]{7} /{sha=substr($0,1,7)} {print sha "\t" $0}' | grep -iE "$attr_re" | cut -f1 | sort -u | tr '\n' ' ' || true)"
+[[ -n "$bad_commits" ]] && problems+=("Commit messages carry co-author, session or Generated-with/by lines (CLAUDE.md forbids them): ${bad_commits}")
+# commits must be authored and committed by people, not by an AI identity: promote with scripts/agents/promote.sh
+bad_authors="$(gh api --paginate "${API}/pulls/${PR_NUMBER}/commits" --jq '.[] | select(((.commit.author.email + " " + .commit.committer.email) | test("noreply@anthropic\\.com|claude\\[bot\\]"; "i")) or (.commit.author.name | test("^claude( code)?$"; "i")) or (.commit.committer.name | test("^claude( code)?$"; "i"))) | .sha[0:7]' | tr '\n' ' ' || true)"
+[[ -n "$bad_authors" ]] && problems+=("Commits authored or committed by an AI identity (re-author as the owner with scripts/agents/promote.sh): ${bad_authors}")
+# the PR template's own checklist lines mention these phrases; ignore checklist lines, check everything else
+if jq -r '.body // ""' "${WORK}/pr.json" | grep -vE '^[[:space:]]*-[[:space:]]*\[[ xX]\]' | grep -qiE "$attr_re"; then
+  problems+=("The PR description carries a Generated-with/by, co-author or session line.")
 fi
 
 # ---- 3 & 4. added lines: secrets and real-looking email addresses ----
 gh api --paginate "${API}/pulls/${PR_NUMBER}/files" --jq '.[] | select(.patch != null) | .filename as $f | .patch | split("\n")[] | select(startswith("+") and (startswith("+++") | not)) | $f + "\t" + .[1:]' > "${WORK}/added.tsv"
 secret_re='(FlyV1 [A-Za-z0-9+/=_-]{20,}|fo1_[A-Za-z0-9_-]{20,}|fm[12]_[A-Za-z0-9_-]{20,}|re_[A-Za-z0-9]{20,}|sk-ant-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----|cs_live_[A-Za-z0-9_-]{20,}|(SMTP_PASS|APP_SECRET|RESEND_API_KEY|FLY_API_TOKEN)[[:space:]]*[=:][[:space:]]*["'"'"']?[A-Za-z0-9+/_.-]{8,})'
-sec="$(grep -E "$secret_re" "${WORK}/added.tsv" | cut -f1 | sort -u | tr '\n' ' ' || true)"
+# documentation placeholders such as cs_live_XXXXXXXX or re_xxxxxxxx are not secrets
+sec="$(grep -E "$secret_re" "${WORK}/added.tsv" | grep -vE '(cs_live_|re_|fo1_|sk-ant-|gh[pousr]_)[Xx*]{8,}([^A-Za-z0-9]|$)' | cut -f1 | sort -u | tr '\n' ' ' || true)"
 [[ -n "$sec" ]] && problems+=("Added lines look like secrets or credentials in: ${sec}")
 badfiles="$(cut -f1 "${WORK}/files.tsv" | grep -E '(^|/)\.env($|\.)|(^|/)\.netrc$|\.(pem|key|p12|pfx|db|sqlite3?)$|^data/|^\.e2e-(data|mail)/' | grep -vE '(^|/)\.env\.example$' | tr '\n' ' ' || true)"
 [[ -n "$badfiles" ]] && problems+=("Adds secret or data files: ${badfiles}")

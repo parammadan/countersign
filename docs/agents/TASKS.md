@@ -194,18 +194,28 @@ So cloud agents get **no access to this repository at all**:
 
 ## Owner procedures (local, by hand)
 
+Agent commits in the sandbox are authored by Claude, and their pull requests come from cloud sessions. That
+history stays in the sandbox as the provenance record. **It is never copied into this repository**: each
+reviewed sandbox pull request becomes one owner-authored squash commit here.
+
 ```bash
-# one-time: the sandbox remote
-git remote add agents https://github.com/parammadan/agreementos-agents.git
+# promote sandbox PR #<n>: one commit on a new branch from main, authored by your own git identity, no
+# co-author or "Generated" lines (the script refuses otherwise). It never pushes.
+scripts/agents/promote.sh <n> claude/Q1-docs "docs: submission refresh"
+
+# review the commit, then push and open the pull request here yourself
+git push -u origin claude/Q1-docs && gh pr create -R parammadan/countersign --base main --head claude/Q1-docs
+
+# record provenance in the sandbox (internal), e.g.:
+gh api repos/parammadan/agreementos-agents/issues/<n>/comments -f body="Promoted as <sha> (countersign PR #<m>)"
 
 # after every merge here: reset the sandbox's main to this repository's main
 git fetch origin && git push --force agents origin/main:main
-
-# promote a reviewed agent branch, then open the pull request here
-git fetch agents
-git push origin refs/remotes/agents/claude/Q1-docs:refs/heads/claude/Q1-docs
-gh pr create -R parammadan/countersign --base main --head claude/Q1-docs --fill
 ```
+
+Merge promoted pull requests with **squash** only when `test` and `guardrails/policy` are green. The policy
+check fails any commit authored by an AI identity, and any co-author, session or "Generated with/by" line in
+commits or the description (the template's checklist lines are ignored).
 
 **Freeze:** at `AGENT_FREEZE_AT`, uninstall or suspend the Claude GitHub App on the sandbox. That cuts
 agents off completely; this repository was never reachable to them.
