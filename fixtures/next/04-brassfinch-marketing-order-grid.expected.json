@@ -1,0 +1,161 @@
+{
+  "firmName": "Brassfinch Marketing Co.",
+  "fields": [
+    {
+      "id": "f1",
+      "type": "company",
+      "role": "prefill",
+      "page": 0,
+      "x": 198,
+      "y": 111.4,
+      "w": 356,
+      "h": 14,
+      "label": "Customer company",
+      "required": true
+    },
+    {
+      "id": "f2",
+      "type": "name",
+      "role": "prefill",
+      "page": 0,
+      "x": 198,
+      "y": 133.4,
+      "w": 356,
+      "h": 14,
+      "label": "Customer contact name",
+      "required": true
+    },
+    {
+      "id": "f3",
+      "type": "email",
+      "role": "prefill",
+      "page": 0,
+      "x": 198,
+      "y": 155.4,
+      "w": 356,
+      "h": 14,
+      "label": "Customer email",
+      "required": true
+    },
+    {
+      "id": "f4",
+      "type": "text",
+      "role": "prefill",
+      "page": 0,
+      "x": 198,
+      "y": 177.4,
+      "w": 356,
+      "h": 14,
+      "label": "Order reference",
+      "required": true
+    },
+    {
+      "id": "f5",
+      "type": "date",
+      "role": "prefill",
+      "page": 0,
+      "x": 198,
+      "y": 199.4,
+      "w": 356,
+      "h": 14,
+      "label": "Start date",
+      "required": true
+    },
+    {
+      "id": "f6",
+      "type": "signature",
+      "role": "client",
+      "page": 1,
+      "x": 128,
+      "y": 76,
+      "w": 164,
+      "h": 24,
+      "label": "client Signature",
+      "required": true
+    },
+    {
+      "id": "f10",
+      "type": "signature",
+      "role": "firm",
+      "page": 1,
+      "x": 380,
+      "y": 76,
+      "w": 164,
+      "h": 24,
+      "label": "firm Signature",
+      "required": true
+    },
+    {
+      "id": "f7",
+      "type": "name",
+      "role": "client",
+      "page": 1,
+      "x": 128,
+      "y": 108,
+      "w": 164,
+      "h": 14,
+      "label": "client Name",
+      "required": true
+    },
+    {
+      "id": "f11",
+      "type": "name",
+      "role": "firm",
+      "page": 1,
+      "x": 380,
+      "y": 108,
+      "w": 164,
+      "h": 14,
+      "label": "firm Name",
+      "required": true
+    },
+    {
+      "id": "f8",
+      "type": "title",
+      "role": "client",
+      "page": 1,
+      "x": 128,
+      "y": 130,
+      "w": 164,
+      "h": 14,
+      "label": "client Title",
+      "required": true
+    },
+    {
+      "id": "f12",
+      "type": "title",
+      "role": "firm",
+      "page": 1,
+      "x": 380,
+      "y": 130,
+      "w": 164,
+      "h": 14,
+      "label": "firm Title",
+      "required": true
+    },
+    {
+      "id": "f9",
+      "type": "date",
+      "role": "client",
+      "page": 1,
+      "x": 128,
+      "y": 152,
+      "w": 164,
+      "h": 14,
+      "label": "client Date",
+      "required": true
+    },
+    {
+      "id": "f13",
+      "type": "date",
+      "role": "firm",
+      "page": 1,
+      "x": 380,
+      "y": 152,
+      "w": 164,
+      "h": 14,
+      "label": "firm Date",
+      "required": true
+    }
+  ]
+}

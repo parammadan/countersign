@@ -1,0 +1,125 @@
+{
+  "firmName": "Owlcroft Tutoring",
+  "fields": [
+    {
+      "id": "f1",
+      "type": "name",
+      "role": "prefill",
+      "page": 0,
+      "x": 127.3,
+      "y": 131.4,
+      "w": 172.4,
+      "h": 14,
+      "label": "Student name",
+      "required": true
+    },
+    {
+      "id": "f2",
+      "type": "text",
+      "role": "prefill",
+      "page": 0,
+      "x": 357.4,
+      "y": 131.4,
+      "w": 61.2,
+      "h": 14,
+      "label": "Year group",
+      "required": true
+    },
+    {
+      "id": "f3",
+      "type": "text",
+      "role": "client",
+      "page": 0,
+      "x": 166.4,
+      "y": 292.8,
+      "w": 150.1,
+      "h": 14,
+      "label": "Guardian phone",
+      "required": true
+    },
+    {
+      "id": "f4",
+      "type": "email",
+      "role": "client",
+      "page": 0,
+      "x": 162.5,
+      "y": 321.8,
+      "w": 211.3,
+      "h": 14,
+      "label": "Guardian email",
+      "required": true
+    },
+    {
+      "id": "f5",
+      "type": "text",
+      "role": "client",
+      "page": 0,
+      "x": 150.7,
+      "y": 350.8,
+      "w": 228,
+      "h": 14,
+      "label": "Emergency contact",
+      "required": true
+    },
+    {
+      "id": "f6",
+      "type": "signature",
+      "role": "client",
+      "page": 0,
+      "x": 93.9,
+      "y": 421.2,
+      "w": 189,
+      "h": 24,
+      "label": "Guardian signature",
+      "required": true
+    },
+    {
+      "id": "f7",
+      "type": "date",
+      "role": "client",
+      "page": 0,
+      "x": 320.8,
+      "y": 431.2,
+      "w": 100.1,
+      "h": 14,
+      "label": "Guardian date",
+      "required": true
+    },
+    {
+      "id": "f8",
+      "type": "name",
+      "role": "client",
+      "page": 0,
+      "x": 111.3,
+      "y": 460.2,
+      "w": 189,
+      "h": 14,
+      "label": "Guardian name",
+      "required": true
+    },
+    {
+      "id": "f9",
+      "type": "signature",
+      "role": "firm",
+      "page": 0,
+      "x": 93.9,
+      "y": 506.2,
+      "w": 189,
+      "h": 24,
+      "label": "Tutor signature",
+      "required": true
+    },
+    {
+      "id": "f10",
+      "type": "date",
+      "role": "firm",
+      "page": 0,
+      "x": 320.8,
+      "y": 516.2,
+      "w": 100.1,
+      "h": 14,
+      "label": "Tutor date",
+      "required": true
+    }
+  ]
+}
