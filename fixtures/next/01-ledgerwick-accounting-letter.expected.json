@@ -1,0 +1,125 @@
+{
+  "firmName": "Ledgerwick & Pole Chartered Accountants",
+  "fields": [
+    {
+      "id": "f1",
+      "type": "date",
+      "role": "prefill",
+      "page": 0,
+      "x": 98.6,
+      "y": 143.6,
+      "w": 121,
+      "h": 14,
+      "label": "Date sent",
+      "required": true
+    },
+    {
+      "id": "f2",
+      "type": "text",
+      "role": "prefill",
+      "page": 0,
+      "x": 109.9,
+      "y": 174.1,
+      "w": 110,
+      "h": 14,
+      "label": "File reference",
+      "required": true
+    },
+    {
+      "id": "f3",
+      "type": "name",
+      "role": "prefill",
+      "page": 0,
+      "x": 96.1,
+      "y": 204.6,
+      "w": 181.5,
+      "h": 14,
+      "label": "Client name",
+      "required": true
+    },
+    {
+      "id": "f4",
+      "type": "signature",
+      "role": "firm",
+      "page": 1,
+      "x": 120,
+      "y": 144.4,
+      "w": 198,
+      "h": 24,
+      "label": "Firm signature",
+      "required": true
+    },
+    {
+      "id": "f5",
+      "type": "name",
+      "role": "firm",
+      "page": 1,
+      "x": 104.1,
+      "y": 184.9,
+      "w": 198,
+      "h": 14,
+      "label": "Firm signatory name",
+      "required": true
+    },
+    {
+      "id": "f6",
+      "type": "title",
+      "role": "firm",
+      "page": 1,
+      "x": 113.9,
+      "y": 215.4,
+      "w": 198,
+      "h": 14,
+      "label": "Firm signatory position",
+      "required": true
+    },
+    {
+      "id": "f7",
+      "type": "date",
+      "role": "firm",
+      "page": 1,
+      "x": 98.6,
+      "y": 245.9,
+      "w": 137.5,
+      "h": 14,
+      "label": "Firm date",
+      "required": true
+    },
+    {
+      "id": "f8",
+      "type": "signature",
+      "role": "client",
+      "page": 1,
+      "x": 120,
+      "y": 302.9,
+      "w": 198,
+      "h": 24,
+      "label": "Client signature",
+      "required": true
+    },
+    {
+      "id": "f9",
+      "type": "name",
+      "role": "client",
+      "page": 1,
+      "x": 125.8,
+      "y": 343.4,
+      "w": 198,
+      "h": 14,
+      "label": "Client name",
+      "required": true
+    },
+    {
+      "id": "f10",
+      "type": "date",
+      "role": "client",
+      "page": 1,
+      "x": 98.6,
+      "y": 373.9,
+      "w": 137.5,
+      "h": 14,
+      "label": "Client date",
+      "required": true
+    }
+  ]
+}
