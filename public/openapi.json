@@ -1,0 +1,550 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Countersign API",
+    "version": "1.0.0",
+    "summary": "Open client files, send the firm's standard agreement for signature, and follow it to a sealed PDF.",
+    "description": "The public API (`/api/v1/*`), the inbound webhook (`/api/inbound/{token}`) and the outbound webhook events. Prose guide: `docs/API.md`. All timestamps are ISO 8601 UTC strings. Errors are JSON `{\"error\": \"...\"}` with the HTTP status."
+  },
+  "servers": [
+    {
+      "url": "https://app.example.com",
+      "description": "Placeholder: substitute your deployment's public URL (its APP_URL), e.g. http://localhost:3000 in development."
+    }
+  ],
+  "security": [{ "apiKey": [] }],
+  "tags": [
+    { "name": "Agreements", "description": "The workspace's agreements and the custom pre-fill fields they accept." },
+    { "name": "Files", "description": "A file is one job or case for one client, with one agreement to sign." },
+    { "name": "Inbound webhook", "description": "No-code entry point for CRMs, n8n and Zapier. Authenticated by the secret URL, not an API key." }
+  ],
+  "paths": {
+    "/api/v1/agreements": {
+      "get": {
+        "tags": ["Agreements"],
+        "operationId": "listAgreements",
+        "summary": "List agreements",
+        "description": "Every agreement that is not archived, oldest first, with its published version (if any) and the custom pre-fill keys that version accepts in `prefill`.",
+        "responses": {
+          "200": {
+            "description": "The workspace's agreements.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": { "data": { "type": "array", "items": { "$ref": "#/components/schemas/Agreement" } } }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
+    },
+    "/api/v1/files": {
+      "get": {
+        "tags": ["Files"],
+        "operationId": "listFiles",
+        "summary": "List files",
+        "description": "Newest first. Filters are exact matches; an unknown `status` simply matches nothing. `ready_for_work` here is `status == \"completed\"`; use the single-file read for the full re-check.",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": { "$ref": "#/components/schemas/FileStatus" }
+          },
+          {
+            "name": "ref",
+            "in": "query",
+            "required": false,
+            "description": "Your own reference for the file (CRM id, matter number).",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Number of files to return, clamped to 1-100.",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching files.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": { "data": { "type": "array", "items": { "$ref": "#/components/schemas/File" } } }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      },
+      "post": {
+        "tags": ["Files"],
+        "operationId": "createFile",
+        "summary": "Create a file (and send it)",
+        "description": "Opens a file for one client on the chosen agreement's published version (or the workspace default) and, unless `send` is `false`, emails the client a signing link. Emits `file.created`, then `file.sent` when the invitation email didn't fail.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NewFile" } } }
+        },
+        "responses": {
+          "201": {
+            "description": "The new file. With `send` on, `status` is `sent`; check `email.status`, since a failed email still returns 201 (the signing link can be copied instead).",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/File" } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/EmailNotConfirmed" },
+          "404": { "description": "`agreement_id` doesn't name an agreement in this workspace (\"Agreement not found\").", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "No published agreement to use, the chosen agreement has no published version, or another file that is not voided or declined already has this `ref`.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "413": { "$ref": "#/components/responses/TooLarge" },
+          "422": { "$ref": "#/components/responses/ValidationError" },
+          "429": { "$ref": "#/components/responses/TooManyRequestsOrDailyCap" },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
+    },
+    "/api/v1/files/{id}": {
+      "get": {
+        "tags": ["Files"],
+        "operationId": "getFile",
+        "summary": "Get a file, with a full readiness check",
+        "description": "Re-checks every condition for \"ready for work\", including that the sealed PDF in storage still matches the SHA-256 recorded when it was sealed. `ready_for_work` here is the result of that check, not just the status.",
+        "parameters": [{ "$ref": "#/components/parameters/FileId" }],
+        "responses": {
+          "200": {
+            "description": "The file plus its readiness checks.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FileWithReadiness" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/FileNotFound" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
+    },
+    "/api/v1/files/{id}/document": {
+      "get": {
+        "tags": ["Files"],
+        "operationId": "getFileDocument",
+        "summary": "Download the sealed PDF",
+        "description": "The final, sealed PDF with its audit certificate, sent as an attachment named `<title> - signed.pdf`, where `<title>` is the file's title with characters outside `[A-Za-z0-9 _.-]` removed, runs of spaces collapsed, trimmed and cut to 80 characters (`agreement` if empty). Compare the bytes' SHA-256 with `X-Content-SHA256` (also the `sha256` in the `file.completed` event).",
+        "parameters": [{ "$ref": "#/components/parameters/FileId" }],
+        "responses": {
+          "200": {
+            "description": "The sealed PDF.",
+            "headers": {
+              "X-Content-SHA256": { "description": "Hex SHA-256 recorded when the PDF was sealed.", "schema": { "type": "string", "pattern": "^[0-9a-f]{64}$" } },
+              "Content-Disposition": { "description": "`attachment; filename=\"<title> - signed.pdf\"`, with `<title>` cleaned as described above.", "schema": { "type": "string" } }
+            },
+            "content": { "application/pdf": { "schema": { "type": "string", "contentEncoding": "binary" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/FileNotFound" },
+          "409": { "description": "No sealed PDF yet (\"Not completed yet.\").", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "429": { "$ref": "#/components/responses/TooManyRequests" },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
+    },
+    "/api/v1/files/{id}/remind": {
+      "post": {
+        "tags": ["Files"],
+        "operationId": "remindFile",
+        "summary": "Email the client a reminder",
+        "description": "Sends the reminder email with the same signing link. Only for files in `sent` or `viewed`. Does not change the expiry date and emits no webhook event. No request body.",
+        "parameters": [{ "$ref": "#/components/parameters/FileId" }],
+        "responses": {
+          "200": {
+            "description": "The file after the reminder. `email.status` says whether it went out.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/File" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/EmailNotConfirmed" },
+          "404": { "$ref": "#/components/responses/FileNotFound" },
+          "409": { "description": "The file isn't `sent` or `viewed` (\"Can't remind a <status> file.\").", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "429": { "$ref": "#/components/responses/TooManyRequests" },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
+    },
+    "/api/v1/files/{id}/void": {
+      "post": {
+        "tags": ["Files"],
+        "operationId": "voidFile",
+        "summary": "Void a file",
+        "description": "Cancels the file; the signing link stops working (`signing_url` becomes null). Any status except `completed` and `voided`. Emits `file.voided`.",
+        "parameters": [{ "$ref": "#/components/parameters/FileId" }],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": { "type": "string", "description": "Recorded in the audit trail (first 500 characters). Not returned in the response." }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "The voided file.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/File" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/FileNotFound" },
+          "409": { "description": "Already completed or voided, or being countersigned right now (try again shortly).", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "413": { "$ref": "#/components/responses/TooLarge" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
+    },
+    "/api/inbound/{token}": {
+      "post": {
+        "tags": ["Inbound webhook"],
+        "operationId": "inboundCreateFile",
+        "summary": "Create a file from a CRM / n8n / Zapier post",
+        "description": "Same behaviour and body as `POST /api/v1/files`, without an API key: the secret token in the URL (Integrations & API page) identifies the workspace. Accepts JSON, `application/x-www-form-urlencoded` or `multipart/form-data` (form bodies up to 200 KB; only text fields are read, so `prefill` and `send` can only be sent as JSON). Rate limited to 60 requests per minute per client IP. Rotating the URL in the app invalidates the old one.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "description": "The workspace's inbound token. Treat the whole URL as a secret.",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/NewFile" } },
+            "application/x-www-form-urlencoded": { "schema": { "$ref": "#/components/schemas/NewFileForm" } },
+            "multipart/form-data": { "schema": { "$ref": "#/components/schemas/NewFileForm" } }
+          }
+        },
+        "responses": {
+          "201": { "description": "The new file.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/File" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "403": { "$ref": "#/components/responses/EmailNotConfirmed" },
+          "404": { "description": "Unknown inbound URL, or `agreement_id` not found.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "No published agreement to use, or the `ref` is already in use.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "413": { "$ref": "#/components/responses/TooLarge" },
+          "422": { "$ref": "#/components/responses/ValidationError" },
+          "429": { "$ref": "#/components/responses/TooManyRequestsOrDailyCap" },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
+    }
+  },
+  "webhooks": {
+    "file.created": { "$ref": "#/components/pathItems/FileEvent" },
+    "file.sent": { "$ref": "#/components/pathItems/FileEvent" },
+    "file.viewed": { "$ref": "#/components/pathItems/FileEvent" },
+    "file.signed": { "$ref": "#/components/pathItems/FileEvent" },
+    "file.completed": {
+      "post": {
+        "summary": "file.completed",
+        "description": "The file is countersigned and sealed. `data` also carries `sha256`, the SHA-256 of the sealed PDF.",
+        "operationId": "onFileCompleted",
+        "parameters": [
+          { "$ref": "#/components/parameters/HookEvent" },
+          { "$ref": "#/components/parameters/HookDelivery" },
+          { "$ref": "#/components/parameters/HookSignature" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CompletedEvent" } } }
+        },
+        "responses": { "2XX": { "description": "Received. Any other status (including a 3xx: redirects are not followed), a network error or a timeout is retried. Each attempt allows 10 s to connect, 10 s for the response headers and 10 s between body chunks, within 12 s overall; the response body is not used." } }
+      }
+    },
+    "file.declined": { "$ref": "#/components/pathItems/FileEvent" },
+    "file.expired": { "$ref": "#/components/pathItems/FileEvent" },
+    "file.voided": { "$ref": "#/components/pathItems/FileEvent" }
+  },
+  "components": {
+    "securitySchemes": {
+      "apiKey": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "`Authorization: Bearer cs_live_...`. Keys are created (and shown once) on Integrations & API; admins only. A revoked key returns 401. Limit: 120 requests per minute per client IP."
+      }
+    },
+    "parameters": {
+      "FileId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "The file id (`file_...`).",
+        "schema": { "type": "string" }
+      },
+      "HookEvent": {
+        "name": "X-Countersign-Event",
+        "in": "header",
+        "required": true,
+        "description": "The event name, same as `event` in the body.",
+        "schema": { "$ref": "#/components/schemas/EventName" }
+      },
+      "HookDelivery": {
+        "name": "X-Countersign-Delivery",
+        "in": "header",
+        "required": true,
+        "description": "The delivery id (`wd_...`), same as `id` in the body and the same on every retry. Use it to de-duplicate.",
+        "schema": { "type": "string" }
+      },
+      "HookSignature": {
+        "name": "X-Countersign-Signature",
+        "in": "header",
+        "required": true,
+        "description": "`t=<unix seconds>,v1=<hex HMAC-SHA256 of \"<t>.<raw body>\" keyed with the webhook's signing secret>`. `t` is set per attempt.",
+        "schema": { "type": "string", "pattern": "^t=\\d+,v1=[0-9a-f]{64}$" }
+      }
+    },
+    "pathItems": {
+      "FileEvent": {
+        "post": {
+          "summary": "File event",
+          "description": "Sent to every active webhook subscribed to this event (or to all events). `data` is the file, as returned by the API at the moment of the event, except for `file.sent`: there `data` is read before the invitation's email status is recorded, so `data.email.status` and `data.email.error` show their previous values (null for a first invitation). `file.sent` fires only for a file's first invitation: sending a declined or expired file again from the app returns it to `sent` without emitting any event, and resends and reminders emit nothing.",
+          "parameters": [
+            { "$ref": "#/components/parameters/HookEvent" },
+            { "$ref": "#/components/parameters/HookDelivery" },
+            { "$ref": "#/components/parameters/HookSignature" }
+          ],
+          "requestBody": {
+            "required": true,
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FileEvent" } } }
+          },
+          "responses": { "2XX": { "description": "Received. Any other status (including a 3xx: redirects are not followed), a network error or a timeout is retried. Each attempt allows 10 s to connect, 10 s for the response headers and 10 s between body chunks, within 12 s overall; the response body is not used." } }
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "The body isn't valid JSON (\"Body must be JSON.\"), or a form upload couldn't be read.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "Unauthorized": {
+        "description": "Missing, malformed, unknown or revoked API key.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "EmailNotConfirmed": {
+        "description": "The workspace owner hasn't confirmed their email yet (when the deployment requires it), so agreements can only go to the firm's own team.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "FileNotFound": {
+        "description": "No file with this id in the key's workspace (\"File not found\").",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "TooLarge": {
+        "description": "Request body over the limit (2 MB for JSON).",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "ValidationError": {
+        "description": "The body failed validation. `error` lists each problem as `<field>: <message>`, separated by `; `, e.g. `client_name: required; client_email: must be a valid email`.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "TooManyRequests": {
+        "description": "Rate limit reached. Wait a minute and retry.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "TooManyRequestsOrDailyCap": {
+        "description": "Rate limit reached, or the workspace has opened its daily cap of files in the last 24 hours (300 unless the deployment sets otherwise).",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "ServerError": {
+        "description": "Unexpected error (\"Something went wrong on our side. Please try again.\").",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": ["error"],
+        "properties": { "error": { "type": "string", "description": "Human-readable message." } }
+      },
+      "FileStatus": {
+        "type": "string",
+        "enum": ["draft", "sent", "viewed", "signed", "completed", "declined", "voided", "expired"],
+        "description": "`draft` created, not sent; `sent` link emailed; `viewed` client opened it; `signed` client signed, awaiting countersignature; `completed` countersigned and sealed; `declined` client declined; `voided` cancelled by the firm; `expired` link passed its expiry date unsigned."
+      },
+      "EventName": {
+        "type": "string",
+        "enum": ["file.created", "file.sent", "file.viewed", "file.signed", "file.completed", "file.declined", "file.expired", "file.voided"]
+      },
+      "Agreement": {
+        "type": "object",
+        "required": ["id", "name", "default", "published_version", "published_at", "prefill_fields"],
+        "properties": {
+          "id": { "type": "string", "description": "Pass as `agreement_id` when creating a file." },
+          "name": { "type": "string" },
+          "default": { "type": "boolean", "description": "Used when a file names no agreement." },
+          "published_version": { "type": ["integer", "null"], "description": "The active published version number; null if never published." },
+          "published_at": { "type": ["string", "null"], "format": "date-time" },
+          "prefill_fields": {
+            "type": "array",
+            "description": "Custom pre-fill fields on the published version. Send values as `prefill: {\"<key>\": \"...\"}`.",
+            "items": {
+              "type": "object",
+              "required": ["key", "label"],
+              "properties": {
+                "key": { "type": "string", "description": "Without the `custom.` prefix." },
+                "label": { "type": "string" }
+              }
+            }
+          }
+        }
+      },
+      "NewFile": {
+        "type": "object",
+        "description": "Accepts our field names and common CRM names, so a raw record can be posted. Where two names are given for one value, the first listed wins. Strings are trimmed. Unknown properties are ignored.",
+        "properties": {
+          "agreement_id": { "type": "string", "maxLength": 60, "description": "Agreement to use. Omit for the default (or newest) published agreement." },
+          "template_id": { "type": "string", "maxLength": 60, "description": "Alias of `agreement_id`." },
+          "client_name": { "type": "string", "maxLength": 200, "description": "Required (or `name`)." },
+          "name": { "type": "string", "maxLength": 200, "description": "Alias of `client_name`." },
+          "client_email": { "type": "string", "maxLength": 320, "format": "email", "description": "Required (or `email`). Lower-cased." },
+          "email": { "type": "string", "maxLength": 320, "format": "email", "description": "Alias of `client_email`." },
+          "client_company": { "type": "string", "maxLength": 200 },
+          "company": { "type": "string", "maxLength": 200, "description": "Alias of `client_company`." },
+          "ref": { "type": ["string", "number"], "maxLength": 120, "description": "Your reference (CRM id, matter number). Numbers are converted to strings. Must be unique among files that are not voided or declined." },
+          "external_ref": { "type": ["string", "number"], "maxLength": 120, "description": "Alias of `ref`." },
+          "title": { "type": "string", "maxLength": 200, "description": "Defaults to `<agreement name>: <client name>`." },
+          "prefill": {
+            "type": "object",
+            "description": "Values for the agreement's custom pre-fill fields, keyed by `key` from `prefill_fields` (a `custom.` prefix is also accepted and stripped). Keys up to 60 characters; values are stored as strings. For checkbox fields, `1`, `true`, `yes` or `x` ticks the box.",
+            "propertyNames": { "maxLength": 60 },
+            "additionalProperties": { "type": ["string", "number", "boolean"], "maxLength": 2000 }
+          },
+          "send": { "type": "boolean", "default": true, "description": "`false` creates a draft without emailing the client." }
+        }
+      },
+      "NewFileForm": {
+        "type": "object",
+        "description": "Form-encoded variant of `NewFile`: text fields only. Sending `send` or `prefill` as a form field fails validation (422); use JSON for those.",
+        "properties": {
+          "agreement_id": { "type": "string", "maxLength": 60 },
+          "template_id": { "type": "string", "maxLength": 60 },
+          "client_name": { "type": "string", "maxLength": 200 },
+          "name": { "type": "string", "maxLength": 200 },
+          "client_email": { "type": "string", "maxLength": 320 },
+          "email": { "type": "string", "maxLength": 320 },
+          "client_company": { "type": "string", "maxLength": 200 },
+          "company": { "type": "string", "maxLength": 200 },
+          "ref": { "type": "string", "maxLength": 120 },
+          "external_ref": { "type": "string", "maxLength": 120 },
+          "title": { "type": "string", "maxLength": 200 }
+        }
+      },
+      "File": {
+        "type": "object",
+        "required": [
+          "id", "ref", "title", "status", "client", "prefill", "created_at", "sent_at", "viewed_at", "signed_at", "completed_at",
+          "declined_at", "decline_reason", "expires_at", "ready_for_work", "email", "signing_url", "document_url", "app_url"
+        ],
+        "properties": {
+          "id": { "type": "string", "description": "`file_...`" },
+          "ref": { "type": ["string", "null"] },
+          "title": { "type": "string" },
+          "status": { "$ref": "#/components/schemas/FileStatus" },
+          "client": {
+            "type": "object",
+            "required": ["name", "email", "company"],
+            "properties": {
+              "name": { "type": "string" },
+              "email": { "type": "string" },
+              "company": { "type": ["string", "null"] }
+            }
+          },
+          "prefill": { "type": "object", "additionalProperties": { "type": "string" }, "description": "Custom pre-fill values as stored (strings)." },
+          "created_at": { "type": "string", "format": "date-time" },
+          "sent_at": { "type": ["string", "null"], "format": "date-time", "description": "When the file was last sent from `draft`, `expired` or `declined` (its first invitation, or sending a closed file again). Not changed by reminders or by resending a file that is still open." },
+          "viewed_at": { "type": ["string", "null"], "format": "date-time" },
+          "signed_at": { "type": ["string", "null"], "format": "date-time", "description": "When the client signed." },
+          "completed_at": { "type": ["string", "null"], "format": "date-time", "description": "When the firm countersigned and the PDF was sealed." },
+          "declined_at": { "type": ["string", "null"], "format": "date-time" },
+          "decline_reason": { "type": ["string", "null"] },
+          "expires_at": { "type": ["string", "null"], "format": "date-time", "description": "When the signing link expires if unsigned. Set when sent, and pushed back by a resend from the app (not by reminders)." },
+          "ready_for_work": { "type": "boolean", "description": "In lists, events and write responses: `status == \"completed\"`. In `GET /api/v1/files/{id}`: the full readiness check." },
+          "email": {
+            "type": "object",
+            "required": ["status", "error", "copy_emailed_at"],
+            "properties": {
+              "status": { "type": ["string", "null"], "enum": ["sent", "failed", "logged", null], "description": "Last invitation/reminder email: `sent` delivered to the mail server, `failed` (see `error`), `logged` recorded in the app's email log without going to a mail server (e.g. none configured), null never sent." },
+              "error": { "type": ["string", "null"] },
+              "copy_emailed_at": { "type": ["string", "null"], "format": "date-time", "description": "When the client was emailed their signed copy." }
+            }
+          },
+          "signing_url": { "type": ["string", "null"], "format": "uri", "description": "The client's private signing link (`<app>/s/<token>`). Null once voided. Treat as a secret: whoever has it can sign." },
+          "document_url": { "type": ["string", "null"], "format": "uri", "description": "`<app>/api/v1/files/<id>/document` once completed, else null. Needs the API key." },
+          "app_url": { "type": "string", "format": "uri", "description": "The file in the app, for staff." }
+        }
+      },
+      "ReadinessCheck": {
+        "type": "object",
+        "required": ["key", "label", "ok", "required"],
+        "properties": {
+          "key": { "type": "string", "enum": ["consent", "client_signed", "countersigned", "sealed", "not_voided", "copy_emailed"] },
+          "label": { "type": "string" },
+          "ok": { "type": "boolean" },
+          "required": { "type": "boolean", "description": "Only required checks decide `ready_for_work`; `copy_emailed` is informational." },
+          "detail": { "type": "string" }
+        }
+      },
+      "FileWithReadiness": {
+        "allOf": [
+          { "$ref": "#/components/schemas/File" },
+          {
+            "type": "object",
+            "required": ["readiness"],
+            "properties": {
+              "readiness": { "type": "array", "items": { "$ref": "#/components/schemas/ReadinessCheck" } }
+            }
+          }
+        ]
+      },
+      "FileEvent": {
+        "type": "object",
+        "required": ["id", "event", "created_at", "data"],
+        "properties": {
+          "id": { "type": "string", "description": "Delivery id (`wd_...`), same as `X-Countersign-Delivery`. One per webhook per event." },
+          "event": { "$ref": "#/components/schemas/EventName" },
+          "created_at": { "type": "string", "format": "date-time", "description": "When the event happened (not when this attempt was sent)." },
+          "data": { "$ref": "#/components/schemas/File" }
+        }
+      },
+      "CompletedEvent": {
+        "type": "object",
+        "required": ["id", "event", "created_at", "data"],
+        "properties": {
+          "id": { "type": "string" },
+          "event": { "type": "string", "const": "file.completed" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "data": {
+            "allOf": [
+              { "$ref": "#/components/schemas/File" },
+              {
+                "type": "object",
+                "required": ["sha256"],
+                "properties": { "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "SHA-256 of the sealed PDF; matches `X-Content-SHA256` on the download." } }
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

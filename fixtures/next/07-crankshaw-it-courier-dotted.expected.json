@@ -1,0 +1,125 @@
+{
+  "firmName": "Crankshaw Networks Ltd",
+  "fields": [
+    {
+      "id": "f1",
+      "type": "company",
+      "role": "prefill",
+      "page": 0,
+      "x": 156.9,
+      "y": 102.9,
+      "w": 222.3,
+      "h": 14,
+      "label": "Customer company",
+      "required": true
+    },
+    {
+      "id": "f2",
+      "type": "text",
+      "role": "prefill",
+      "page": 0,
+      "x": 156.9,
+      "y": 123.1,
+      "w": 262.2,
+      "h": 14,
+      "label": "Site address",
+      "required": true
+    },
+    {
+      "id": "f3",
+      "type": "text",
+      "role": "prefill",
+      "page": 0,
+      "x": 156.9,
+      "y": 143.4,
+      "w": 119.7,
+      "h": 14,
+      "label": "Agreement number",
+      "required": true
+    },
+    {
+      "id": "f4",
+      "type": "signature",
+      "role": "client",
+      "page": 0,
+      "x": 145.5,
+      "y": 584,
+      "w": 199.5,
+      "h": 24,
+      "label": "Customer signature",
+      "required": true
+    },
+    {
+      "id": "f5",
+      "type": "name",
+      "role": "client",
+      "page": 0,
+      "x": 145.5,
+      "y": 616.3,
+      "w": 199.5,
+      "h": 14,
+      "label": "Customer name",
+      "required": true
+    },
+    {
+      "id": "f6",
+      "type": "title",
+      "role": "client",
+      "page": 0,
+      "x": 145.5,
+      "y": 638.5,
+      "w": 199.5,
+      "h": 14,
+      "label": "Customer title",
+      "required": true
+    },
+    {
+      "id": "f7",
+      "type": "date",
+      "role": "client",
+      "page": 0,
+      "x": 145.5,
+      "y": 660.8,
+      "w": 108.3,
+      "h": 14,
+      "label": "Customer date",
+      "required": true
+    },
+    {
+      "id": "f8",
+      "type": "signature",
+      "role": "firm",
+      "page": 1,
+      "x": 145.5,
+      "y": 72.9,
+      "w": 199.5,
+      "h": 24,
+      "label": "Firm signature",
+      "required": true
+    },
+    {
+      "id": "f9",
+      "type": "name",
+      "role": "firm",
+      "page": 1,
+      "x": 145.5,
+      "y": 105.1,
+      "w": 199.5,
+      "h": 14,
+      "label": "Firm name",
+      "required": true
+    },
+    {
+      "id": "f10",
+      "type": "date",
+      "role": "firm",
+      "page": 1,
+      "x": 145.5,
+      "y": 127.4,
+      "w": 108.3,
+      "h": 14,
+      "label": "Firm date",
+      "required": true
+    }
+  ]
+}

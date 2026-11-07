@@ -1,0 +1,29 @@
+# Default deny: a file is ROUTINE only if it matches a line here AND no line of critical-paths.txt.
+# Anything else (lib/, route handlers, scripts, configs, new top-level files…) is material and needs the
+# owner's review. Routine files are still read line by line by classify.sh: an added "use server", raw SQL, or
+# a new import of a data, auth or signing module makes the change material. One extended regex per line.
+
+# pages and the UI around them (server components included: see the content rules in classify.sh)
+^app/([a-z0-9-]+/)*page\.tsx$
+^app/app/([a-z0-9-]+/|\[[a-z]+\]/)*page\.tsx$
+^app/([a-z0-9-]+/)*(error|loading|not-found)\.tsx$
+^app/globals\.css$
+^components/[A-Za-z0-9]+\.tsx$
+^components/[a-z0-9-]+/[A-Za-z0-9.-]+\.(tsx|ts)$
+
+# presentation-only library modules
+^lib/(brand|brand-color|nav|time|sign-fields|types)\.ts$
+
+# docs (the agent rules in docs/agents/TASKS.md are critical) and static assets
+^README\.md$
+^docs/[A-Za-z0-9._-]+\.md$
+^docs/agents/reports/
+^public/[A-Za-z0-9._/-]+\.(json|png|ico|jpg|webp|txt)$
+^public/samples/[A-Za-z0-9._-]+\.pdf$
+
+# tests (changing or deleting existing tests is checked separately), fixtures for new work, visual baselines
+^test/[A-Za-z0-9.-]+\.test\.ts$
+^e2e/[A-Za-z0-9.-]+\.spec\.ts$
+^e2e/visual\.spec\.ts-snapshots/[A-Za-z0-9.-]+\.png$
+^fixtures/[a-z0-9-]+/[A-Za-z0-9._-]+\.(pdf|docx|json|expected\.json)$
+^scripts/make-[a-z0-9-]+\.mjs$

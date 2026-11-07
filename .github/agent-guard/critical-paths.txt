@@ -1,0 +1,64 @@
+# Material paths: a pull request touching any of these needs the owner's review before it merges (the
+# `owner-approved-paths` label, applied by the owner by hand after the last push). This list wins over
+# routine-paths.txt; a file on neither list is material too (default deny). One extended regex per line,
+# matched against the repo-relative path (old and new names of a rename). Read from the base branch (main),
+# so a pull request can't loosen its own rules. See docs/agents/TASKS.md, "Merging".
+#
+# protected-paths.txt is a different list: what cloud agents may not edit at all.
+
+# the approval system itself: CI, this guard, agent settings and rules, the promotion script
+^\.github/
+^\.claude/
+^CLAUDE\.md$
+^AGENTS\.md$
+^docs/agents/TASKS\.md$
+^scripts/agents/
+
+# deployment, infrastructure, secrets and the supply chain
+^fly\.toml$
+^Dockerfile$
+^\.dockerignore$
+^scripts/deploy
+^next\.config\.ts$
+^instrumentation\.ts$
+^package\.json$
+^package-lock\.json$
+^\.npmrc$
+^tsconfig\.json$
+^eslint\.config\.mjs$
+^scripts/(docker-start\.sh|converter\.mjs)$
+^lib/(secret|util)\.ts$
+
+# authentication and authorization: sessions, tokens, rate limits, request plumbing, every API route and
+# server action, and the pages that check reset, invite and email-confirmation tokens
+^lib/(auth|http|emailverify|ratelimit|ssrf)\.ts$
+^app/api/
+^app/actions\.ts$
+^(middleware|proxy)\.ts$
+^app/(reset|invite|confirm-email)/
+^app/(.*/)?route\.(ts|js)$
+^app/(app/)?layout\.tsx$
+^components/(AuthForms|ResetForms|ActionForm|DevForms)\.tsx$
+
+# production data: the schema, stored files and data paths
+^lib/(db|storage|paths|schemas|errors|dashboard|library|csv|filepage)\.ts$
+
+# signature integrity and audit evidence: signing, sealing, certificates, the audit trail, consent, webhooks,
+# the signing page, and the components that capture or adopt a signature or verify a document
+^lib/(files|signer|audit|consent|webhooks|worker|email|convert)\.ts$
+^lib/pdf/
+^app/s/
+^components/(SigningRoom|SignaturePad|VerifyForm|SettingsForms|PdfPages)\.tsx$
+# what clients sign: agreement versions, publishing, fields and detection
+^lib/(templates|fields|detect)\.ts$
+
+# the checks themselves: test runners, shared test helpers, and the evidence the detector is scored on
+^playwright\.config\.ts$
+^vitest\.config\.(ts|mts)$
+^e2e/helpers\.ts$
+^e2e/support/
+^fixtures/(holdout|final|agreements)/
+^test/(guard-policy|detect)\.test\.ts$
+# the security and signing tests themselves: changing them needs the owner, however small the change
+^e2e/(security|signing-room|signing-room-mobile|signing-mobile|mail-flow|mail-flow-otp|mail-flow-race|countersignature|api|webhook|grader-path|auth-pages)\.spec\.ts$
+^test/(flow|gates|stamp|sendonce|ssrf|sign-fields|delivery|copyresend|automation|dashboard|library|filepage|csv|outbox-log)\.test\.ts$

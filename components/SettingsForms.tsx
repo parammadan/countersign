@@ -20,7 +20,7 @@ export function SettingsForm({ ws, emailOn = true }: { ws: Workspace; emailOn?: 
         <Field label="Legal entity name" hint="Used to recognise your signature block in agreements."><Input name="legal_name" defaultValue={ws.legal_name} required /></Field>
         <Field label="Email sender name"><Input name="sender_name" defaultValue={ws.sender_name} required /></Field>
         <Field label="Reply-to email" hint="Where client replies go."><Input name="reply_to" type="email" defaultValue={ws.reply_to ?? ""} /></Field>
-        <Field label="Brand color" hint="Used on the signing page and in emails."><input name="brand_color" type="color" defaultValue={ws.brand_color} className="block h-10 w-20 cursor-pointer rounded-lg border border-line-strong bg-white p-1 shadow-1" /></Field>
+        <Field label="Brand color" hint="Used on the signing page and in emails. A light colour is darkened where needed so buttons stay readable."><input name="brand_color" type="color" defaultValue={ws.brand_color} className="block h-10 w-20 cursor-pointer rounded-lg border border-line-strong bg-white p-1 shadow-1" /></Field>
       </section>
       <section>
         <h3 className="mb-3 font-semibold">Countersigner</h3>
@@ -84,7 +84,7 @@ export function CountersignForm({ ws, current }: { ws: Workspace; current: strin
             <Field label="Signing as"><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" /></Field>
             <Field label="Title"><Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Managing Partner" /></Field>
           </div>
-          <SignaturePad mode="signature" defaultName={name} onAdopt={adopt} onCancel={() => setEditing(false)} />
+          <SignaturePad mode="signature" defaultName={name} requireName onAdopt={adopt} onCancel={() => setEditing(false)} />
           <p className="text-xs text-muted">By adopting this signature you authorize it to be applied on behalf of {ws.legal_name} to each agreement a client signs, and each use is recorded in that file&apos;s audit trail.</p>
         </>
       )}
