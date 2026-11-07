@@ -19,7 +19,9 @@ export const GET = handle(async (req: Request) => {
   const u = new URL(req.url);
   const status = u.searchParams.get("status");
   const ref = u.searchParams.get("ref");
-  const limit = Math.min(100, Math.max(1, Number(u.searchParams.get("limit") || 50)));
+  // a missing or non-numeric limit means the default (Number("abc") is NaN, which SQLite refuses)
+  const asked = Number.parseInt(u.searchParams.get("limit") ?? "", 10);
+  const limit = Number.isFinite(asked) ? Math.min(100, Math.max(1, asked)) : 50;
   const rows = all<FileRow>(
     `SELECT * FROM files WHERE workspace_id = ? AND (? IS NULL OR status = ?) AND (? IS NULL OR ref = ?) ORDER BY created_at DESC LIMIT ?`,
     ws.id, status, status, ref, ref, limit,
