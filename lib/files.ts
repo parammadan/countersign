@@ -652,3 +652,23 @@ export async function resendSignedCopy(f0: FileRow, ws: Workspace, actor: Actor,
 export function recentlySent(fileId: string, kind: string, ms: number): boolean {
   return !!one("SELECT 1 FROM emails WHERE file_id = ? AND kind = ? AND status IN ('sent','logged') AND created_at > ? LIMIT 1", fileId, kind, new Date(Date.now() - ms).toISOString());
 }
+
+/**
+ * Run a send at most once per file and email kind at a time, and not again within `ms` of one that went out.
+ * Two requests arriving together (two tabs, two people) used to both pass the "sent a moment ago" check before
+ * either had recorded its email. Now the check runs inside a per-file, per-kind lock: the second request is
+ * refused while the first is in flight, or sees the first one's email once it's recorded. The app runs as one
+ * process (one Fly machine), so an in-process lock covers every request; more machines would need a lock in
+ * the database instead.
+ */
+export async function sendOnce<T>(fileId: string, kind: string, ms: number, send: () => Promise<T>): Promise<{ ran: true; value: T } | { ran: false; reason: "in_flight" | "recent" }> {
+  const key = `send:${fileId}:${kind}`;
+  if (locks.has(key)) return { ran: false, reason: "in_flight" };
+  locks.add(key);
+  try {
+    if (recentlySent(fileId, kind, ms)) return { ran: false, reason: "recent" };
+    return { ran: true, value: await send() };
+  } finally {
+    locks.delete(key);
+  }
+}
