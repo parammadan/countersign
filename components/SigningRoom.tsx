@@ -7,6 +7,7 @@ import { Button, Notice, cx, inputCls } from "./ui";
 import { CONSENT_FULL, CONSENT_SUMMARY, SIGN_INTENT } from "@/lib/consent";
 import type { Field, PageSize } from "@/lib/fields";
 import { BRAND } from "@/lib/brand";
+import { autoCompleteFor, fieldError, fieldName, mustComplete, progressText, remainingAnnouncement } from "@/lib/sign-fields";
 
 export type SignerField = Field & { value?: string };
 
@@ -27,6 +28,7 @@ type Props = {
 };
 
 export function SigningRoom(p: Props) {
+  const [doneStatus, setDoneStatus] = useState<"signed" | "completed">("signed");
   const [stage, setStage] = useState<"otp" | "intro" | "sign" | "done">(p.requireOtp && !p.otpVerified ? "otp" : p.consented ? "sign" : "intro");
   const [consent, setConsent] = useState(p.consented);
   const [showDisclosure, setShowDisclosure] = useState(false);
@@ -50,6 +52,47 @@ export function SigningRoom(p: Props) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const pendingField = useRef<string | null>(null);
+  // A phone can reload or discard the tab mid-signing. What the client has filled in and adopted is kept
+  // for this tab only (sessionStorage, gone when the tab closes, cleared on finishing or declining), so
+  // they pick up where they were. Nothing here reaches the server until they press "Sign and finish".
+  const draftKey = `cs-sign-draft:${p.token.slice(-12)}`;
+  const [resumed, setResumed] = useState(false);
+  const draftReady = useRef(false);
+  // restoring has to wait until after hydration (the server can't see this tab's storage), so it runs once in an
+  // effect; the set-state-in-effect rule is disabled for exactly that
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    try {
+      const d = JSON.parse(sessionStorage.getItem(draftKey) ?? "null") as { values?: Record<string, unknown>; sig?: Adopted; ini?: Adopted } | null;
+      if (d && typeof d === "object") {
+        const ok = (a?: Adopted) => !!a && typeof a.png === "string" && a.png.startsWith("data:image/png;base64,") && (a.method === "drawn" || a.method === "typed");
+        const ids = new Map(p.fields.filter((f) => f.role === "client").map((f) => [f.id, f.type]));
+        const vals: Record<string, string | boolean> = {};
+        for (const [k, v] of Object.entries(d.values ?? {})) {
+          const t = ids.get(k);
+          if (t === "checkbox" && typeof v === "boolean") vals[k] = v;
+          else if (t && t !== "checkbox" && typeof v === "string") vals[k] = v.slice(0, 300);
+        }
+        if (Object.keys(vals).length) setValues((v) => ({ ...v, ...vals }));
+        if (ok(d.sig)) setSig(d.sig!);
+        if (ok(d.ini)) setIni(d.ini!);
+        if (ok(d.sig) || ok(d.ini) || Object.keys(vals).length) setResumed(true);
+      }
+    } catch {}
+    draftReady.current = true;
+  }, [draftKey, p.fields]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (!draftReady.current || stage !== "sign") return;
+    try {
+      sessionStorage.setItem(draftKey, JSON.stringify({ values, sig, ini }));
+    } catch {}
+  }, [draftKey, stage, values, sig, ini]);
+  const forgetDraft = () => {
+    try {
+      sessionStorage.removeItem(draftKey);
+    } catch {}
+  };
   useEffect(() => {
     if (stage !== "otp") fetch(`/api/sign/${p.token}/viewed`, { method: "POST" }).catch(() => {});
   }, [stage, p.token]);
@@ -62,12 +105,20 @@ export function SigningRoom(p: Props) {
     if (f.type === "checkbox") return values[f.id] === true;
     return typeof values[f.id] === "string" && (values[f.id] as string).trim() !== "";
   };
-  const required = mine.filter((f) => f.required || f.type === "signature" || f.type === "initials");
+  const required = mine.filter(mustComplete);
   const remaining = required.filter((f) => !isDone(f));
   // optional fields the client hasn't looked at yet (they can skip them, but we walk them through)
   const [skipped, setSkipped] = useState<Set<string>>(new Set());
   const optionalLeft = mine.filter((f) => !required.includes(f) && f.type !== "date" && !isDone(f) && !skipped.has(f.id));
-  const progress = required.length ? Math.round(((required.length - remaining.length) / required.length) * 100) : 100;
+  const doneCount = required.length - remaining.length;
+  const progress = required.length ? Math.round((doneCount / required.length) * 100) : 100;
+  // tell screen-reader users how far along they are each time a required field is completed or undone
+  const [announce, setAnnounce] = useState("");
+  const lastLeft = useRef(remaining.length);
+  useEffect(() => {
+    if (lastLeft.current !== remaining.length) setAnnounce(remainingAnnouncement(remaining.length));
+    lastLeft.current = remaining.length;
+  }, [remaining.length]);
 
   function goTo(f: SignerField | undefined) {
     if (!f) return;
@@ -96,9 +147,11 @@ export function SigningRoom(p: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ consent: true, values, signature: sig?.png, initials: ini?.png, method: sig?.method ?? ini?.method ?? "typed" }),
       });
-      const j = (await r.json().catch(() => ({}))) as { error?: string };
+      const j = (await r.json().catch(() => ({}))) as { error?: string; status?: string };
       if (!r.ok) throw new Error(j.error || "Something went wrong");
+      setDoneStatus(j.status === "completed" ? "completed" : "signed");
       setConfirm(false);
+      forgetDraft();
       setStage("done");
       window.scrollTo({ top: 0 });
     } catch (e) {
@@ -108,7 +161,7 @@ export function SigningRoom(p: Props) {
     }
   }
 
-  if (stage === "done") return <Done token={p.token} firm={p.firm} email={p.clientEmail} />;
+  if (stage === "done") return <Done token={p.token} firm={p.firm} email={p.clientEmail} status={doneStatus} />;
   if (stage === "otp") return <Otp token={p.token} email={p.clientEmail} onOk={() => location.reload()} />;
 
   if (stage === "intro")
@@ -142,11 +195,12 @@ export function SigningRoom(p: Props) {
           >
             Review and sign
           </Button>
+          {!consent && <p className="mt-2 text-center text-xs text-muted">Tick the box above to continue.</p>}
           <button className="mt-3 w-full text-center text-xs text-muted hover:text-ink" onClick={() => setDeclining(true)}>I don&apos;t want to sign this</button>
         </div>
         <p className="mt-4 text-center text-xs text-muted">Sent to {p.clientEmail}. Secured by {BRAND.name}.</p>
         {showDisclosure && <Disclosure onClose={() => setShowDisclosure(false)} />}
-        {declining && <Decline token={p.token} onClose={() => setDeclining(false)} />}
+        {declining && <Decline token={p.token} onClose={() => setDeclining(false)} onDeclined={forgetDraft} />}
       </div>
     );
 
@@ -159,13 +213,21 @@ export function SigningRoom(p: Props) {
               <span className="truncate text-sm font-semibold">{p.agreement}</span>
               <a href={`/api/sign/${p.token}/pdf`} target="_blank" rel="noreferrer" className="shrink-0 text-xs font-medium text-brand hover:underline">Download PDF</a>
             </div>
-            <div className="mt-1 h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-gray-100">
-              <div className="h-full bg-brand transition-all" style={{ width: `${progress}%` }} />
+            <div className="mt-1 flex items-center gap-2">
+              <div
+                role="progressbar"
+                aria-label="Required fields done"
+                aria-valuemin={0}
+                aria-valuemax={required.length}
+                aria-valuenow={doneCount}
+                aria-valuetext={`${doneCount} of ${required.length} required fields done`}
+                className="h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-gray-100"
+              >
+                <div className="h-full bg-brand transition-all" style={{ width: `${progress}%` }} />
+              </div>
+              <span className="shrink-0 text-[11px] font-medium text-muted" aria-hidden="true">{progressText(doneCount, required.length, optionalLeft.length)}</span>
             </div>
           </div>
-          <span className="hidden text-xs text-muted sm:inline">
-            {remaining.length ? `${remaining.length} left` : optionalLeft.length ? `${optionalLeft.length} optional` : "Ready to sign"}
-          </span>
           {remaining.length > 0 ? (
             <Button onClick={() => goTo(remaining[0])}>Next field</Button>
           ) : (
@@ -188,8 +250,14 @@ export function SigningRoom(p: Props) {
           )}
         </div>
       </div>
+      <p className="sr-only" role="status" aria-live="polite">{announce}</p>
       <div className="mx-auto max-w-4xl px-2 pt-4 sm:px-4">
-        {err && <div className="mb-3"><Notice tone="error">{err}</Notice></div>}
+        {err && !confirm && <div className="mb-3"><Notice tone="error">{err}</Notice></div>}
+        {resumed && (
+          <div className="mx-auto mb-3 max-w-xl">
+            <Notice>We kept what you&apos;d already filled in on this device. Check it, then carry on.</Notice>
+          </div>
+        )}
         <PdfPages
           url={`/api/sign/${p.token}/pdf`}
           pages={p.pages}
@@ -244,6 +312,14 @@ export function SigningRoom(p: Props) {
                 );
               })
           }
+        />
+        <FieldList
+          fields={mine.filter((f) => f.type !== "date")}
+          isDone={isDone}
+          onPick={(f) => {
+            goTo(f);
+            if (f.type !== "checkbox") activate(f);
+          }}
         />
         <div className="mx-auto mt-6 max-w-xl text-center">
           {remaining.length ? (
@@ -300,10 +376,17 @@ export function SigningRoom(p: Props) {
       {confirm && (
         <Modal title="Sign and finish" onClose={() => !busy && setConfirm(false)}>
           <div className="space-y-4 text-sm">
-            {sig && (
-              <div className="rounded-lg border border-line bg-gray-50 p-3">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={sig.png} alt="Your signature" className="h-14 object-contain" />
+            {(sig || ini) && (
+              <div className="flex flex-wrap items-end gap-4 rounded-lg border border-line bg-gray-50 p-3">
+                {sig && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={sig.png} alt="Your signature" className="h-14 max-w-full object-contain" />
+                )}
+                {ini && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={ini.png} alt="Your initials" className="h-10 object-contain" />
+                )}
+                <span className="ml-auto text-xs text-muted">Dated {p.today}</span>
               </div>
             )}
             <p>{SIGN_INTENT}</p>
@@ -318,7 +401,7 @@ export function SigningRoom(p: Props) {
           </div>
         </Modal>
       )}
-      {declining && <Decline token={p.token} onClose={() => setDeclining(false)} />}
+      {declining && <Decline token={p.token} onClose={() => setDeclining(false)} onDeclined={forgetDraft} />}
     </div>
   );
 
@@ -333,24 +416,85 @@ export function SigningRoom(p: Props) {
 
 function TextModal({ field, value, onSave, onClose }: { field: SignerField; value: string; onSave: (v: string) => void; onClose: () => void }) {
   const [v, setV] = useState(value);
+  const [shown, setShown] = useState<string | null>(null);
   const ref = useRef<HTMLInputElement>(null);
   useEffect(() => ref.current?.focus(), []);
+  const name = fieldName(field);
+  const needed = mustComplete(field);
+  const id = `fill-${field.id}`;
   return (
-    <Modal title={field.label || "Fill in"} onClose={onClose}>
+    <Modal title={name || "Fill in"} onClose={onClose}>
       <form
+        noValidate
         onSubmit={(e) => {
           e.preventDefault();
+          const problem = fieldError(field, v);
+          if (problem) {
+            setShown(problem);
+            ref.current?.focus();
+            return;
+          }
           onSave(v.trim());
         }}
         className="space-y-4"
       >
-        <input ref={ref} className={inputCls} value={v} onChange={(e) => setV(e.target.value)} maxLength={300} type={field.type === "email" ? "email" : "text"} required={field.required} />
+        <div>
+          <label htmlFor={id} className="mb-1.5 block text-sm font-medium">
+            {name} <span className="font-normal text-muted">({needed ? "required" : "optional"})</span>
+          </label>
+          <input
+            ref={ref}
+            id={id}
+            className={cx(inputCls, shown && "border-bad")}
+            value={v}
+            onChange={(e) => {
+              setV(e.target.value);
+              if (shown) setShown(fieldError(field, e.target.value));
+            }}
+            maxLength={300}
+            type={field.type === "email" ? "email" : "text"}
+            inputMode={field.type === "email" ? "email" : undefined}
+            autoComplete={autoCompleteFor(field.type)}
+            aria-invalid={shown ? true : undefined}
+            aria-describedby={shown ? `${id}-err` : undefined}
+          />
+          {shown && <p id={`${id}-err`} role="alert" className="mt-1.5 text-sm text-bad">{shown}</p>}
+        </div>
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
           <Button>Save</Button>
         </div>
       </form>
     </Modal>
+  );
+}
+
+/** Every field the client completes, with its state: a way to reach each one without hunting through the PDF. */
+function FieldList({ fields, isDone, onPick }: { fields: SignerField[]; isDone: (f: SignerField) => boolean; onPick: (f: SignerField) => void }) {
+  if (fields.length < 2) return null;
+  return (
+    <section aria-labelledby="your-fields" className="mx-auto mt-6 max-w-xl rounded-xl border border-line bg-white p-4 text-left">
+      <h2 id="your-fields" className="text-sm font-semibold">Your fields</h2>
+      <ul className="mt-2 divide-y divide-line" aria-label="Your fields">
+        {fields.map((f) => {
+          const done = isDone(f);
+          const state = done ? "done" : mustComplete(f) ? "to do" : "optional";
+          return (
+            <li key={f.id}>
+              <button type="button" onClick={() => onPick(f)} className="flex min-h-11 w-full items-center gap-3 py-2 text-left text-sm hover:text-brand">
+                <span aria-hidden="true" className={cx("flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[11px]", done ? "border-ok bg-ok-bg text-ok" : "border-line-strong text-transparent")}>✓</span>
+                <span className="min-w-0 flex-1 truncate">{fieldName(f)}</span>
+                <span className="shrink-0 text-xs text-muted">Page {f.page + 1}</span>
+                <span className={cx("w-16 shrink-0 text-right text-xs font-medium", done ? "text-ok" : mustComplete(f) ? "text-brand" : "text-muted")}>
+                  <span className="sr-only">, </span>
+                  {state === "done" ? "Done" : state === "to do" ? "Required" : "Optional"}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 
@@ -365,7 +509,7 @@ function Disclosure({ onClose }: { onClose: () => void }) {
   );
 }
 
-function Decline({ token, onClose }: { token: string; onClose: () => void }) {
+function Decline({ token, onClose, onDeclined }: { token: string; onClose: () => void; onDeclined?: () => void }) {
   const [reason, setReason] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [done, setDone] = useState(false);
@@ -382,7 +526,10 @@ function Decline({ token, onClose }: { token: string; onClose: () => void }) {
             setBusy(true);
             const r = await fetch(`/api/sign/${token}/decline`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }) });
             setBusy(false);
-            if (r.ok) setDone(true);
+            if (r.ok) {
+              onDeclined?.();
+              setDone(true);
+            }
             else setErr(((await r.json().catch(() => ({}))) as { error?: string }).error ?? "Couldn't decline");
           }}
         >
@@ -403,25 +550,43 @@ export function VerifyThenDownload({ token, email }: { token: string; email: str
   return <Otp token={token} email={email} onOk={() => location.reload()} />;
 }
 
+const RESEND_WAIT_S = 30;
+
 function Otp({ token, email, onOk }: { token: string; email: string; onOk: () => void }) {
   const [sent, setSent] = useState<string | null>(null);
+  const [resent, setResent] = useState(false);
   const [code, setCode] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [wait, setWait] = useState(0);
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (wait <= 0) return;
+    const t = setTimeout(() => setWait((w) => w - 1), 1000);
+    return () => clearTimeout(t);
+  }, [wait]);
   async function send() {
     setBusy(true);
     setErr(null);
+    const again = !!sent;
     const r = await fetch(`/api/sign/${token}/otp`, { method: "POST" });
     const j = (await r.json().catch(() => ({}))) as { to?: string; error?: string };
     setBusy(false);
-    if (r.ok) setSent(j.to ?? email);
-    else setErr(j.error ?? "Couldn't send the code");
+    if (r.ok) {
+      setSent(j.to ?? email);
+      setResent(again);
+      setCode("");
+      setWait(RESEND_WAIT_S);
+      setTimeout(() => input.current?.focus(), 0);
+    } else setErr(j.error ?? "Couldn't send the code");
   }
   return (
     <div className="mx-auto max-w-md px-4 py-12">
       <div className="rounded-2xl border border-line bg-white p-6 shadow-sm">
         <h1 className="text-xl font-semibold">Confirm it&apos;s you</h1>
-        <p className="mt-1 text-sm text-muted">We&apos;ll email a 6-digit code to the address this agreement was sent to.</p>
+        <p className="mt-1 text-sm text-muted">
+          Before you see the agreement, we&apos;ll email a 6-digit code to <b className="text-ink">{email}</b>, the address it was sent to.
+        </p>
         {err && <div className="mt-4"><Notice tone="error">{err}</Notice></div>}
         {!sent ? (
           <Button className="mt-5 w-full" onClick={send} disabled={busy}>{busy ? "Sending…" : "Email me a code"}</Button>
@@ -430,18 +595,39 @@ function Otp({ token, email, onOk }: { token: string; email: string; onOk: () =>
             className="mt-5 space-y-3"
             onSubmit={async (e) => {
               e.preventDefault();
+              if (code.length !== 6) return;
               setBusy(true);
               setErr(null);
               const r = await fetch(`/api/sign/${token}/verify`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }) });
               setBusy(false);
               if (r.ok) onOk();
-              else setErr(((await r.json().catch(() => ({}))) as { error?: string }).error ?? "Wrong code");
+              else {
+                setErr(((await r.json().catch(() => ({}))) as { error?: string }).error ?? "Wrong code");
+                input.current?.select();
+              }
             }}
           >
-            <p className="text-sm">Code sent to <b>{sent}</b>.</p>
-            <input className={cx(inputCls, "text-center text-2xl tracking-[0.5em]")} inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} autoFocus />
-            <Button className="w-full" disabled={busy || code.length !== 6}>Verify</Button>
-            <button type="button" className="w-full text-xs text-muted" onClick={send}>Send a new code</button>
+            <p className="text-sm" role="status">
+              {resent ? "New code sent to " : "Code sent to "}
+              <b>{sent}</b>.{resent ? " Only the newest code works." : " It expires in 10 minutes."}
+            </p>
+            <label htmlFor="otp-code" className="block text-sm font-medium">6-digit code</label>
+            <input
+              ref={input}
+              id="otp-code"
+              className={cx(inputCls, "text-center text-2xl tracking-[0.5em]")}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              value={code}
+              // pasted codes often carry spaces or a dash ("123 456"): keep the digits, then the first six
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              aria-invalid={err ? true : undefined}
+              autoFocus
+            />
+            <Button className="w-full" disabled={busy || code.length !== 6}>{busy ? "Checking…" : "Verify"}</Button>
+            <button type="button" className="min-h-10 w-full text-xs text-muted hover:text-ink disabled:hover:text-muted" onClick={send} disabled={busy || wait > 0}>
+              {wait > 0 ? `Send a new code in ${wait}s` : "Send a new code"}
+            </button>
           </form>
         )}
       </div>
@@ -449,21 +635,47 @@ function Otp({ token, email, onOk }: { token: string; email: string; onOk: () =>
   );
 }
 
-function Done({ token, firm, email }: { token: string; firm: string; email: string }) {
+function Done({ token, firm, email, status }: { token: string; firm: string; email: string; status: "signed" | "completed" }) {
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => heading.current?.focus(), []);
+  const complete = status === "completed";
   return (
     <div className="mx-auto max-w-lg px-4 py-12">
       <div className="rounded-2xl border border-line bg-white p-6 text-center shadow-sm sm:p-8">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-2xl text-emerald-700">✓</div>
-        <h1 className="mt-4 text-2xl font-semibold tracking-tight">All signed</h1>
-        <p className="mt-2 text-sm text-muted">
-          Thanks. {firm} has your signature. A copy of the completed agreement and its audit certificate is on its way to {email}.
-        </p>
-        <a href={`/api/sign/${token}/download`} className="mt-6 inline-flex items-center justify-center rounded-lg bg-brand px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:brightness-110">
-          Download signed copy
-        </a>
-        <p className="mt-3 text-xs text-muted">If the download says it isn&apos;t ready, the countersignature is still pending. You&apos;ll get an email when it&apos;s done.</p>
+        <div aria-hidden="true" className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-2xl text-emerald-700">✓</div>
+        <h1 ref={heading} tabIndex={-1} className="mt-4 text-2xl font-semibold tracking-tight outline-none">All signed</h1>
+        {complete ? (
+          <p className="mt-2 text-sm text-muted">
+            Thanks. Both you and {firm} have signed, so the agreement is complete. A copy with its audit certificate is on its way to {email}, and you can download it now.
+          </p>
+        ) : (
+          <p className="mt-2 text-sm text-muted">
+            Thanks. {firm} has your signature and countersigns next. We&apos;ll email the completed agreement and its audit certificate to {email} as soon as they do.
+          </p>
+        )}
+        <ol className="mx-auto mt-5 max-w-xs space-y-2 text-left text-sm" aria-label="Where this agreement is">
+          <Step done label="You signed" />
+          <Step done={complete} label={complete ? `${firm} countersigned` : `${firm} countersigns`} />
+          <Step done={complete} label="Completed copy emailed to you" />
+        </ol>
+        {complete && (
+          <a href={`/api/sign/${token}/download`} className="mt-6 inline-flex items-center justify-center rounded-lg bg-brand px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:brightness-110">
+            Download signed copy
+          </a>
+        )}
+        <p className="mt-4 text-xs text-muted">You can close this page. This link opens your signed copy for 30 days once it&apos;s complete.</p>
       </div>
     </div>
+  );
+}
+
+function Step({ done, label }: { done: boolean; label: string }) {
+  return (
+    <li className="flex items-center gap-3">
+      <span aria-hidden="true" className={cx("flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[11px]", done ? "border-ok bg-ok-bg text-ok" : "border-line-strong text-transparent")}>✓</span>
+      <span className={done ? "" : "text-muted"}>{label}</span>
+      <span className="sr-only">{done ? "(done)" : "(next)"}</span>
+    </li>
   );
 }
 

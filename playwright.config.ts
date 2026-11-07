@@ -10,6 +10,8 @@ export default defineConfig({
   timeout: 120_000,
   expect: { timeout: 20_000 },
   fullyParallel: false,
+  // a focused test (.only) would silently skip the rest of the suite in CI
+  forbidOnly: !!process.env.CI,
   workers: 1,
   retries: 0,
   reporter: [["list"]],
