@@ -1,0 +1,77 @@
+{
+  "firmName": "Lintwhistle Translation Services",
+  "fields": [
+    {
+      "id": "f1",
+      "type": "name",
+      "role": "prefill",
+      "page": 0,
+      "x": 104.2,
+      "y": 129.2,
+      "w": 198.5,
+      "h": 14,
+      "label": "Client name",
+      "required": true
+    },
+    {
+      "id": "f2",
+      "type": "text",
+      "role": "prefill",
+      "page": 0,
+      "x": 141.2,
+      "y": 159,
+      "w": 122.6,
+      "h": 14,
+      "label": "Job reference",
+      "required": true
+    },
+    {
+      "id": "f3",
+      "type": "signature",
+      "role": "client",
+      "page": 0,
+      "x": 72,
+      "y": 530.5,
+      "w": 198.5,
+      "h": 24,
+      "label": "Client signature",
+      "required": true
+    },
+    {
+      "id": "f4",
+      "type": "signature",
+      "role": "firm",
+      "page": 0,
+      "x": 341.5,
+      "y": 530.5,
+      "w": 198.5,
+      "h": 24,
+      "label": "Translator signature",
+      "required": true
+    },
+    {
+      "id": "f5",
+      "type": "date",
+      "role": "client",
+      "page": 0,
+      "x": 72,
+      "y": 591,
+      "w": 122.6,
+      "h": 14,
+      "label": "Client date",
+      "required": true
+    },
+    {
+      "id": "f6",
+      "type": "date",
+      "role": "firm",
+      "page": 0,
+      "x": 341.5,
+      "y": 591,
+      "w": 122.6,
+      "h": 14,
+      "label": "Firm date",
+      "required": true
+    }
+  ]
+}

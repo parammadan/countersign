@@ -1,0 +1,137 @@
+{
+  "firmName": "Harrowgate Wealth Partners",
+  "fields": [
+    {
+      "id": "f1",
+      "type": "checkbox",
+      "role": "client",
+      "page": 0,
+      "x": 65,
+      "y": 472.3,
+      "w": 11,
+      "h": 11,
+      "label": "Privacy notice",
+      "required": false
+    },
+    {
+      "id": "f2",
+      "type": "checkbox",
+      "role": "client",
+      "page": 0,
+      "x": 65,
+      "y": 491.3,
+      "w": 11,
+      "h": 11,
+      "label": "Email consent",
+      "required": false
+    },
+    {
+      "id": "f3",
+      "type": "checkbox",
+      "role": "client",
+      "page": 0,
+      "x": 65,
+      "y": 510.3,
+      "w": 11,
+      "h": 11,
+      "label": "Accuracy",
+      "required": false
+    },
+    {
+      "id": "f4",
+      "type": "email",
+      "role": "client",
+      "page": 0,
+      "x": 183,
+      "y": 546.8,
+      "w": 228,
+      "h": 14,
+      "label": "Client email",
+      "required": true
+    },
+    {
+      "id": "f5",
+      "type": "signature",
+      "role": "client",
+      "page": 1,
+      "x": 82.7,
+      "y": 118.8,
+      "w": 172.4,
+      "h": 24,
+      "label": "client By:",
+      "required": true
+    },
+    {
+      "id": "f8",
+      "type": "signature",
+      "role": "firm",
+      "page": 1,
+      "x": 332.7,
+      "y": 118.8,
+      "w": 172.4,
+      "h": 24,
+      "label": "firm By:",
+      "required": true
+    },
+    {
+      "id": "f6",
+      "type": "name",
+      "role": "client",
+      "page": 1,
+      "x": 97.7,
+      "y": 157.8,
+      "w": 161.2,
+      "h": 14,
+      "label": "client Name:",
+      "required": true
+    },
+    {
+      "id": "f9",
+      "type": "name",
+      "role": "firm",
+      "page": 1,
+      "x": 347.7,
+      "y": 157.8,
+      "w": 161.2,
+      "h": 14,
+      "label": "firm Name:",
+      "required": true
+    },
+    {
+      "id": "f7",
+      "type": "date",
+      "role": "client",
+      "page": 1,
+      "x": 92.2,
+      "y": 186.8,
+      "w": 161.2,
+      "h": 14,
+      "label": "client Date:",
+      "required": true
+    },
+    {
+      "id": "f10",
+      "type": "title",
+      "role": "firm",
+      "page": 1,
+      "x": 331.6,
+      "y": 186.8,
+      "w": 166.8,
+      "h": 14,
+      "label": "firm Its:",
+      "required": true
+    },
+    {
+      "id": "f11",
+      "type": "date",
+      "role": "firm",
+      "page": 1,
+      "x": 342.2,
+      "y": 215.8,
+      "w": 161.2,
+      "h": 14,
+      "label": "firm Date:",
+      "required": true
+    }
+  ]
+}
