@@ -19,7 +19,7 @@ function Shell({ brand, firm, children }: { brand?: string; firm?: string; child
           </div>
         </header>
       )}
-      {children}
+      <main>{children}</main>
     </div>
   );
 }
