@@ -13,8 +13,9 @@ Automates getting a firm's standard client agreement signed on every new file (o
 
 ## Rules for cloud agents (Claude Code on the web)
 
-These are instructions, not the security boundary. GitHub branch protection and the `agent-guard`
-check (run from `main`) are what enforce them; see `docs/agents/TASKS.md`, "What is enforced".
+These are instructions, not the security boundary. On GitHub Free nothing on GitHub's side can stop a
+write-capable agent from pushing to `main` or merging, so cloud agents work in a separate sandbox repository
+and the owner promotes reviewed branches here by hand; see `docs/agents/TASKS.md`, "What is enforced".
 
 - **Work only from an issue labelled `agent:ready`** (task board: `docs/agents/TASKS.md`). One task, one
   branch `claude/Q<n>-<slug>` from the latest `main`, one pull request. Claim it in the issue first.

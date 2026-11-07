@@ -166,18 +166,46 @@ sign-in "Work email", "Password", "Sign in", "Sign out"; invite "Your name", "Ch
 
 ---
 
-## What is enforced, and by what
+## What is enforced, and by what (GitHub Free)
 
-Instructions in `CLAUDE.md` and this file are **requests**, not a security boundary.
+This repository is private on GitHub Free, so **branch protection and rulesets are not available**: GitHub
+can't require pull requests, required checks or block force-pushes here. Anything with write access to this
+repository can push to `main` or merge. Prompts, `CLAUDE.md` and the cloud hook **do not prevent** that.
+
+So cloud agents get **no access to this repository at all**:
+
+- They work in a separate private **sandbox repository** (`parammadan/agreementos-agents`), a copy of `main`.
+  The Claude GitHub App is installed on the sandbox only; `/web-setup` (which shares the owner's `gh` token
+  and so reaches every repository) is never used.
+- Agents push `claude/Q<n>-…` branches and open pull requests **in the sandbox**. Issues for this board
+  live in the sandbox too. Actions are disabled there (agents run the suite in their own VM), so they can't
+  spend the account's shared CI minutes.
+- The owner **promotes** a reviewed branch into this repository by hand, opens the pull request here, and
+  CI (`test`) and `agent-guard` (`guardrails/policy`) run on it. Merging and deploying stay manual.
 
 | Control | Enforced by |
 |---|---|
-| No direct push, force-push or deletion on `main`; changes only by PR | GitHub branch protection or ruleset (owner setting) |
-| A PR merges only if `test` and `guardrails/policy` pass (source: GitHub Actions) | GitHub branch protection + `.github/workflows/agent-guard.yml` |
-| Protected paths, attribution lines, secret-looking values, real-looking emails, the freeze | `agent-guard`, run from `main` (a PR can't edit the rules that judge it) |
-| Owner approval labels count only if applied by the owner directly, after the latest push | `agent-guard` (relies on GitHub's `performed_via_github_app`, verified in the pilot) |
-| No Fly or SMTP credentials, customer data or production database in reach | Not given to the cloud environment; deploys only from the owner's laptop |
-| No network access to production or mail servers | The cloud environment's network allowlist (owner setting) |
-| Claude reaches only this repository | Claude GitHub App installed on this repository only |
-| Cloud-session command and file rules | `.claude/hooks/cloud-guard.mjs` (cloud sessions only; friction, not a boundary) |
-| **Not enforceable** | An agent acting as the owner's account merging a PR whose checks pass; and a PR that edits a workflow forging `guardrails/policy` (it fails the check first, but always review `.github/` changes by hand). Mitigated by owner-only merges, the hook, notifications and review. |
+| Agents can't push to, merge in or change this repository | **They have no credentials for it**: the app is installed on the sandbox only (verified in the pilot) |
+| Agents can't deploy or reach production | No Fly or SMTP credentials anywhere in the cloud environment, and its network allowlist excludes production and mail hosts (verified in the pilot) |
+| Nothing reaches `main` here without the owner | Only the owner (and the grader, who has write access) can push here; promotion and merge are manual |
+| Promoted pull requests: protected paths, attribution lines, secrets, real-looking emails, the freeze | `agent-guard`, run from `main`. **Advisory on Free**: it can't be made a required check, so the owner merges only when `test` and `guardrails/policy` are both green |
+| Cloud-session command and file rules | `.claude/hooks/cloud-guard.mjs`: friction, not a boundary |
+| **Not enforceable on Free** | Direct pushes to `main` here by anyone with write access (the owner, the grader, or a leaked token); a promoted PR that edits `.github/workflows/` forging `guardrails/policy` (always review `.github/` changes by hand). Agents in the sandbox can push to the sandbox's `main`, force-push or delete branches there; the owner resets the sandbox from this repository whenever needed. |
+
+## Owner procedures (local, by hand)
+
+```bash
+# one-time: the sandbox remote
+git remote add agents https://github.com/parammadan/agreementos-agents.git
+
+# after every merge here: reset the sandbox's main to this repository's main
+git fetch origin && git push --force agents origin/main:main
+
+# promote a reviewed agent branch, then open the pull request here
+git fetch agents
+git push origin refs/remotes/agents/claude/Q1-docs:refs/heads/claude/Q1-docs
+gh pr create -R parammadan/countersign --base main --head claude/Q1-docs --fill
+```
+
+**Freeze:** at `AGENT_FREEZE_AT`, uninstall or suspend the Claude GitHub App on the sandbox. That cuts
+agents off completely; this repository was never reachable to them.
