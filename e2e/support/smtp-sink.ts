@@ -33,22 +33,42 @@ export function smtpSink(port: number) {
         const line = buf.slice(0, nl);
         buf = buf.slice(nl + 2);
         const cmd = line.slice(0, 4).toUpperCase();
-        if (authStep) {
-          authStep = authStep === 1 ? (say("334 UGFzc3dvcmQ6"), 2) : (say("235 2.7.0 ok"), 0);
-        } else if (cmd === "EHLO" || cmd === "HELO") sock.write("250-sink\r\n250-AUTH PLAIN LOGIN\r\n250 8BITMIME\r\n");
-        else if (cmd === "AUTH") {
-          if (/^AUTH LOGIN\s*$/i.test(line)) (say("334 VXNlcm5hbWU6"), (authStep = 1));
-          else if (/^AUTH LOGIN /i.test(line)) (say("334 UGFzc3dvcmQ6"), (authStep = 2));
-          else say("235 2.7.0 ok");
-        } else if (cmd === "MAIL") (msg.from = line.match(/<([^>]*)>/)?.[1] ?? ""), say("250 ok");
-        else if (cmd === "RCPT") {
+        if (authStep === 1) {
+          say("334 UGFzc3dvcmQ6");
+          authStep = 2;
+        } else if (authStep === 2) {
+          say("235 2.7.0 ok");
+          authStep = 0;
+        } else if (cmd === "EHLO" || cmd === "HELO") {
+          sock.write("250-sink\r\n250-AUTH PLAIN LOGIN\r\n250 8BITMIME\r\n");
+        } else if (cmd === "AUTH") {
+          if (/^AUTH LOGIN\s*$/i.test(line)) {
+            say("334 VXNlcm5hbWU6");
+            authStep = 1;
+          } else if (/^AUTH LOGIN /i.test(line)) {
+            say("334 UGFzc3dvcmQ6");
+            authStep = 2;
+          } else say("235 2.7.0 ok");
+        } else if (cmd === "MAIL") {
+          msg.from = line.match(/<([^>]*)>/)?.[1] ?? "";
+          say("250 ok");
+        } else if (cmd === "RCPT") {
           const to = line.match(/<([^>]*)>/)?.[1] ?? "";
           if (reject(to)) say("550 5.1.1 mailbox unavailable");
-          else (msg.to.push(to), say("250 ok"));
-        } else if (cmd === "DATA") (data = true), say("354 go ahead");
-        else if (cmd === "RSET") (msg = { from: "", to: [] }), say("250 ok");
-        else if (cmd === "QUIT") (say("221 bye"), sock.end());
-        else say("250 ok");
+          else {
+            msg.to.push(to);
+            say("250 ok");
+          }
+        } else if (cmd === "DATA") {
+          data = true;
+          say("354 go ahead");
+        } else if (cmd === "RSET") {
+          msg = { from: "", to: [] };
+          say("250 ok");
+        } else if (cmd === "QUIT") {
+          say("221 bye");
+          sock.end();
+        } else say("250 ok");
       }
     });
     sock.on("error", () => {});
