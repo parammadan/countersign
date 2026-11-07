@@ -1,0 +1,173 @@
+{
+  "firmName": "Plinth Studio Architects",
+  "fields": [
+    {
+      "id": "f1",
+      "type": "name",
+      "role": "prefill",
+      "page": 0,
+      "x": 128.1,
+      "y": 145.4,
+      "w": 211.3,
+      "h": 14,
+      "label": "Client name",
+      "required": true
+    },
+    {
+      "id": "f2",
+      "type": "text",
+      "role": "prefill",
+      "page": 0,
+      "x": 144.3,
+      "y": 174.4,
+      "w": 261.3,
+      "h": 14,
+      "label": "Project address",
+      "required": true
+    },
+    {
+      "id": "f3",
+      "type": "text",
+      "role": "prefill",
+      "page": 0,
+      "x": 120.6,
+      "y": 203.4,
+      "w": 122.3,
+      "h": 14,
+      "label": "File reference",
+      "required": true
+    },
+    {
+      "id": "f4",
+      "type": "checkbox",
+      "role": "client",
+      "page": 0,
+      "x": 71,
+      "y": 291.7,
+      "w": 10,
+      "h": 10,
+      "label": "Stage 1",
+      "required": false
+    },
+    {
+      "id": "f5",
+      "type": "checkbox",
+      "role": "client",
+      "page": 0,
+      "x": 71,
+      "y": 310.7,
+      "w": 10,
+      "h": 10,
+      "label": "Stage 2",
+      "required": false
+    },
+    {
+      "id": "f6",
+      "type": "checkbox",
+      "role": "client",
+      "page": 0,
+      "x": 71,
+      "y": 329.7,
+      "w": 10,
+      "h": 10,
+      "label": "Stage 3",
+      "required": false
+    },
+    {
+      "id": "f7",
+      "type": "checkbox",
+      "role": "client",
+      "page": 0,
+      "x": 71,
+      "y": 348.7,
+      "w": 10,
+      "h": 10,
+      "label": "Stage 4",
+      "required": false
+    },
+    {
+      "id": "f8",
+      "type": "checkbox",
+      "role": "client",
+      "page": 0,
+      "x": 71,
+      "y": 367.7,
+      "w": 10,
+      "h": 10,
+      "label": "Stage 5",
+      "required": false
+    },
+    {
+      "id": "f13",
+      "type": "initials",
+      "role": "client",
+      "page": 0,
+      "x": 468.9,
+      "y": 736,
+      "w": 48.9,
+      "h": 18,
+      "label": "Client initials p1",
+      "required": true
+    },
+    {
+      "id": "f9",
+      "type": "signature",
+      "role": "client",
+      "page": 1,
+      "x": 161.9,
+      "y": 199.6,
+      "w": 222.4,
+      "h": 24,
+      "label": "Client signature",
+      "required": true
+    },
+    {
+      "id": "f10",
+      "type": "date",
+      "role": "client",
+      "page": 1,
+      "x": 95.9,
+      "y": 238.6,
+      "w": 122.3,
+      "h": 14,
+      "label": "Client date",
+      "required": true
+    },
+    {
+      "id": "f11",
+      "type": "signature",
+      "role": "firm",
+      "page": 1,
+      "x": 179,
+      "y": 267.6,
+      "w": 222.4,
+      "h": 24,
+      "label": "Firm signature",
+      "required": true
+    },
+    {
+      "id": "f12",
+      "type": "date",
+      "role": "firm",
+      "page": 1,
+      "x": 95.9,
+      "y": 306.6,
+      "w": 122.3,
+      "h": 14,
+      "label": "Firm date",
+      "required": true
+    },
+    {
+      "id": "f14",
+      "type": "initials",
+      "role": "client",
+      "page": 1,
+      "x": 468.9,
+      "y": 736,
+      "w": 48.9,
+      "h": 18,
+      "label": "Client initials p2",
+      "required": true
+    }
+  ]
+}

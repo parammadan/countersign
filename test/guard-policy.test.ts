@@ -1,0 +1,198 @@
+// The merge policy's risk classification (.github/agent-guard/classify.sh), offline, against fixture inputs.
+// Default deny: routine only when every file is on routine-paths.txt, none is on critical-paths.txt and no
+// content rule fires. Includes every bypass found by the security review of the first version.
+// Test markers are assembled from parts ("." + "only") so this file doesn't trip the rules it tests.
+import { describe, it, expect } from "vitest";
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+type File = { name: string; status?: string; previous?: string; deletions?: number; patch?: boolean };
+const f = (name: string, o: Omit<File, "name"> = {}): File => ({ name, ...o });
+function classify(files: File[], added: [file: string, line: string][] = []) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cs-guard-"));
+  const rows = files.map((x) => [x.name, x.previous ?? "", x.status ?? "modified", String(x.deletions ?? 0), String(x.patch ?? true)].join("\t"));
+  fs.writeFileSync(path.join(dir, "files.tsv"), rows.join("\n") + "\n");
+  fs.writeFileSync(path.join(dir, "added.tsv"), added.map(([a, l]) => `${a}\t${l}`).join("\n") + (added.length ? "\n" : ""));
+  const out = execFileSync("bash", [".github/agent-guard/classify.sh", path.join(dir, "files.tsv"), path.join(dir, "added.tsv")], { encoding: "utf8" });
+  return out.split("\n").filter(Boolean).map((l) => { const [kind, reason] = l.split("\t"); return { kind, reason }; });
+}
+const kinds = (r: ReturnType<typeof classify>) => [...new Set(r.map((x) => x.kind))];
+const T = "test", ONLY = "only", SKIP = "skip";
+
+describe("routine: no owner review", () => {
+  it("UI pages and components, docs, static assets, new tests, fixtures for new work, visual baselines", () => {
+    expect(classify([f("components/files/FilesTabs.tsx"), f("app/app/files/page.tsx"), f("e2e/files-list.spec.ts", { status: "added" }), f("test/brand-color.test.ts", { status: "added" }), f("docs/API.md", { status: "added" }), f("public/openapi.json", { status: "added" }), f("fixtures/next/01-a.pdf", { status: "added", patch: false }), f("e2e/visual.spec.ts-snapshots/settings-desktop-darwin.png", { patch: false }), f("scripts/make-next.mjs", { status: "added" })])).toEqual([]);
+  });
+  it("a fixture generator (run only by hand) may write files", () => {
+    expect(classify([f("scripts/make-next.mjs", { status: "added" })], [["scripts/make-next.mjs", 'import fs from "node:fs";']])).toEqual([]);
+  });
+  it("…but may not start processes or open the database", () => {
+    expect(kinds(classify([f("scripts/make-next.mjs", { status: "added" })], [["scripts/make-next.mjs", 'import { execSync } from "node:child_process";']]))).toEqual(["MATERIAL"]);
+    expect(kinds(classify([f("scripts/make-next.mjs", { status: "added" })], [["scripts/make-next.mjs", 'import { DatabaseSync } from "node:sqlite";']]))).toEqual(["MATERIAL"]);
+  });
+  it("adding lines to an existing test file without deleting any", () => {
+    expect(classify([f("test/brand-color.test.ts", { deletions: 0 })], [["test/brand-color.test.ts", "  expect(contrastWithWhite(bg)).toBeGreaterThanOrEqual(4.5);"]])).toEqual([]);
+  });
+  it("Promise.all and other method calls named all/one/run aren't database calls", () => {
+    for (const line of ["const [a, b] = await Promise.all([x(), y()]);", "items.some((i) => i.one)", "await job.run();", "const runAll = () => {};"])
+      expect(classify([f("components/FileActions.tsx")], [["components/FileActions.tsx", line]]), line).toEqual([]);
+  });
+  it("quoted UI labels that start with Update, Delete or Select aren't SQL", () => {
+    for (const line of ['toast("Update saved");', '<Button>{"Delete draft"}</Button>', 'label: "Select an agreement"', 'confirm("Delete this file?")', 'title: `Create a workspace`'])
+      expect(classify([f("components/FileActions.tsx")], [["components/FileActions.tsx", line]]), line).toEqual([]);
+  });
+  it("UI copy that reads like a query isn't one", () => {
+    expect(classify([f("components/UploadAgreement.tsx")], [["components/UploadAgreement.tsx", "<p>Select a file from the list, or drop it here.</p>"]])).toEqual([]);
+  });
+  it("UI text that merely contains words like Delete or Update", () => {
+    expect(classify([f("components/FileActions.tsx")], [["components/FileActions.tsx", '<Button variant="danger">Delete draft</Button> {"Update settings"}']])).toEqual([]);
+  });
+});
+
+describe("material: default deny and critical paths", () => {
+  it.each([
+    "lib/util.ts", "lib/templates.ts", "lib/fields.ts", "lib/schemas.ts", "lib/detect.ts", "lib/csv.ts", "lib/errors.ts",
+    "lib/dashboard.ts", "lib/library.ts", "lib/files.ts", "lib/pdf/stamp.ts", "lib/audit.ts", "lib/auth.ts", "lib/db.ts", "lib/secret.ts",
+    "lib/new-helper.ts", "app/app/layout.tsx", "app/layout.tsx", "app/app/files/export2/route.ts", "app/(public)/api/v2/files/route.ts",
+    "app/(signer)/s2/[token]/page.tsx", "app/s/[token]/page.tsx", "app/actions.ts", "app/reset/[token]/page.tsx",
+    "components/SignaturePad.tsx", "components/SigningRoom.tsx", "components/PdfPages.tsx", "components/AuthForms.tsx", "components/ResetForms.tsx",
+    "tsconfig.json", "eslint.config.mjs", ".npmrc", "package.json", "next.config.ts", "fly.toml", "Dockerfile",
+    "scripts/docker-start.sh", "scripts/converter.mjs", "scripts/agents/merge.sh", "scripts/something-new.sh",
+    ".github/workflows/new.yml", ".github/agent-guard/routine-paths.txt", "CLAUDE.md", "docs/agents/TASKS.md",
+    "playwright.config.ts", "e2e/helpers.ts", "e2e/support/smtp-sink.ts", "test/support/seed.ts",
+    "test/guard-policy.test.ts", "test/detect.test.ts", "fixtures/holdout/a.expected.json", "some-new-file.ts",
+    "components/DevForms.tsx", "public/logo.svg", "e2e/security.spec.ts", "e2e/signing-room.spec.ts", "e2e/mail-flow-otp.spec.ts",
+    "e2e/countersignature.spec.ts", "test/flow.test.ts", "test/gates.test.ts", "test/stamp.test.ts", "test/ssrf.test.ts",
+    "test/dashboard.test.ts", "test/library.test.ts", "test/filepage.test.ts", "test/csv.test.ts", "test/outbox-log.test.ts",
+  ])("%s", (name) => {
+    expect(kinds(classify([f(name)]))).toEqual(["MATERIAL"]);
+  });
+  it("a rename out of a material path still counts", () => {
+    expect(kinds(classify([f("components/LegacySigning.tsx", { status: "renamed", previous: "components/SigningRoom.tsx" })]))).toEqual(["MATERIAL"]);
+  });
+});
+
+describe("material: content of routine code", () => {
+  it.each([
+    ['"use server" (an inline server action)', 'async function f() { "use server"; await voidFile(ctx, id); }'],
+    ["SQL reads (tenancy)", 'return all("SELECT f.client_token, u.password_hash FROM files f, users u");'],
+    ["SQL split across lines", "  UPDATE files"],
+    ["SQL by concatenation", '"DELETE " + "FROM files"'],
+    ["REPLACE INTO", 'run("REPLACE INTO users VALUES (?)")'],
+    ["PRAGMA", 'db.exec("PRAGMA foreign_keys=OFF")'],
+    ["VACUUM INTO", "VACUUM INTO '/app/public/db.sqlite'"],
+    ["a new import of the database", 'import { all } from "@/lib/db";'],
+    ["a new import of the audit trail", "import { audit } from '@/lib/audit';"],
+    ["a new relative import of signing code", 'import { voidFile } from "../../lib/files";'],
+    ["a dynamic import of auth", 'const { requireSession } = await import("@/lib/auth");'],
+    ["an import through ..", 'import { run } from "@/lib/../lib/db";'],
+    ["an import through ./", 'import { getFile } from "@/./lib/files";'],
+    ["an import with an extension", 'import { one } from "@/lib/db.js";'],
+    ["the live database handle", '(globalThis as any).__csdb.prepare("x").run();'],
+    ["node:sqlite directly", 'import { DatabaseSync } from "node:sqlite";'],
+    ["child processes", 'import { execSync } from "node:child_process";'],
+    ["the filesystem", 'import fs from "node:fs";'],
+    ["lowercase SQL writes", 'all("delete from audit_events where workspace_id = ? returning seq", ws.id);'],
+    ["lowercase SQL reads", 'one("select * from files where id = ?", id);'],
+    ["a quoted table in an update", "run('update \"files\" set status = ?')"],
+    ["workspace scoping", "const f = getFile(params.ws, id); // was s.workspaceId"],
+    ["roles", "const canEdit = s.role !== 'staff' || true;"],
+    ["the global alias with a built-up name", '(global as any)["__cs" + "db"].prepare("x").run();'],
+    ["process.getBuiltinModule", 'const M = process.getBuiltinModule("node:" + "sqlite");'],
+    ["a backtick import", "const { all } = await import(`@/lib/db`);"],
+    ["eval", 'eval("1")'],
+    ["new Function", 'new Function("return 1")()'],
+    ["a column-list read", 'one("select id, status from files where id = ?", id);'],
+    ["a read with an alias (X3)", 'all("select e.* from emails e order by e.created_at desc");'],
+    ["a read with * and an alias (X4)", 'all("select * from emails e");'],
+    ["count(*) (X5)", 'one("select count(*) n from users");'],
+    ["lowercase SQL split across lines in a template (X2)", "all(`delete"],
+    ["a CTE", "all(`with t as (select 1) select * from t`)"],
+    ["a multi-line read (Y1)", "  const rows = all(`select e.id, e.subject, e.to_email"],
+    ["a template opening on its own line (Y2)", "  const rows = all(`"],
+    ["a write split before SET (Y6)", "  all(`update audit_events"],
+    ["SQL by concatenation (Y3)", 'all("select" + " * from emails e");'],
+    ["SQL behind a comment (Y4)", 'all("/* list */ select * from emails e");'],
+    ["SQL in parentheses (Y5)", 'all("(select * from emails e)");'],
+    ["SQL behind a newline escape (Y9)", 'all("\\nselect * from emails e");'],
+    ["SQL built from parts (Y8)", 'const rows = all(Q);'],
+    ["a typed helper call", "const f = one<FileRow>(sql, id);"],
+    ["a transaction", "tx(() => { voidAll(); });"],
+    ["prepare on the handle", 'db().prepare(q).run();'],
+  ])("%s", (_what, line) => {
+    expect(kinds(classify([f("components/outbox/query.ts", { status: "added" })], [["components/outbox/query.ts", line]]))).toEqual(["MATERIAL"]);
+  });
+  it("SQL in a test file is test data, not production access", () => {
+    expect(classify([f("test/x.test.ts", { status: "added" })], [["test/x.test.ts", "db.run(\"INSERT INTO workspaces (id) VALUES ('ws_t')\")"]])).toEqual([]);
+  });
+});
+
+describe("material: weakening the checks", () => {
+  it("any deletion in an existing test file, or removing or renaming one", () => {
+    expect(kinds(classify([f("e2e/security.spec.ts", { deletions: 3 })]))).toEqual(["MATERIAL"]);
+    expect(kinds(classify([f("test/flow.test.ts", { deletions: 40 })], [["test/flow.test.ts", "export {};"]]))).toEqual(["MATERIAL"]);
+    expect(kinds(classify([f("e2e/security.spec.ts", { status: "removed", deletions: 120, patch: false })]))).toEqual(["MATERIAL"]);
+    expect(kinds(classify([f("e2e/new-name.spec.ts", { status: "renamed", previous: "e2e/security.spec.ts" })]))).toEqual(["MATERIAL"]);
+  });
+  it.each([
+    `${T}.${SKIP}(!process.env.SECURITY, "set SECURITY=1");`,
+    `${T}.${SKIP}(true, "flaky");`,
+    `${T}.${SKIP}(`,
+    `${T}.describe.${SKIP}(() => {`,
+    `${T}.fixme(true, "later");`,
+    `${T}.fail();`,
+    `it.fails("x", () => {});`,
+    `it.todo("x");`,
+    `it.${SKIP}If(true)("x", () => {});`,
+    `describe.runIf(false)("x", () => {});`,
+    `it.${SKIP}.each([1])("x", () => {});`,
+    `xit("x", () => {});`,
+  ])("%s", (line) => {
+    expect(kinds(classify([f("e2e/new.spec.ts", { status: "added" })], [["e2e/new.spec.ts", line]]))).toEqual(["MATERIAL"]);
+  });
+});
+
+describe("material: neutralizing an existing test by adding lines", () => {
+  it.each([
+    ["an early return", "    return; // temporarily"],
+    ["mocking out what it checks", 'vi.mock("@/lib/pdf/stamp", () => ({ stampFields: async (b) => b }));'],
+    ["leaving the process", "process.exit(0);"],
+    ["intercepting the network", 'await page.route("**/api/**", (r) => r.fulfill({ status: 200 }));'],
+    ["a conditional early return", "    if (Date.now() > 0) return;"],
+    ["redefining matchers", 'expect.extend({ toEqual: () => ({ pass: true, message: () => "" }) });'],
+    ["skip through an alias", `const { ${"skip"}: later } = test;`],
+    ["only through an alias", `const focus = test.${"only"};`],
+  ])("%s", (_what, line) => {
+    expect(kinds(classify([f("e2e/overview.spec.ts")], [["e2e/overview.spec.ts", line]]))).toContain("MATERIAL");
+  });
+  it("adding ordinary assertions to an existing, non-critical test stays routine", () => {
+    expect(classify([f("e2e/overview.spec.ts")], [["e2e/overview.spec.ts", '  await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();']])).toEqual([]);
+  });
+  it("the same early return in a brand-new test file isn't neutralizing anything", () => {
+    expect(classify([f("e2e/new-feature.spec.ts", { status: "added" })], [["e2e/new-feature.spec.ts", "  if (!el) return;"]])).toEqual([]);
+  });
+});
+
+describe("blocked: focused tests and uninspectable changes", () => {
+  it("'.only' inside a test title is not a focused test", () => {
+    expect(kinds(classify([f("e2e/new.spec.ts", { status: "added" })], [["e2e/new.spec.ts", `${T}("shows the file${"."}${ONLY} once", async () => {});`]]))).not.toContain("BLOCK");
+  });
+  it.each([`${T}.${ONLY}("x", async () => {});`, `${T}.describe.serial.${ONLY}(`, `${T}.describe.parallel.${ONLY}("x", () => {})`, `${T}.${ONLY} ("x", fn)`, `${T}["${ONLY}"]("x", fn)`, `it.${ONLY}("x", fn)`, `f${"describe"}("x", fn)`])("%s", (line) => {
+    expect(kinds(classify([f("e2e/new.spec.ts", { status: "added" })], [["e2e/new.spec.ts", line]]))).toContain("BLOCK");
+  });
+  it("a code file whose diff GitHub didn't show is material", () => {
+    expect(kinds(classify([f("components/Huge.tsx", { status: "added", patch: false })]))).toEqual(["MATERIAL"]);
+  });
+});
+
+describe("the open pull requests", () => {
+  it("Q4 API docs and the email test are routine", () => {
+    expect(classify([f("docs/API.md", { status: "added" }), f("public/openapi.json", { status: "added" }), f("test/openapi.test.ts", { status: "added" })])).toEqual([]);
+    expect(classify([f("test/brand-color.test.ts")])).toEqual([]);
+  });
+  it("Q7's token pages are material", () => {
+    expect(kinds(classify([f("app/invite/[token]/page.tsx"), f("app/reset/[token]/page.tsx")]))).toEqual(["MATERIAL"]);
+  });
+});
