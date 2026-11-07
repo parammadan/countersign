@@ -6,20 +6,27 @@ name: agent-guard
 # can't edit the policy that judges it. It never checks out or runs the pull request's code: the PR is read
 # only through the API, so the elevated token can't be used by PR content. The result is posted as the
 # commit status `guardrails/policy` on the PR's head commit; make that a required check whose source is
-# GitHub Actions, so a status posted by anyone else doesn't count.
+# GitHub Actions, so a status posted by another app or a person doesn't count.
+#
+# Known limit: a pull request that edits a workflow under .github/workflows can grant that workflow
+# `statuses: write` and post its own `guardrails/policy` from GitHub Actions; the latest status wins. Such a
+# PR always fails this check first (.github/ is protected), but the check alone can't be trusted on it:
+# review every PR that touches .github/ by hand, whatever its checks say.
 on:
   pull_request_target:
     types: [opened, synchronize, reopened, edited, labeled, unlabeled, ready_for_review]
 
 permissions:
-  contents: read
+  contents: read # the base branch's policy files
   pull-requests: write # only to remove approval labels after a new push
-  issues: read
-  statuses: write
+  issues: read # PR events (who applied a label, when, through which app)
+  checks: read # when GitHub recorded the push of the head commit
+  statuses: write # the guardrails/policy status
 
+# One run at a time per PR, never cancelled: a later event can't cut short the run that removes a stale approval.
 concurrency:
   group: agent-guard-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   guardrails:

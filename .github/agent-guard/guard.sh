@@ -12,7 +12,9 @@
 #   4. adds real-looking email addresses (test data must use example.com / .test / .invalid),
 #   5. arrives after the submission freeze (repo variable AGENT_FREEZE_AT) without a freeze exception.
 # An owner approval label only counts when the repo owner applied it directly (not through any GitHub App,
-# such as the Claude app) after the PR's latest push. Pushing new commits removes it.
+# such as the Claude app) AFTER GitHub recorded the push of the PR's current head commit (the head commit's
+# check-suite creation time, which the pusher can't set; git commit dates can be faked). Pushing new commits
+# also removes the label, as housekeeping.
 set -euo pipefail
 
 : "${GITHUB_REPOSITORY:?}" "${PR_NUMBER:?}" "${HEAD_SHA:?}" "${EVENT_ACTION:?}"
@@ -26,24 +28,30 @@ notes=()
 # DRY_RUN=1 (for testing the script by hand) reads the PR but posts no status and removes no labels.
 status() { # state description
   if [[ "${DRY_RUN:-}" == "1" ]]; then echo "[dry-run] status ${1}: ${2:0:139}"; return; fi
-  gh api -X POST "${API}/statuses/${HEAD_SHA}" -f state="$1" -f context="guardrails/policy" -f description="${2:0:139}" >/dev/null
+  gh api -X POST "${API}/statuses/${HEAD_SHA}" -f state="$1" -f context="guardrails/policy" -f description="${2:0:139}" \
+    -f target_url="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID:-0}" >/dev/null
 }
 status pending "Checking repository policy"
 
 # ---- owner approvals (labels applied by the owner directly, after the latest push) ----
-gh api --paginate "${API}/issues/${PR_NUMBER}/events" > "${WORK}/events.json"
+# every page of events, merged into one array (--paginate alone prints one array per page)
+gh api --paginate "${API}/issues/${PR_NUMBER}/events" | jq -s 'add // []' > "${WORK}/events.json"
+# when GitHub recorded the push of the current head commit; empty if not known yet (then no approval counts)
+pushed_at="$(gh api "${API}/commits/${HEAD_SHA}/check-suites" --jq '[.check_suites[].created_at] | min // ""' 2>/dev/null || true)"
 gh api "${API}/pulls/${PR_NUMBER}" > "${WORK}/pr.json"
 labels="$(jq -r '.labels[].name' "${WORK}/pr.json")"
 remove_label() {
   if [[ "${DRY_RUN:-}" == "1" ]]; then echo "[dry-run] would remove label $1"; return; fi
   gh api -X DELETE "${API}/issues/${PR_NUMBER}/labels/$1" >/dev/null 2>&1 || true
 }
-approved() { # label -> 0 if currently applied, by the owner, not via an app, and not followed by a push
+approved() { # label -> 0 if currently applied, last applied by the owner directly (no app), after the push
   local label="$1"
   grep -qxF "$label" <<<"$labels" || return 1
-  jq -e --arg l "$label" --arg o "$OWNER" '
+  [[ -n "$pushed_at" ]] || return 1
+  jq -e --arg l "$label" --arg o "$OWNER" --arg p "$pushed_at" '
     [.[] | select(.event == "labeled" and .label.name == $l)] | last
-    | select(. != null) | .actor.login == $o and .performed_via_github_app == null' "${WORK}/events.json" >/dev/null
+    | select(. != null)
+    | .actor.login == $o and .actor.type == "User" and .performed_via_github_app == null and .created_at > $p' "${WORK}/events.json" >/dev/null
 }
 # a push invalidates earlier approvals: they must be re-applied after reviewing the new commits
 if [[ "$EVENT_ACTION" == "synchronize" ]]; then
