@@ -1,5 +1,5 @@
 import { test, expect, devices, type Page } from "@playwright/test";
-import { adoptCountersignature, newFile, uploadAndPublish } from "./helpers";
+import { adoptCountersignature, newFile, signAsClient, uploadAndPublish } from "./helpers";
 
 // Visual regression: key screens on desktop and on a phone, compared against committed baselines.
 // Screenshots differ slightly between operating systems (font rendering), so the baselines are per-OS and
@@ -12,6 +12,10 @@ function dynamic(page: Page) {
   return [
     page.getByText(/\b\d{1,2}:\d{2}\s?(AM|PM)\b|just now|\bago\b|\bUTC\b|\d{4}-\d{2}-\d{2}/),
     // calendar days ("Nov 6, 2026") inside the app, such as published dates in the agreement library
+    // SHA-256 fingerprints of freshly sealed PDFs differ every run
+    page.getByText(/\b[0-9a-f]{12,}/),
+    // the short fingerprint in the checklist is proportional text, so mask its whole row (its width varies)
+    page.getByRole("list", { name: "Readiness checks" }).getByRole("listitem").filter({ hasText: /SHA-256/ }),
     // detection time ("found automatically in 1s") depends on the machine's speed
     page.getByText(/found automatically in/),
     page.locator("#main").getByText(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}, \d{4}\b/),
@@ -62,7 +66,7 @@ test("app screens, desktop and phone", async ({ page, browser }) => {
   await adoptCountersignature(page);
   await page.goto("/app/files/new");
   await shot(page, "new-file");
-  const { link } = await newFile(page, { name: "Jordan Sample", email: "client-visual@example.com", ref: "2026-0142" });
+  const { link, fileUrl } = await newFile(page, { name: "Jordan Sample", email: "client-visual@example.com", ref: "2026-0142" });
   await shot(page, "file");
   await page.goto("/app");
   await shot(page, "overview");
@@ -103,4 +107,17 @@ test("app screens, desktop and phone", async ({ page, browser }) => {
   await rendered(p2);
   await shot(p2, "phone-editor", false);
   await phone2.close();
+
+  // the file once the client has signed and it's sealed (auto-countersign), desktop and phone
+  const signer = await browser.newContext();
+  await signAsClient(signer, link);
+  await signer.close();
+  await page.goto(fileUrl);
+  await expect(page.getByRole("heading", { name: "Signed agreement" })).toBeVisible();
+  await shot(page, "file-completed");
+  const phone3 = await browser.newContext({ ...devices["Pixel 7"], storageState: await page.context().storageState() });
+  const p3 = await phone3.newPage();
+  await p3.goto(fileUrl);
+  await shot(p3, "phone-file-completed");
+  await phone3.close();
 });
