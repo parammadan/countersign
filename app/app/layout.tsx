@@ -1,4 +1,5 @@
 import { requireSession } from "@/lib/auth";
+import { readableBrand } from "@/lib/brand-color";
 import { getWorkspace } from "@/lib/files";
 import { logoutAction } from "@/app/actions";
 import { Nav } from "@/components/Nav";
@@ -11,7 +12,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const ws = getWorkspace(s.workspaceId);
   const gate = verificationRequired() && !workspaceVerified(ws.id);
   return (
-    <div className="min-h-screen lg:flex" style={{ ["--brand" as string]: ws.brand_color }}>
+    <div className="min-h-screen lg:flex" style={{ ["--brand" as string]: readableBrand(ws.brand_color) }}>
       <a href="#main" className="sr-only z-[60] rounded-lg bg-white px-3 py-2 text-sm font-medium shadow-2 focus:not-sr-only focus:fixed focus:top-3 focus:left-3">
         Skip to content
       </a>
