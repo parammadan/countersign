@@ -23,7 +23,9 @@ and the owner promotes reviewed branches here by hand; see `docs/agents/TASKS.md
   `.github/agent-guard/protected-paths.txt`, stop, label the issue `agent:blocked` and explain why.
 - **Never push to `main`, force-push, delete branches, merge a pull request, or change repository
   settings, labels meant for the owner (`owner-approved-paths`, `freeze-exception`), secrets or variables.**
-  The owner reviews and merges every pull request.
+  Cloud agents never merge. Pull requests in this repository merge under the risk-based policy in
+  `docs/agents/TASKS.md`, "Merging": routine changes on green checks and an independent review, material ones
+  (signing, auth, data, secrets, infrastructure, the checks themselves) only after the owner's review.
 - **No production, ever:** no `fly`/`flyctl`, no `scripts/deploy-fly.sh`, no requests to `*.fly.dev`,
   `fly.io` or mail servers, no `fly ssh`, no production database or volume. Deployment and production
   verification are done only by the owner, locally.
@@ -45,5 +47,6 @@ and the owner promotes reviewed branches here by hand; see `docs/agents/TASKS.md
   so the owner's local development and deployment workflow is unchanged. Don't try to work around it.
 - **Report in the issue:** at the end of every session, what changed, test results, and the next step, so
   another session can continue from the pushed branch.
-- **Submission freeze:** after the time in the repository variable `AGENT_FREEZE_AT`, stop all work: no
-  pushes, no new pull requests. Merges after it need the owner's `freeze-exception`.
+- **Submission freeze:** after the time in the repository variable `AGENT_FREEZE_AT` (the real submission
+  deadline minus 12 hours, in UTC, set by the owner; unset means no freeze), stop all work: no pushes, no new
+  pull requests. Merges after it need the owner's `freeze-exception`.

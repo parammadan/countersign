@@ -187,10 +187,41 @@ So cloud agents get **no access to this repository at all**:
 |---|---|
 | Agents can't push to, merge in or change this repository | **They have no credentials for it**: the app is installed on the sandbox only (verified in the pilot) |
 | Agents can't deploy or reach production | No Fly or SMTP credentials anywhere in the cloud environment, and its network allowlist excludes production and mail hosts (verified in the pilot) |
-| Nothing reaches `main` here without the owner | Only the owner (and the grader, who has write access) can push here; promotion and merge are manual |
-| Promoted pull requests: protected paths, attribution lines, secrets, real-looking emails, the freeze | `agent-guard`, run from `main`. **Advisory on Free**: it can't be made a required check, so the owner merges only when `test` and `guardrails/policy` are both green |
+| Nothing reaches `main` here without passing the merge policy | Only the owner's account (and the grader) can push here. Merges follow "Merging" below: never with a red `test` or `guardrails/policy` |
+| Promoted pull requests: material changes, attribution lines, secrets, real-looking emails, the freeze | `agent-guard`, run from `main`. **Advisory on Free**: it can't be made a required check, so nothing merges unless `test` and `guardrails/policy` are both green |
 | Cloud-session command and file rules | `.claude/hooks/cloud-guard.mjs`: friction, not a boundary |
 | **Not enforceable on Free** | Direct pushes to `main` here by anyone with write access (the owner, the grader, or a leaked token); a promoted PR that edits `.github/workflows/` forging `guardrails/policy` (always review `.github/` changes by hand). Agents in the sandbox can push to the sandbox's `main`, force-push or delete branches there; the owner resets the sandbox from this repository whenever needed. |
+
+## Merging (risk-based)
+
+The owner has given standing authorization for routine engineering: the local lead session (Claude Code on
+the owner's machine) promotes reviewed sandbox work and merges pull requests here without a per-PR approval.
+`agent-guard` decides which changes are routine and which need the owner, from the base branch, so a pull
+request can't loosen its own rules (`.github/agent-guard/classify.sh`, tested by `test/guard-policy.test.ts`).
+
+- **Material** (needs the owner's review: the `owner-approved-paths` label, applied by the owner by hand
+  after the last push; nobody else applies it, the lead session included):
+  - any path in `.github/agent-guard/critical-paths.txt`: signature capture and integrity, the signing page,
+    sealing and certificates, audit evidence, consent, webhooks, email delivery, authentication and
+    authorization (sessions, tokens, every API route and server action, the reset/invite/confirm pages),
+    the database schema and storage, secrets, deployment and infrastructure, dependencies, and the checks
+    themselves (this guard, CI, agent rules, test runners and helpers, scoring fixtures);
+  - added database writes or schema changes anywhere outside the tests;
+  - unconditionally skipped, removed or renamed tests (a conditional skip with a reason is environment gating).
+- **Blocked**: focused tests (`.only`), secrets, attribution lines, AI-authored commits, real-looking emails, or
+  merging after the freeze without `freeze-exception`.
+- **Routine**: everything else (UI, pages, components outside the trust core, docs, new tests, fixtures for
+  new work, reviewed visual baselines). Merges when **all** of these hold:
+  1. `test` and `guardrails/policy` are green on the PR's current head;
+  2. an independent review of the complete diff passed (scope, no unexpected files, correct source and
+     target branch), with signing and security tests run where relevant;
+  3. no unresolved high-severity regression;
+  4. squash merge, owner-authored, no attribution lines; then CI on `main` is confirmed green.
+- **Freeze**: `AGENT_FREEZE_AT` is the real submission deadline minus 12 hours, in UTC, set only by the
+  owner. Unset means no freeze (the check says so in a note); a value is never guessed. The check runs on
+  pull request events, so after setting it, re-run the guard on open pull requests.
+- **Production** is outside this policy: deploying, secrets, restoring or changing production data need the
+  owner's approval, once per release.
 
 ## Owner procedures (local, by hand)
 
