@@ -1,6 +1,6 @@
 import { test, expect, devices, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { adoptCountersignature, newFile, signup, uid, uploadAndPublish } from "./helpers";
+import { adoptCountersignature, newFile, signAsClient, signup, uid, uploadAndPublish } from "./helpers";
 
 // Automated accessibility checks (WCAG 2.1 A + AA rules in axe-core) on every main screen, signed out,
 // signed in and on the client's signing pages. Axe can't judge everything (focus order, wording), so this is
@@ -32,8 +32,12 @@ test("app pages and the signing room", async ({ page, browser }) => {
   await adoptCountersignature(page);
   await page.goto("/app/files/new");
   await audit(page, "new file");
-  const { link } = await newFile(page, { name: "Jordan Sample", email: `client-${uid()}@example.com`, ref: "A11Y-1" });
+  const { link, fileUrl } = await newFile(page, { name: "Jordan Sample", email: `client-${uid()}@example.com`, ref: "A11Y-1" });
   await audit(page, "file page");
+  // the void confirmation, open
+  await page.getByRole("button", { name: "Void", exact: true }).click();
+  await expect(page.getByLabel("Reason for voiding")).toBeVisible();
+  await audit(page, "file page (void confirmation)");
   await page.goto("/app");
   await audit(page, "dashboard (with a file)");
 
@@ -47,6 +51,17 @@ test("app pages and the signing room", async ({ page, browser }) => {
   // the PDF text layer is rendered by pdf.js and is the client's own document, so it is excluded
   await audit(c, "signing document (phone)", { exclude: ["canvas"] });
   await m.close();
+
+  // the same file once signed and sealed: the completed page, on desktop and phone
+  await signAsClient(await browser.newContext(), link);
+  await page.goto(fileUrl);
+  await expect(page.getByRole("heading", { name: "Signed agreement" })).toBeVisible();
+  await audit(page, "file page (completed)");
+  const p2 = await browser.newContext({ ...devices["Pixel 7"], storageState: await page.context().storageState() });
+  const pp = await p2.newPage();
+  await pp.goto(fileUrl);
+  await audit(pp, "file page (completed, phone)");
+  await p2.close();
 });
 
 test("field editor", async ({ page }) => {

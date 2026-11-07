@@ -50,9 +50,18 @@ export async function newFile(page: Page, client: { name: string; email: string;
   for (const input of await page.locator('input[name^="prefill."]').all()) await input.fill("Test value");
   await page.getByRole("button", { name: "Create and send for signature" }).click();
   await expect(page).toHaveURL(/\/app\/files\/file_/);
-  const link = await page.locator('a[href*="/s/"]').first().getAttribute("href");
-  expect(link).toBeTruthy();
-  return { fileUrl: page.url(), link: link! };
+  const link = await copySigningLink(page);
+  return { fileUrl: page.url(), link };
+}
+
+/** The signing link, the way a firm user gets it: Copy signing link, then read the clipboard. The page never prints it. */
+export async function copySigningLink(page: Page) {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.getByRole("button", { name: "Copy signing link" }).click();
+  await expect(page.getByRole("button", { name: "Link copied ✓" })).toBeVisible();
+  const link = await page.evaluate(() => navigator.clipboard.readText());
+  expect(link).toMatch(/\/s\/[A-Za-z0-9_-]{20,}$/);
+  return link;
 }
 
 export async function signAsClient(ctx: BrowserContext, link: string) {

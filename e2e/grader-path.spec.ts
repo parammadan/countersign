@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { adoptCountersignature, newFile, signAsClient, signup, uid, uploadAndPublish, publishDraft } from "./helpers";
+import { adoptCountersignature, newFile, signAsClient, signup, uid, uploadAndPublish, publishDraft, copySigningLink } from "./helpers";
 
 // The path the grader takes: an agreement the system has never seen, signed start to finish.
 const FIXTURES = (process.env.E2E_FIXTURES || "02-msa-two-column.pdf").split(",");
@@ -20,7 +20,7 @@ for (const fx of FIXTURES) {
 
     await page.goto(fileUrl);
     await expect(page.getByText("Completed", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("Firm countersigned")).toBeVisible();
+    await expect(page.getByRole("list", { name: "Audit trail" }).getByText("Firm countersigned")).toBeVisible();
     await expect(page.getByRole("link", { name: "Download signed PDF" })).toBeVisible();
 
     // the sealed copy verifies, and a tampered copy doesn't
@@ -58,7 +58,7 @@ test("send a test to me opens a signable file addressed to the admin", async ({ 
   await page.getByRole("button", { name: "Send a test to me" }).click();
   await expect(page).toHaveURL(/\/app\/files\/file_/);
   await expect(page.getByText(email).first()).toBeVisible();
-  const link = (await page.locator('a[href*="/s/"]').first().getAttribute("href"))!;
+  const link = await copySigningLink(page);
   const ctx = await browser.newContext();
   await signAsClient(ctx, link);
   await ctx.close();

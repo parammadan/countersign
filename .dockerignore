@@ -5,3 +5,4 @@ data
 test-results
 playwright-report
 .git
+.e2e-mail

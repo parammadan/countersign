@@ -18,6 +18,7 @@ function dynamic(page: Page) {
     page.locator('a[href*="/s/"], code'),
     // the signing link is a random token whose rendered width varies, so mask its whole line
     page.locator("p, div").filter({ hasText: /^Signing link:/ }),
+    page.locator("p").filter({ hasText: /\/s\/•+/ }),
   ];
 }
 // Fixed synthetic identities, so text widths (and form values) are identical every run. The test server's

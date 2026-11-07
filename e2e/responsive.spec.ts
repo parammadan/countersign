@@ -51,9 +51,12 @@ test("file page fits every width, sent and completed, and the client can sign on
     await onScreen(firm, firm.getByRole("button", { name: "Send reminder" }), `${size.name}: Send reminder`);
     await onScreen(firm, firm.getByRole("button", { name: "Copy signing link" }), `${size.name}: Copy signing link`);
     await onScreen(firm, firm.getByRole("button", { name: "Void" }), `${size.name}: Void`);
-    const shown = firm.getByRole("link", { name: file.link });
-    await onScreen(firm, shown, `${size.name}: signing link`);
-    expect(await shown.getAttribute("href"), "the wrapped link still points at the full signing link").toBe(file.link);
+    // the link itself is never printed: only a masked hint, and Copy gives the full link
+    await expect(firm.getByText(file.link)).toHaveCount(0);
+    await onScreen(firm, firm.getByText(/\/s\/••••••••/), `${size.name}: masked signing link`);
+    await firm.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    await firm.getByRole("button", { name: "Copy signing link" }).click();
+    expect(await firm.evaluate(() => navigator.clipboard.readText()), "Copy gives the full signing link").toBe(file.link);
 
     // the client signs on the same kind of device
     const client = await browser.newContext(size.use);
@@ -70,7 +73,7 @@ test("file page fits every width, sent and completed, and the client can sign on
     await expect(firm.getByRole("heading", { name: "Ready for work" })).toBeVisible();
     expect(await overflow(firm), `${size.name}: completed file page scrolls sideways`).toBeLessThanOrEqual(0);
     await onScreen(firm, firm.getByRole("link", { name: /Download/ }).first(), `${size.name}: Download signed PDF`);
-    await onScreen(firm, firm.getByRole("heading", { name: "Audit trail" }), `${size.name}: audit trail heading`);
+    await onScreen(firm, firm.getByRole("heading", { name: "Activity" }), `${size.name}: activity heading`);
     await ctx.close();
   }
 });
