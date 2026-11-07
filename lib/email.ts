@@ -1,6 +1,7 @@
 import { run } from "./db";
 import { escapeHtml, id, now } from "./util";
 import { BRAND } from "./brand";
+import { readableBrand } from "./brand-color";
 
 export type Attachment = { filename: string; content: Buffer };
 
@@ -125,7 +126,7 @@ function redactAll(html: string, secrets?: string[]) {
 }
 
 export function layout(opts: { brand: string; firm: string; heading: string; body: string; cta?: { href: string; label: string }; foot?: string }) {
-  const color = /^#[0-9a-f]{6}$/i.test(opts.brand) ? opts.brand : BRAND.color;
+  const color = readableBrand(opts.brand);
   return `<!doctype html><html><body style="margin:0;background:#f4f5f7;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#1d2330">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:32px 12px"><tr><td align="center">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#fff;border-radius:10px;overflow:hidden;border:1px solid #e3e6ec">
