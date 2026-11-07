@@ -1,3 +1,4 @@
+import { Fragment, isValidElement } from "react";
 import Link from "next/link";
 import type { FileRow } from "@/lib/types";
 import { StatusBadge, timeAgo } from "./ui";
@@ -12,7 +13,12 @@ type Row = Pick<FileRow, "id" | "title" | "ref" | "client_name" | "client_email"
 const cols = "lg:grid lg:grid-cols-[minmax(0,2.2fr)_minmax(0,1.6fr)_9.5rem_5.5rem_6.5rem] lg:items-center lg:gap-4";
 
 export function FileTable({ files, empty }: { files: Row[]; empty: React.ReactNode }) {
-  if (!files.length) return <div className="px-5 py-10 text-center text-sm text-muted">{empty}</div>;
+  if (!files.length) {
+    // A plain message (text or a fragment, like the overview's) gets the padded wrapper; a component such as
+    // an EmptyState brings its own spacing, so it renders bare.
+    if (isValidElement(empty) && empty.type !== Fragment) return empty;
+    return <div className="px-5 py-10 text-center text-sm text-muted">{empty}</div>;
+  }
   return (
     <div>
       <div aria-hidden className={`hidden border-b border-line px-5 py-2.5 text-[11px] font-semibold tracking-wide text-muted uppercase ${cols}`}>
