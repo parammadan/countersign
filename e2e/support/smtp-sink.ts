@@ -5,7 +5,8 @@ import net from "node:net";
 
 export type Received = { from: string; to: string[]; raw: string; at: number };
 
-export function smtpSink(port: number) {
+/** opts.dataDelayMs: wait this long before accepting each message, so concurrent sends really overlap */
+export function smtpSink(port: number, opts: { dataDelayMs?: number } = {}) {
   const received: Received[] = [];
   let reject: (to: string) => boolean = () => false;
   const server = net.createServer((sock) => {
@@ -25,7 +26,8 @@ export function smtpSink(port: number) {
           buf = buf.slice(end + 5);
           data = false;
           msg = { from: "", to: [] };
-          say("250 2.0.0 queued");
+          if (opts.dataDelayMs) setTimeout(() => say("250 2.0.0 queued"), opts.dataDelayMs);
+          else say("250 2.0.0 queued");
           continue;
         }
         const nl = buf.indexOf("\r\n");
