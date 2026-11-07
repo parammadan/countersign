@@ -47,21 +47,40 @@ async function rendered(page: Page) {
   await page.waitForTimeout(300);
 }
 
-// Calendar dates are masked, but a mask is as wide as the text under it, and "Nov 6, 2026" and "Nov 7, 2026"
-// have different widths in a proportional font, so the mask's edge moved from day to day (a 32 px drift on
-// the agreement library). Pin every date in the app's main area to one fixed date before comparing.
+// Times and dates are masked, but a mask is as wide as the text under it, and the text changes with the clock:
+// "Nov 6, 2026" and "Nov 7, 2026" differ in width (a 32 px drift on the agreement library), and "9:58 AM EST"
+// fits a narrow column where "10:20 AM EST" wraps (+13 px on the file page after 10:00). Before comparing,
+// every date and time the app renders is pinned to one fixed value of the widest realistic shape (two-digit
+// day and hour), so screenshots don't depend on when the suite runs. Layout with long timestamps is checked
+// separately, in every run, by e2e/timestamps.spec.ts.
+const PINNED: [RegExp, string][] = [
+  // fmtDateTime: "Nov 7, 10:20 AM EST"
+  [/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}, \d{1,2}:\d{2}\s?(AM|PM)(\s?[A-Z]{2,5})?/g, "Dec 28, 12:00 PM EST"],
+  // long dates written into agreements: "November 7, 2026"
+  [/\b(January|February|March|April|May|June|July|August|September|October|November|December) \d{1,2}, \d{4}\b/g, "December 28, 2026"],
+  // fmtDay and the relative-time fallback: "Nov 7, 2026"
+  [/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}, \d{4}\b/g, "Dec 28, 2026"],
+  // UTC audit times and ISO dates: "2026-11-07 15:20:11 UTC"
+  [/\b\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2})?(\.\d+)?Z?)?/g, "2026-12-28 12:00:00"],
+  // relative times: "just now", "5m ago", "3h ago", "2d ago"
+  [/\bjust now\b|\b\d+[mhd] ago\b/g, "28d ago"],
+  // any remaining clock time: "10:20 AM"
+  [/\b\d{1,2}:\d{2}\s?(AM|PM)\b/g, "12:00 PM"],
+];
+
 async function pinDates(page: Page) {
-  await page.evaluate(() => {
-    const re = /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}, \d{4}\b/g;
-    const root = document.getElementById("main");
+  await page.evaluate((rules) => {
+    const root = document.querySelector("#main") ?? document.querySelector("main");
     if (!root) return;
+    const res = rules.map(([src, flags, to]) => [new RegExp(src, flags), to] as const);
     const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     for (let n = walk.nextNode(); n; n = walk.nextNode()) {
       const t = n.nodeValue ?? "";
-      const pinned = t.replace(re, "Jan 1, 2026");
-      if (pinned !== t) n.nodeValue = pinned;
+      let v = t;
+      for (const [re, to] of res) v = v.replace(re, to);
+      if (v !== t) n.nodeValue = v;
     }
-  });
+  }, PINNED.map(([re, to]) => [re.source, re.flags, to] as [string, string, string]));
 }
 
 async function shot(page: Page, name: string, fullPage = true) {
