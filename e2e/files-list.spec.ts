@@ -39,7 +39,7 @@ const contrast = (loc: ReturnType<Page["locator"]>) =>
   });
 const overflow = (p: Page) => p.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 
-test("tabs, counts, search and empty states", async ({ page }) => {
+test("tabs, counts, search and empty states", async ({ page, browser }) => {
   await signup(page, "Northwind Advisory", "Northwind Advisory, LLC");
   await page.goto("/app/files");
   await expect(page.getByText("No files yet", { exact: true })).toBeVisible();
@@ -114,6 +114,20 @@ test("tabs, counts, search and empty states", async ({ page }) => {
   // a row still links to its file
   await rows(page).first().getByRole("link").click();
   await expect(page).toHaveURL(/\/app\/files\/file_/);
+
+  // another workspace sees none of it: no rows, no counts, nothing of this firm's data (list and search)
+  const ctx = await browser.newContext();
+  const other = await ctx.newPage();
+  await signup(other, "Southwind Partners", "Southwind Partners, LLC");
+  for (const url of ["/app/files", `/app/files?q=${encodeURIComponent(tag)}`]) {
+    await other.goto(url);
+    await expect(other.getByText("No files yet", { exact: true })).toBeVisible();
+    await expect(rows(other)).toHaveCount(0);
+    await expect(tabLink(other, /[1-9]/)).toHaveCount(0);
+    const html = await other.content(); // the search box echoes the query itself, so check the firm's data
+    for (const leaked of [`riley-${tag}@example.com`, `FL-A-${tag}`, `jordan-${tag}@example.com`, "Riley Example", "Casey Placeholder"]) expect(html).not.toContain(leaked);
+  }
+  await ctx.close();
 });
 
 for (const [name, use] of [["small phone 360", { ...devices["Pixel 7"], viewport: { width: 360, height: 740 } }], ["Pixel 7", devices["Pixel 7"]], ["iPad Mini", devices["iPad Mini"]]] as const) {
