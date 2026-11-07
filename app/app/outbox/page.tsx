@@ -1,43 +1,59 @@
 import Link from "next/link";
-import { fmtDateTime } from "@/lib/time";
 import { requireSession } from "@/lib/auth";
-import { all } from "@/lib/db";
 import { emailMode } from "@/lib/email";
-import { Card, Notice, PageHeader, cx } from "@/components/ui";
+import { Card, EmptyState, Notice, PageHeader } from "@/components/ui";
+import { EmailList } from "@/components/outbox/EmailList";
+import { StatusFilter, filterHref } from "@/components/outbox/StatusFilter";
+import { Pager } from "@/components/outbox/Pager";
+import { DELIVERY, parseFilter } from "@/components/outbox/delivery";
+import { emailPage, parsePage } from "@/components/outbox/query";
 
 export const metadata = { title: "Email log" };
 
-export default async function Page() {
+export default async function Page({ searchParams }: { searchParams: Promise<{ status?: string | string[]; page?: string | string[] }> }) {
   const s = await requireSession();
-  const rows = all<{ id: string; file_id: string | null; kind: string; to_email: string; subject: string; status: string; created_at: string; error: string | null }>(
-    "SELECT id, file_id, kind, to_email, subject, status, created_at, error FROM emails WHERE workspace_id = ? ORDER BY created_at DESC LIMIT 200",
-    s.workspaceId,
-  );
+  const sp = await searchParams;
+  const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+  const filter = parseFilter(one(sp.status));
+  const { rows: shown, counts, total, page, pages, from, to } = emailPage(s.workspaceId, filter, parsePage(one(sp.page)));
+
   return (
     <>
-      <PageHeader title="Email log" sub="Every email sent for your workspace: invitations, reminders, codes and signed copies." />
+      <PageHeader title="Email log" sub="Every email sent for your workspace: invitations, reminders, codes and signed copies, and whether each one was delivered." />
       {emailMode() === "outbox" && (
         <div className="mb-4">
-          <Notice tone="warn">Email delivery isn&apos;t configured on this server (no provider key), so emails are recorded here instead of sent. Open one to see exactly what the client would get, including the signing link.</Notice>
+          <Notice tone="warn">
+            Email delivery isn&apos;t configured on this server (no provider key), so emails are recorded here instead of sent. Open one to see what the client would get.
+          </Notice>
         </div>
       )}
-      <Card>
-        {rows.length === 0 ? (
-          <p className="px-5 py-10 text-center text-sm text-muted">No emails yet.</p>
-        ) : (
-          <ul className="divide-y divide-line">
-            {rows.map((m) => (
-              <li key={m.id} className="flex items-center justify-between gap-3 px-5 py-3 text-sm">
-                <div className="min-w-0">
-                  <Link href={`/app/outbox/${m.id}`} className="block truncate font-medium hover:text-brand">{m.subject}</Link>
-                  <div className="truncate text-xs text-muted">to {m.to_email} · {fmtDateTime(m.created_at)}{m.error ? ` · ${m.error}` : ""}</div>
-                </div>
-                <span className={cx("shrink-0 rounded-full px-2 py-0.5 text-xs", m.status === "sent" ? "bg-emerald-50 text-emerald-700" : m.status === "failed" ? "bg-red-50 text-red-700" : "bg-gray-100 text-gray-600")}>{m.status}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
+      {counts.all === 0 ? (
+        <Card>
+          <EmptyState icon="mail" title="No emails yet">
+            Invitations to sign, reminders, verification codes and signed copies appear here as soon as they go out.
+          </EmptyState>
+        </Card>
+      ) : (
+        <>
+          <StatusFilter current={filter} counts={counts} />
+          <Card className="overflow-hidden">
+            {shown.length === 0 && filter !== "all" ? (
+              <EmptyState icon="mail" title={`No emails ${filter === "logged" ? "logged only" : DELIVERY[filter].label.toLowerCase()}`}>
+                {DELIVERY[filter].explain}{" "}
+                <Link className="font-medium text-brand underline" href={filterHref("all")}>
+                  Show all emails
+                </Link>
+              </EmptyState>
+            ) : (
+              <EmailList rows={shown} />
+            )}
+          </Card>
+          {total > 0 && <Pager filter={filter} page={page} pages={pages} from={from} to={to} total={total} />}
+          <p className="mt-3 text-xs leading-relaxed text-muted">
+            Personal signing links, codes and password links are withheld from the log, so nobody reading it can use them.
+          </p>
+        </>
+      )}
     </>
   );
 }
