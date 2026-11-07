@@ -200,7 +200,7 @@ export function SigningRoom(p: Props) {
         </div>
         <p className="mt-4 text-center text-xs text-muted">Sent to {p.clientEmail}. Secured by {BRAND.name}.</p>
         {showDisclosure && <Disclosure onClose={() => setShowDisclosure(false)} />}
-        {declining && <Decline token={p.token} onClose={() => setDeclining(false)} />}
+        {declining && <Decline token={p.token} onClose={() => setDeclining(false)} onDeclined={forgetDraft} />}
       </div>
     );
 

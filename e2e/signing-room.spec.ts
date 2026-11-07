@@ -217,6 +217,18 @@ test("links that no longer work explain why: invalid, withdrawn, expired", async
     await expect(c.locator("[data-fid]")).toHaveCount(0);
     await audit(c, heading);
   }
+  // declining from the consent screen also forgets any draft kept in this tab
+  const d = await newFile(page, { name: "Sam Sample", email: `client-${uid()}@example.com` });
+  const key = `cs-sign-draft:${d.link.split("/").pop()!.slice(-12)}`;
+  await openRoom(c, d.link);
+  await c.evaluate((k) => sessionStorage.setItem(k, JSON.stringify({ values: {} })), key);
+  await c.getByRole("button", { name: "I don't want to sign this" }).click();
+  const decline = c.getByRole("dialog", { name: "Decline to sign" });
+  await decline.getByRole("textbox").fill("Synthetic: wrong agreement");
+  await decline.getByRole("button", { name: "Decline" }).click();
+  await expect(c.getByRole("dialog", { name: "Declined" })).toBeVisible();
+  expect(await c.evaluate((k) => sessionStorage.getItem(k), key)).toBeNull();
+
   // the expired file can't be signed through the API either
   const res = await c.request.post(b.link.replace("/s/", "/api/sign/") + "/complete", { data: { consent: true, values: {}, method: "typed" } });
   expect([409, 410]).toContain(res.status());
