@@ -68,6 +68,10 @@ sql="$( { grep -E '\b(SELECT|INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP|ALTER|PRAG
   grep -iE '["'"'"'`][[:space:]]*(select[[:space:]].*[[:space:]]from([[:space:]]|$)|(insert|replace)[[:space:]]+(or[[:space:]]+[a-z]+[[:space:]]+)?into([[:space:]]|$)|delete[[:space:]]+from([[:space:]]|$)|update[[:space:]]+[^[:space:]]+[[:space:]]+set([[:space:]]|$)|with[[:space:]]+[a-z_]+[[:space:]]+as[[:space:]]*\(|(create|drop|alter)[[:space:]]+(temp[[:space:]]+)?(table|index|view|trigger)|(pragma|attach|vacuum)[[:space:]]+[a-z_]|(select|insert|update|delete|replace|with|create|drop|alter|pragma|attach|vacuum)[[:space:]]*$)' "${tmp}/code-lines"; } \
   | cut -f1 | list || true)"
 [[ -n "$sql" ]] && printf 'MATERIAL\tAdds SQL (data access or writes) in: %s\n' "$sql"
+# calls to the database helpers themselves (lib/db: all, one, run, tx, db().prepare), whatever the SQL looks like.
+# Promise.all and other method calls named all/one/run do not match (a dot or identifier comes before them).
+dbcall="$(grep -E '(^|[^.A-Za-z0-9_$])(all|one|run|tx)[[:space:]]*(<|\()|\.prepare[[:space:]]*\(|(^|[^.A-Za-z0-9_$])db[[:space:]]*\([[:space:]]*\)' "${tmp}/code-lines" | cut -f1 | list || true)"
+[[ -n "$dbcall" ]] && printf 'MATERIAL\tCalls the database helpers (all, one, run, tx, prepare) in: %s\n' "$dbcall"
 mods='(db|audit|auth|http|files|templates|signer|secret|storage|util|emailverify|email|webhooks|library|dashboard|csv|consent|ratelimit|ssrf|worker|convert|fields|detect|schemas|filepage|paths|errors|pdf(/[a-z-]+)?)'
 # any string naming one of these modules under lib/, however the path is spelled (@/lib/../lib/db, @/./lib/x, .js)
 imp="$(grep -E "[\"'\`][^\"'\`]*lib/+(\./)*${mods}(\.[cm]?[jt]sx?)?[\"'\`]" "${tmp}/code-lines" | cut -f1 | list || true)"

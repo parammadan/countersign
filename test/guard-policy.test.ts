@@ -35,6 +35,10 @@ describe("routine: no owner review", () => {
   it("adding lines to an existing test file without deleting any", () => {
     expect(classify([f("test/brand-color.test.ts", { deletions: 0 })], [["test/brand-color.test.ts", "  expect(contrastWithWhite(bg)).toBeGreaterThanOrEqual(4.5);"]])).toEqual([]);
   });
+  it("Promise.all and other method calls named all/one/run aren't database calls", () => {
+    for (const line of ["const [a, b] = await Promise.all([x(), y()]);", "items.some((i) => i.one)", "await job.run();", "const runAll = () => {};"])
+      expect(classify([f("components/FileActions.tsx")], [["components/FileActions.tsx", line]]), line).toEqual([]);
+  });
   it("quoted UI labels that start with Update, Delete or Select aren't SQL", () => {
     for (const line of ['toast("Update saved");', '<Button>{"Delete draft"}</Button>', 'label: "Select an agreement"', 'confirm("Delete this file?")', 'title: `Create a workspace`'])
       expect(classify([f("components/FileActions.tsx")], [["components/FileActions.tsx", line]]), line).toEqual([]);
@@ -106,6 +110,17 @@ describe("material: content of routine code", () => {
     ["count(*) (X5)", 'one("select count(*) n from users");'],
     ["lowercase SQL split across lines in a template (X2)", "all(`delete"],
     ["a CTE", "all(`with t as (select 1) select * from t`)"],
+    ["a multi-line read (Y1)", "  const rows = all(`select e.id, e.subject, e.to_email"],
+    ["a template opening on its own line (Y2)", "  const rows = all(`"],
+    ["a write split before SET (Y6)", "  all(`update audit_events"],
+    ["SQL by concatenation (Y3)", 'all("select" + " * from emails e");'],
+    ["SQL behind a comment (Y4)", 'all("/* list */ select * from emails e");'],
+    ["SQL in parentheses (Y5)", 'all("(select * from emails e)");'],
+    ["SQL behind a newline escape (Y9)", 'all("\\nselect * from emails e");'],
+    ["SQL built from parts (Y8)", 'const rows = all(Q);'],
+    ["a typed helper call", "const f = one<FileRow>(sql, id);"],
+    ["a transaction", "tx(() => { voidAll(); });"],
+    ["prepare on the handle", 'db().prepare(q).run();'],
   ])("%s", (_what, line) => {
     expect(kinds(classify([f("components/outbox/query.ts", { status: "added" })], [["components/outbox/query.ts", line]]))).toEqual(["MATERIAL"]);
   });
