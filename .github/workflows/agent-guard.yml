@@ -1,0 +1,42 @@
+name: agent-guard
+
+# Repository policy for every pull request (see .github/agent-guard/guard.sh).
+#
+# pull_request_target runs this workflow and its script from the BASE branch (main), so a pull request
+# can't edit the policy that judges it. It never checks out or runs the pull request's code: the PR is read
+# only through the API, so the elevated token can't be used by PR content. The result is posted as the
+# commit status `guardrails/policy` on the PR's head commit; make that a required check whose source is
+# GitHub Actions, so a status posted by anyone else doesn't count.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write # only to remove approval labels after a new push
+  issues: read
+  statuses: write
+
+concurrency:
+  group: agent-guard-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  guardrails:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out the base branch only (never the pull request)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+          sparse-checkout: .github/agent-guard
+      - name: Policy
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_ACTION: ${{ github.event.action }}
+          AGENT_FREEZE_AT: ${{ vars.AGENT_FREEZE_AT }}
+        run: bash .github/agent-guard/guard.sh
