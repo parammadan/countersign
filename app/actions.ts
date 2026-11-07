@@ -196,6 +196,7 @@ export async function createFileAction(_: FormState, fd: FormData): Promise<Form
 // This guards the app's buttons only; the public API keeps its existing behaviour.
 const RESEND_GUARD_MS = 60_000;
 const GUARDED: Record<string, { kind: string; what: string }> = {
+  send: { kind: "invite", what: "The signing email" },
   remind: { kind: "reminder", what: "A reminder" },
   resend: { kind: "resend", what: "The signing email" },
   resend_copy: { kind: "completed", what: "The signed copy" },
