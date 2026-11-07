@@ -47,12 +47,15 @@ export function SignaturePad({
   onAdopt,
   onCancel,
   color = "#0d1f59",
+  requireName = false,
 }: {
   mode: "signature" | "initials";
   defaultName: string;
   onAdopt: (a: Adopted) => void;
   onCancel: () => void;
   color?: string;
+  /** The typed signature must read as defaultName (the firm's countersignature names its signer). */
+  requireName?: boolean;
 }) {
   const initials = defaultName
     .split(/\s+/)
@@ -61,7 +64,14 @@ export function SignaturePad({
     .join("")
     .slice(0, 4);
   const [tab, setTab] = useState<"type" | "draw">("type");
-  const [text, setText] = useState(mode === "initials" ? initials : defaultName);
+  // The typed text follows the name it's given (it can change while the pad is open, as in Settings) until
+  // the person edits it themselves; what they typed is never overwritten.
+  const suggested = mode === "initials" ? initials : defaultName;
+  const [edited, setEdited] = useState<string | null>(null);
+  const text = edited ?? suggested;
+  const setText = (v: string) => setEdited(v);
+  const norm = (v: string) => v.trim().replace(/\s+/g, " ").toLowerCase();
+  const mismatch = requireName && tab === "type" && !!suggested.trim() && norm(text) !== norm(suggested);
   const [font, setFont] = useState(0);
   const [hasInk, setHasInk] = useState(false);
   const [drawErr, setDrawErr] = useState<string | null>(null);
@@ -106,7 +116,7 @@ export function SignaturePad({
 
   async function adoptTyped() {
     const t = text.trim();
-    if (!t) return;
+    if (!t || mismatch) return;
     const fam = FONTS[font];
     try {
       await document.fonts.load(`96px ${fam}`);
@@ -232,9 +242,17 @@ export function SignaturePad({
           </div>
         </div>
       )}
+      {mismatch && (
+        <p role="alert" className="mt-3 text-sm text-bad">
+          This signature reads &ldquo;{text.trim()}&rdquo;, but you&apos;re signing as &ldquo;{suggested.trim()}&rdquo;.{" "}
+          <button type="button" className="font-medium text-brand underline" onClick={() => setEdited(null)}>
+            Use &ldquo;{suggested.trim()}&rdquo;
+          </button>
+        </p>
+      )}
       <div className="mt-5 flex justify-end gap-2">
         <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>
-        <Button type="button" onClick={tab === "type" ? adoptTyped : adoptDrawn} disabled={tab === "type" ? !text.trim() : !hasInk}>
+        <Button type="button" onClick={tab === "type" ? adoptTyped : adoptDrawn} disabled={tab === "type" ? !text.trim() || mismatch : !hasInk}>
           Adopt {mode === "initials" ? "initials" : "signature"}
         </Button>
       </div>

@@ -84,7 +84,7 @@ export function CountersignForm({ ws, current }: { ws: Workspace; current: strin
             <Field label="Signing as"><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" /></Field>
             <Field label="Title"><Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Managing Partner" /></Field>
           </div>
-          <SignaturePad mode="signature" defaultName={name} onAdopt={adopt} onCancel={() => setEditing(false)} />
+          <SignaturePad mode="signature" defaultName={name} requireName onAdopt={adopt} onCancel={() => setEditing(false)} />
           <p className="text-xs text-muted">By adopting this signature you authorize it to be applied on behalf of {ws.legal_name} to each agreement a client signs, and each use is recorded in that file&apos;s audit trail.</p>
         </>
       )}
