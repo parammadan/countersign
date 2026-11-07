@@ -46,19 +46,23 @@ gh api "${API}/commits/${sha}/statuses?per_page=100" --jq '[.[] | select(.contex
 run_id="$(jq -r '.target_url // ""' "${work}/status.json" | grep -oE '/actions/runs/[0-9]+$' | grep -oE '[0-9]+$' || true)"
 [[ -n "$run_id" ]] || fail "\`guardrails/policy\` doesn't link to its workflow run"
 gh api "${API}/actions/runs/${run_id}" > "${work}/run.json"
-jq -e --arg sha "$sha" --argjson pr "$pr" '.path == ".github/workflows/agent-guard.yml" and .event == "pull_request_target" and .head_sha == $sha and ([.pull_requests[].number] | index($pr)) != null' "${work}/run.json" >/dev/null \
-  || fail "\`guardrails/policy\` didn't come from the agent-guard run for #${pr} at ${sha:0:7}"
+jq -e --arg sha "$sha" --argjson pr "$pr" '.path == ".github/workflows/agent-guard.yml" and .event == "pull_request_target" and .head_sha == $sha and .conclusion == "success" and ([.pull_requests[].number] | index($pr)) != null' "${work}/run.json" >/dev/null \
+  || fail "\`guardrails/policy\` didn't come from a passing agent-guard run for #${pr} at ${sha:0:7}"
+newest="$(gh api "${API}/actions/workflows/agent-guard.yml/runs?head_sha=${sha}&per_page=100" 2>/dev/null \
+  | jq --argjson pr "$pr" '[.workflow_runs[] | select(.event == "pull_request_target" and ([.pull_requests[].number] | index($pr)) != null)] | sort_by(.created_at) | last | .id // 0' || echo 0)"
+[[ "$newest" == "$run_id" ]] || fail "the newest agent-guard run for #${pr} at ${sha:0:7} is ${newest}, not the one behind the status (${run_id})"
+# test must come from the CI workflow's newest run for this commit
+ci="$(gh api "${API}/actions/workflows/ci.yml/runs?head_sha=${sha}&per_page=100" --jq '[.workflow_runs[]] | sort_by(.created_at) | last | (.status + "/" + (.conclusion // ""))' 2>/dev/null || echo "")"
+[[ "$ci" == "completed/success" ]] || fail "the CI workflow's newest run on ${sha:0:7} is ${ci:-missing}"
 ok "test and guardrails/policy (agent-guard run ${run_id}) are green on ${sha:0:7}"
 
 # 3. the freeze, now
 # only a "not found" means no freeze; any other error refuses (an outage must not look like an unset freeze)
-if out="$(gh api "${API}/actions/variables/AGENT_FREEZE_AT" --jq .value 2>"${work}/freeze.err")"; then
-  freeze="$out"; [[ -n "$freeze" ]] || fail "AGENT_FREEZE_AT exists but is empty"
-elif grep -q "HTTP 404" "${work}/freeze.err"; then
-  freeze=""
-else
-  fail "couldn't read AGENT_FREEZE_AT: $(head -c 200 "${work}/freeze.err")"
-fi
+# (the list, not the single variable: a caller who can't see variables gets 404 for one, which would look unset)
+gh api --paginate "${API}/actions/variables?per_page=30" --jq '.variables[] | [.name, .value] | @tsv' > "${work}/vars.tsv" 2>"${work}/freeze.err" \
+  || fail "couldn't list repository variables to read AGENT_FREEZE_AT: $(head -c 200 "${work}/freeze.err")"
+freeze="$(awk -F'\t' '$1 == "AGENT_FREEZE_AT" { print $2 }' "${work}/vars.tsv")"
+if grep -q $'^AGENT_FREEZE_AT\t' "${work}/vars.tsv" && [[ -z "$freeze" ]]; then fail "AGENT_FREEZE_AT exists but is empty"; fi
 if [[ -n "$freeze" ]]; then
   [[ "$freeze" =~ (Z|[+-][0-9]{2}:[0-9]{2})$ ]] || fail "AGENT_FREEZE_AT has no time zone: ${freeze}"
   fz="$(python3 -c 'import sys, datetime; print(int(datetime.datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00")).timestamp()))' "$freeze")" || fail "AGENT_FREEZE_AT is not a valid time: ${freeze}"
@@ -97,7 +101,7 @@ gh pr merge "$pr" -R "$REPO" --squash --match-head-commit "$sha" --subject "${ti
 merged="$(gh api "${API}/pulls/${pr}" --jq .merge_commit_sha)"
 ok "merged as ${merged:0:7}; waiting for CI on main"
 for _ in $(seq 1 60); do
-  c="$(gh api "${API}/commits/${merged}/check-runs" --jq '[.check_runs[] | select(.name == "test")] | last | (.status + "/" + (.conclusion // ""))' 2>/dev/null || echo "")"
+  c="$(gh api "${API}/actions/workflows/ci.yml/runs?head_sha=${merged}&per_page=20" --jq '[.workflow_runs[]] | sort_by(.created_at) | last | (.status + "/" + (.conclusion // ""))' 2>/dev/null || echo "")"
   [[ "$c" == completed/* ]] && break
   sleep 20
 done
