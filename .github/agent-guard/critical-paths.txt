@@ -1,0 +1,51 @@
+# Material changes: a pull request touching any of these needs the owner's review before it merges (the
+# `owner-approved-paths` label, applied by the owner by hand after the last push). Everything else is routine
+# and merges once `test` and `guardrails/policy` pass and an independent review signs it off (see
+# docs/agents/TASKS.md, "Merging"). One extended regex per line, matched against the repo-relative path. Read
+# from the BASE branch, so a pull request can't loosen its own rules.
+#
+# This list is narrower than protected-paths.txt, which is what cloud agents may not edit at all.
+
+# the approval system itself: CI, this guard, agent settings and rules, the promotion script
+^\.github/
+^\.claude/
+^CLAUDE\.md$
+^AGENTS\.md$
+^docs/agents/TASKS\.md$
+^scripts/agents/
+
+# deployment, infrastructure, secrets and the supply chain
+^fly\.toml$
+^Dockerfile$
+^\.dockerignore$
+^scripts/deploy
+^next\.config\.ts$
+^instrumentation\.ts$
+^package\.json$
+^package-lock\.json$
+^lib/secret\.ts$
+
+# authentication and authorization: sessions, tokens, rate limits, request plumbing, every API route and
+# server action, and the pages that check reset, invite and email-confirmation tokens
+^lib/(auth|http|emailverify|ratelimit|ssrf)\.ts$
+^app/api/
+^app/actions\.ts$
+^(middleware|proxy)\.ts$
+^app/(reset|invite|confirm-email)/
+
+# production data: the schema, stored files and data paths
+^lib/(db|storage|paths)\.ts$
+
+# signature integrity and audit evidence: signing, sealing, certificates, the audit trail, consent, webhooks,
+# the signing page, and the components that capture or adopt a signature or verify a document
+^lib/(files|signer|audit|consent|webhooks|worker|email|convert)\.ts$
+^lib/pdf/
+^app/s/
+^components/(SigningRoom|SignaturePad|VerifyForm|SettingsForms)\.tsx$
+
+# the checks themselves: test runners, shared test helpers, and the evidence the detector is scored on
+^playwright\.config\.ts$
+^vitest\.config\.(ts|mts)$
+^e2e/helpers\.ts$
+^e2e/support/
+^fixtures/(holdout|final|agreements)/

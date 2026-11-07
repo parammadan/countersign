@@ -6,12 +6,15 @@
 # names, patches, commit messages) is treated as untrusted data: passed through env/files, never evaluated.
 #
 # Fails the `guardrails/policy` commit status when a PR:
-#   1. changes a protected path (protected-paths.txt) without an owner approval label,
+#   1. makes a material change (classify.sh: critical-paths.txt, database writes or schema changes, skipped or
+#      removed tests) without the owner's review label, or focuses tests with .only. Routine changes need no
+#      label: they merge once `test` and this check pass and an independent review signs them off.
 #   2. carries AI attribution: co-author or session trailers, "Generated with/by Claude" lines in commits or the
 #      PR description (the PR template's own checklist lines are ignored), or commits authored by Claude,
 #   3. adds secret-looking values or secret/data files,
 #   4. adds real-looking email addresses (test data must use example.com / .test / .invalid),
-#   5. arrives after the submission freeze (repo variable AGENT_FREEZE_AT) without a freeze exception.
+#   5. arrives after the submission freeze (repo variable AGENT_FREEZE_AT) without a freeze exception. While
+#      AGENT_FREEZE_AT is unset no freeze is enforced (a note says so); the owner sets it to the real deadline.
 # An owner approval label only counts when the repo owner applied it directly (not through any GitHub App,
 # such as the Claude app) AFTER GitHub recorded the push of the PR's current head commit (the head commit's
 # check-suite creation time, which the pusher can't set; git commit dates can be faked). Pushing new commits
@@ -62,17 +65,16 @@ if [[ "$EVENT_ACTION" == "synchronize" ]]; then
   labels="$(gh api "${API}/issues/${PR_NUMBER}/labels" --jq '.[].name')"
 fi
 
-# ---- 1. protected paths ----
-gh api --paginate "${API}/pulls/${PR_NUMBER}/files" --jq '.[] | [.filename, (.previous_filename // "")] | @tsv' > "${WORK}/files.tsv"
-grep -vE '^\s*(#|$)' "${HERE}/protected-paths.txt" > "${WORK}/protected.re"
-hits="$(cut -f1,2 "${WORK}/files.tsv" | tr '\t' '\n' | grep -v '^$' | grep -Ef "${WORK}/protected.re" | sort -u || true)"
-if [[ -n "$hits" ]]; then
-  if approved owner-approved-paths; then
-    notes+=("Protected paths changed with owner approval: $(tr '\n' ' ' <<<"$hits")")
-  else
-    problems+=("Changes protected paths without owner approval (label \`owner-approved-paths\`, applied by ${OWNER} directly): $(tr '\n' ' ' <<<"$hits")")
-  fi
-fi
+# ---- 1. material changes need the owner's review; routine ones don't ----
+gh api --paginate "${API}/pulls/${PR_NUMBER}/files" --jq '.[] | [.filename, (.previous_filename // ""), .status] | @tsv' > "${WORK}/files.tsv"
+gh api --paginate "${API}/pulls/${PR_NUMBER}/files" --jq '.[] | select(.patch != null) | .filename as $f | .patch | split("\n")[] | select(startswith("+") and (startswith("+++") | not)) | $f + "\t" + .[1:]' > "${WORK}/added.tsv"
+bash "${HERE}/classify.sh" "${WORK}/files.tsv" "${WORK}/added.tsv" > "${WORK}/risk.tsv"
+while IFS=$'\t' read -r kind reason; do
+  if [[ "$kind" == "BLOCK" ]]; then problems+=("$reason")
+  elif approved owner-approved-paths; then notes+=("Owner reviewed: ${reason}")
+  else problems+=("Material change, needs the owner's review (label \`owner-approved-paths\`, applied by ${OWNER} by hand after the last push): ${reason}"); fi
+done < "${WORK}/risk.tsv"
+[[ -s "${WORK}/risk.tsv" ]] || notes+=("Routine change: no material paths, data writes or weakened tests. Merges once \`test\` passes and an independent review signs it off.")
 
 # ---- 2. AI attribution (commits and PR body) ----
 attr_re='(^|[^a-z])(co-authored-by:|claude-session:)|generated (with|by) \[?claude'
@@ -88,7 +90,6 @@ if jq -r '.body // ""' "${WORK}/pr.json" | grep -vE '^[[:space:]]*-[[:space:]]*\
 fi
 
 # ---- 3 & 4. added lines: secrets and real-looking email addresses ----
-gh api --paginate "${API}/pulls/${PR_NUMBER}/files" --jq '.[] | select(.patch != null) | .filename as $f | .patch | split("\n")[] | select(startswith("+") and (startswith("+++") | not)) | $f + "\t" + .[1:]' > "${WORK}/added.tsv"
 secret_re='(FlyV1 [A-Za-z0-9+/=_-]{20,}|fo1_[A-Za-z0-9_-]{20,}|fm[12]_[A-Za-z0-9_-]{20,}|re_[A-Za-z0-9]{20,}|sk-ant-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----|cs_live_[A-Za-z0-9_-]{20,}|(SMTP_PASS|APP_SECRET|RESEND_API_KEY|FLY_API_TOKEN)[[:space:]]*[=:][[:space:]]*["'"'"']?[A-Za-z0-9+/_.-]{8,})'
 # documentation placeholders such as cs_live_XXXXXXXX or re_xxxxxxxx are not secrets
 sec="$(grep -E "$secret_re" "${WORK}/added.tsv" | grep -vE '(cs_live_|re_|fo1_|sk-ant-|gh[pousr]_)[Xx*]{8,}([^A-Za-z0-9]|$)' | cut -f1 | sort -u | tr '\n' ' ' || true)"
@@ -102,7 +103,7 @@ emails="$(cut -f2 "${WORK}/added.tsv" | grep -oiE '[A-Za-z0-9._%+-]+@[A-Za-z0-9-
 # ---- 5. submission freeze ----
 freeze="${AGENT_FREEZE_AT:-}"
 if [[ -z "$freeze" ]]; then
-  problems+=("Repository variable AGENT_FREEZE_AT is not set (ISO time, e.g. 2026-11-11T14:00:00Z). The policy fails closed until it is.")
+  notes+=("No submission freeze is configured. Set the repository variable AGENT_FREEZE_AT to the real deadline minus 12 hours, in UTC (e.g. 2026-11-11T14:00:00Z), to enforce it.")
 elif ! fz="$(python3 -c 'import sys, datetime; print(int(datetime.datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00")).timestamp()))' "$freeze" 2>/dev/null)"; then
   problems+=("AGENT_FREEZE_AT is not a valid time: ${freeze}")
 elif (( $(date -u +%s) >= fz )); then
