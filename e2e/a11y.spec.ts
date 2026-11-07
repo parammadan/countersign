@@ -6,7 +6,11 @@ import { adoptCountersignature, newFile, signAsClient, signup, uid, uploadAndPub
 // signed in and on the client's signing pages. Axe can't judge everything (focus order, wording), so this is
 // a floor, not a certificate.
 
-async function audit(page: Page, name: string, opts: { exclude?: string[] } = {}) {
+async function audit(page: Page, name: string, opts: { exclude?: string[]; title?: RegExp } = {}) {
+  // After a client-side navigation (a server action's redirect, a link) the URL changes before Next.js has
+  // swapped in the new page's <title>, so axe could run while the document has none. Wait for the expected
+  // title (or, when the caller doesn't name one, any title) before auditing; the rule itself still applies.
+  await expect(page).toHaveTitle(opts.title ?? /\S/);
   let b = new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]);
   for (const sel of opts.exclude ?? []) b = b.exclude(sel);
   const r = await b.analyze();
@@ -84,7 +88,7 @@ test("field editor", async ({ page }) => {
   await page.getByRole("dialog").getByRole("button", { name: /^Publish version/ }).click();
   await page.waitForURL(/published=1/);
   // the library with a live agreement, its history and an archived view
-  await audit(page, "agreement library");
+  await audit(page, "agreement library", { title: /^Agreements · / });
   await page.goto("/app/agreements?view=archived");
-  await audit(page, "agreement library (archived, empty)");
+  await audit(page, "agreement library (archived, empty)", { title: /^Agreements · / });
 });
