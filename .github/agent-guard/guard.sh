@@ -6,9 +6,10 @@
 # names, patches, commit messages) is treated as untrusted data: passed through env/files, never evaluated.
 #
 # Fails the `guardrails/policy` commit status when a PR:
-#   1. makes a material change (classify.sh: critical-paths.txt, database writes or schema changes, skipped or
-#      removed tests) without the owner's review label, or focuses tests with .only. Routine changes need no
-#      label: they merge once `test` and this check pass and an independent review signs them off.
+#   1. makes a material change without the owner's review label, or focuses tests (classify.sh, default deny:
+#      critical-paths.txt, anything off routine-paths.txt, server actions, SQL, new imports of data/auth/signing
+#      modules, changed or skipped tests, diffs GitHub doesn't show). Routine changes need no label: they merge
+#      through scripts/agents/merge.sh, which re-checks everything at merge time.
 #   2. carries AI attribution: co-author or session trailers, "Generated with/by Claude" lines in commits or the
 #      PR description (the PR template's own checklist lines are ignored), or commits authored by Claude,
 #   3. adds secret-looking values or secret/data files,
@@ -44,9 +45,10 @@ gh api --paginate "${API}/issues/${PR_NUMBER}/events" | jq -s 'add // []' > "${W
 pushed_at="$(gh api "${API}/commits/${HEAD_SHA}/check-suites" --jq '[.check_suites[].created_at] | min // ""' 2>/dev/null || true)"
 gh api "${API}/pulls/${PR_NUMBER}" > "${WORK}/pr.json"
 labels="$(jq -r '.labels[].name' "${WORK}/pr.json")"
-remove_label() {
+remove_label() { # fails closed: an approval that can't be removed after a push must not keep counting
   if [[ "${DRY_RUN:-}" == "1" ]]; then echo "[dry-run] would remove label $1"; return; fi
-  gh api -X DELETE "${API}/issues/${PR_NUMBER}/labels/$1" >/dev/null 2>&1 || true
+  gh api -X DELETE "${API}/issues/${PR_NUMBER}/labels/$1" >/dev/null 2>&1 \
+    || problems+=("Couldn't remove \`$1\` after a new push; failing closed. Remove it and re-apply after review.")
 }
 approved() { # label -> 0 if currently applied, last applied by the owner directly (no app), after the push
   local label="$1"
@@ -65,9 +67,19 @@ if [[ "$EVENT_ACTION" == "synchronize" ]]; then
   labels="$(gh api "${API}/issues/${PR_NUMBER}/labels" --jq '.[].name')"
 fi
 
+# ---- 0. only pull requests into main are judged; every changed file must be listed ----
+base_ref="$(jq -r '.base.ref' "${WORK}/pr.json")"
+[[ "$base_ref" == "main" ]] || problems+=("The pull request targets \`${base_ref}\`, not \`main\`. Only pull requests into main may merge.")
+
 # ---- 1. material changes need the owner's review; routine ones don't ----
-gh api --paginate "${API}/pulls/${PR_NUMBER}/files" --jq '.[] | [.filename, (.previous_filename // ""), .status] | @tsv' > "${WORK}/files.tsv"
-gh api --paginate "${API}/pulls/${PR_NUMBER}/files" --jq '.[] | select(.patch != null) | .filename as $f | .patch | split("\n")[] | select(startswith("+") and (startswith("+++") | not)) | $f + "\t" + .[1:]' > "${WORK}/added.tsv"
+gh api --paginate "${API}/pulls/${PR_NUMBER}/files" --jq '.[] | [.filename, (.previous_filename // ""), .status, (.deletions | tostring), ((.patch != null) | tostring)] | @tsv' > "${WORK}/files.tsv"
+# API patches carry no "+++" file headers, so every line starting with "+" is an added line
+gh api --paginate "${API}/pulls/${PR_NUMBER}/files" --jq '.[] | select(.patch != null) | .filename as $f | .patch | split("\n")[] | select(startswith("+")) | $f + "\t" + .[1:]' > "${WORK}/added.tsv"
+listed="$(wc -l < "${WORK}/files.tsv" | tr -d ' ')"
+changed="$(jq -r '.changed_files' "${WORK}/pr.json")"
+if [[ "$listed" != "$changed" || "$listed" -ge 3000 ]]; then
+  problems+=("GitHub listed ${listed} of ${changed} changed files (the API stops at 3000), so the change can't be fully inspected. Split the pull request.")
+fi
 bash "${HERE}/classify.sh" "${WORK}/files.tsv" "${WORK}/added.tsv" > "${WORK}/risk.tsv"
 while IFS=$'\t' read -r kind reason; do
   if [[ "$kind" == "BLOCK" ]]; then problems+=("$reason")
@@ -104,6 +116,8 @@ emails="$(cut -f2 "${WORK}/added.tsv" | grep -oiE '[A-Za-z0-9._%+-]+@[A-Za-z0-9-
 freeze="${AGENT_FREEZE_AT:-}"
 if [[ -z "$freeze" ]]; then
   notes+=("No submission freeze is configured. Set the repository variable AGENT_FREEZE_AT to the real deadline minus 12 hours, in UTC (e.g. 2026-11-11T14:00:00Z), to enforce it.")
+elif ! [[ "$freeze" =~ (Z|[+-][0-9]{2}:[0-9]{2})$ ]]; then
+  problems+=("AGENT_FREEZE_AT must end in Z or a UTC offset (e.g. 2026-11-11T14:00:00Z), not: ${freeze}")
 elif ! fz="$(python3 -c 'import sys, datetime; print(int(datetime.datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00")).timestamp()))' "$freeze" 2>/dev/null)"; then
   problems+=("AGENT_FREEZE_AT is not a valid time: ${freeze}")
 elif (( $(date -u +%s) >= fz )); then

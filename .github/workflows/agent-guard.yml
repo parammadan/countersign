@@ -14,6 +14,7 @@ name: agent-guard
 # review every PR that touches .github/ by hand, whatever its checks say.
 on:
   pull_request_target:
+    branches: [main] # the policy only judges pull requests into main (guard.sh also fails any other base)
     types: [opened, synchronize, reopened, edited, labeled, unlabeled, ready_for_review]
 
 permissions:
