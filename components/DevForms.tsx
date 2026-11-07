@@ -6,16 +6,17 @@ import { apiKeyAction, webhookAction, type FormState } from "@/app/actions";
 import { Button, Input, Notice } from "./ui";
 import { CopyButton } from "./FileActions";
 
-/** An always-present live region, so screen readers announce the message when it arrives.
- *  Errors are shown separately (Notice role="alert"), outside this region. */
+/** An always-present live region announces the message when it arrives: the message only, never the key or
+ *  secret, which a screen reader would otherwise read aloud in full. The visible notice (with the secret and
+ *  Copy) sits outside it. Errors are shown separately (Notice role="alert"). */
 function Result({ st }: { st: FormState }) {
   return (
     <>
       {st?.error && <Notice tone="error">{st.error}</Notice>}
-      <div role="status" aria-live="polite" className="empty:m-0">
-        {st?.ok && (
+      <div role="status" aria-live="polite" className="sr-only">{st?.ok ?? ""}</div>
+      {st?.ok && (
           <Notice tone="ok">
-            {st.ok}
+            <span aria-hidden="true">{st.ok}</span>
             {st.secret && (
               <span className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
                 <code className="min-w-0 flex-1 break-all rounded bg-white px-2 py-1.5 font-mono text-xs">{st.secret}</code>
@@ -24,8 +25,7 @@ function Result({ st }: { st: FormState }) {
             )}
             {st.secret && <span className="mt-2 block text-xs">This is the only time it is shown. Reloading or leaving the page hides it for good.</span>}
           </Notice>
-        )}
-      </div>
+      )}
     </>
   );
 }

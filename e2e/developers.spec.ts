@@ -9,7 +9,7 @@ test("create and revoke an API key; the key is shown once", async ({ page }) => 
   await expect(page.getByText("No API keys yet")).toBeVisible();
   await page.getByLabel("Key name").fill("CRM sync");
   await page.getByRole("button", { name: "Create API key" }).click();
-  const secret = (await page.getByRole("status").locator("code").textContent())!.trim();
+  const secret = (await page.locator("code", { hasText: /^cs_live_/ }).first().textContent())!.trim();
   expect(secret).toMatch(/^cs_live_/);
   await expect(page.getByText("This is the only time it is shown")).toBeVisible();
 
@@ -40,7 +40,10 @@ test("results are announced in a live region; errors are alerts outside it", asy
   await page.getByLabel("Key name").fill("Live region test");
   await page.getByRole("button", { name: "Create API key" }).click();
   await expect(keyStatus).toContainText("Key created");
-  await expect(keyStatus.locator("code")).toHaveText(/^cs_live_/);
+  // the key is shown, but never inside the live region (a screen reader would read it aloud)
+  await expect(keyForm.locator("code", { hasText: /^cs_live_/ })).toBeVisible();
+  await expect(keyStatus.locator("code")).toHaveCount(0);
+  expect(await keyStatus.textContent()).not.toMatch(/cs_live_/);
 
   const hookForm = page.locator("form").filter({ has: page.getByLabel("Webhook URL") });
   await expect(hookForm.getByRole("status")).toBeEmpty();
@@ -69,7 +72,8 @@ test("add a webhook and see its delivery", async ({ page }) => {
     await page.getByLabel("Webhook URL").fill(`http://${process.env.WEBHOOK_HOST || "localhost"}:${port}/hook`);
     await page.getByLabel("file.created").check();
     await page.getByRole("button", { name: "Add webhook" }).click();
-    await expect(page.getByRole("status").locator("code")).toBeVisible();
+    await expect(page.locator("code", { hasText: /^cswh_/ })).toBeVisible();
+    expect(await page.getByRole("status").allTextContents()).not.toContainEqual(expect.stringMatching(/cswh_/));
     await newFile(page, { name: "Jordan Sample", email: `client-${uid()}@example.com` });
     await expect(async () => {
       await page.goto("/app/developers");
