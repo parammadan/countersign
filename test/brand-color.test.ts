@@ -1,7 +1,12 @@
 // Q8-13: a light brand colour made white button text unreadable (#f5c400 on white text: 1.64:1).
 import { describe, it, expect } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { contrastWithWhite, readableBrand } from "../lib/brand-color";
 import { BRAND } from "../lib/brand";
+
+process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "cs-brand-"));
 
 describe("readable brand colour", () => {
   it("measures contrast against white as WCAG does", () => {
@@ -28,5 +33,20 @@ describe("readable brand colour", () => {
   });
   it("falls back to the product colour for anything that isn't a #rrggbb colour", () => {
     for (const c of [null, undefined, "", "red", "#fff", "#12345g", "javascript:alert(1)"]) expect(readableBrand(c)).toBe(BRAND.color);
+  });
+});
+
+describe("the email's button uses the readable colour", () => {
+  const button = (html: string) => html.match(/<a href="[^"]*" style="display:inline-block;background:(#[0-9a-f]{6});color:#fff/i)?.[1];
+  it("darkens a light brand colour in the call-to-action, and keeps a readable one", async () => {
+    const { layout } = await import("../lib/email");
+    const light = layout({ brand: "#f5c400", firm: "Northwind", heading: "h", body: "b", cta: { href: "https://app.example.com/s/x", label: "Review and sign" } });
+    const bg = button(light);
+    expect(bg, "the CTA button is found").toBeTruthy();
+    expect(bg!.toLowerCase()).not.toBe("#f5c400");
+    expect(contrastWithWhite(bg!)).toBeGreaterThanOrEqual(4.5);
+    expect(light).not.toMatch(/#f5c400/i); // nowhere in the email
+    const ok = layout({ brand: "#1f4fd1", firm: "Northwind", heading: "h", body: "b", cta: { href: "https://app.example.com/s/x", label: "Open" } });
+    expect(button(ok)).toBe("#1f4fd1");
   });
 });
