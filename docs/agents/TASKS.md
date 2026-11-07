@@ -252,7 +252,10 @@ after it; `merge.sh` closes that gap for the lead session by reading the variabl
 - The classification is a heuristic over the files GitHub lists and the lines a PR adds. It can't judge
   intent. Logic changed in a routine page through calls it already makes (for example passing a different
   workspace id to an existing helper without naming it), or a fixture script doing something unexpected
-  when run by hand, is caught only by the independent review. That review is recorded on the PR but, being done with
+  when run by hand, is caught only by the independent review.
+- CI tests a pull request against `main` as it was when CI ran. If `main` has moved since, the squashed
+  result is first tested after the merge; `merge.sh` then waits for CI on `main` and nothing else merges
+  until it is green. That review is recorded on the PR but, being done with
   the same token, can't be proven independent by GitHub.
 - A PR that edits `.github/workflows/` could post its own `guardrails/policy`. `.github/` is always material,
   and `merge.sh` re-runs the classification itself rather than trusting the status.

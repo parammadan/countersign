@@ -35,6 +35,10 @@ describe("routine: no owner review", () => {
   it("adding lines to an existing test file without deleting any", () => {
     expect(classify([f("test/brand-color.test.ts", { deletions: 0 })], [["test/brand-color.test.ts", "  expect(contrastWithWhite(bg)).toBeGreaterThanOrEqual(4.5);"]])).toEqual([]);
   });
+  it("quoted UI labels that start with Update, Delete or Select aren't SQL", () => {
+    for (const line of ['toast("Update saved");', '<Button>{"Delete draft"}</Button>', 'label: "Select an agreement"', 'confirm("Delete this file?")', 'title: `Create a workspace`'])
+      expect(classify([f("components/FileActions.tsx")], [["components/FileActions.tsx", line]]), line).toEqual([]);
+  });
   it("UI copy that reads like a query isn't one", () => {
     expect(classify([f("components/UploadAgreement.tsx")], [["components/UploadAgreement.tsx", "<p>Select a file from the list, or drop it here.</p>"]])).toEqual([]);
   });
@@ -97,6 +101,11 @@ describe("material: content of routine code", () => {
     ["eval", 'eval("1")'],
     ["new Function", 'new Function("return 1")()'],
     ["a column-list read", 'one("select id, status from files where id = ?", id);'],
+    ["a read with an alias (X3)", 'all("select e.* from emails e order by e.created_at desc");'],
+    ["a read with * and an alias (X4)", 'all("select * from emails e");'],
+    ["count(*) (X5)", 'one("select count(*) n from users");'],
+    ["lowercase SQL split across lines in a template (X2)", "all(`delete"],
+    ["a CTE", "all(`with t as (select 1) select * from t`)"],
   ])("%s", (_what, line) => {
     expect(kinds(classify([f("components/outbox/query.ts", { status: "added" })], [["components/outbox/query.ts", line]]))).toEqual(["MATERIAL"]);
   });
