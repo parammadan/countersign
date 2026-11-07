@@ -13,7 +13,7 @@ export function ForgotForm() {
       {st?.error && <Notice tone="error">{st.error}</Notice>}
       {st?.ok && <Notice tone="ok">{st.ok}</Notice>}
       <Field label="Work email"><Input name="email" type="email" required autoFocus /></Field>
-      <Button className="w-full" disabled={pending}>Email me a reset link</Button>
+      <Button className="w-full" loading={pending}>Email me a reset link</Button>
       <p className="text-center text-sm text-muted"><Link className="font-medium text-brand" href="/login">Back to sign in</Link></p>
     </ActionForm>
   );
@@ -26,7 +26,7 @@ export function ResetForm({ token }: { token: string }) {
       {st?.error && <Notice tone="error">{st.error}</Notice>}
       <input type="hidden" name="token" value={token} />
       <Field label="New password" hint="At least 8 characters."><Input name="password" type="password" minLength={8} required autoFocus autoComplete="new-password" /></Field>
-      <Button className="w-full" disabled={pending}>Save and sign in</Button>
+      <Button className="w-full" loading={pending}>Save and sign in</Button>
     </ActionForm>
   );
 }
