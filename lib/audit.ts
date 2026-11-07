@@ -55,4 +55,5 @@ export const EVENT_TEXT: Record<string, string> = {
   "file.expired": "Signing link expired",
   "file.downloaded": "Signed copy downloaded",
   "file.email_failed": "Email to client failed",
+  "file.copy_resent": "Signed copy emailed again",
 };

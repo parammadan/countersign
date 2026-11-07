@@ -604,3 +604,51 @@ export function fileJson(f: FileRow) {
     app_url: `${appUrl()}/app/files/${f.id}`,
   };
 }
+
+// Send the client their sealed copy again, byte for byte, when the first email didn't go out. Nothing is
+// re-sealed or regenerated: the stored PDF is re-checked against its recorded fingerprint and sent as is.
+export async function resendSignedCopy(f0: FileRow, ws: Workspace, actor: Actor, ctx: Ctx): Promise<{ file: FileRow; delivered: boolean; error?: string }> {
+  const key = `copy:${f0.id}`;
+  if (locks.has(key)) throw new AppError("The signed copy is being sent right now.", 409);
+  locks.add(key);
+  try {
+    const f = getFile(ws.id, f0.id);
+    if (f.status !== "completed") throw new AppError("Only completed files have a signed copy to send.", 409);
+    const doc = one<{ path: string; sha256: string }>("SELECT path, sha256 FROM documents WHERE file_id = ? AND kind = 'final'", f.id);
+    if (!doc) throw new AppError("This file has no sealed PDF to send.", 409);
+    assertCanSendTo(ws.id, f.client_email);
+    const buf = await getBlob(doc.path);
+    if (sha256(buf) !== doc.sha256) throw new AppError("The stored PDF doesn't match its recorded fingerprint, so it wasn't sent.", 500);
+    const link = copyLinkClosed(f) ? null : signingLink(f);
+    const until = f.completed_at ? formatDate(addDays(f.completed_at, COPY_LINK_DAYS)) : null;
+    const r = await sendEmail({
+      workspaceId: ws.id,
+      fileId: f.id,
+      kind: "completed",
+      redact: link ? [link] : [],
+      to: f.client_email,
+      subject: `Signed: your ${templateName(f)} with ${ws.name}`,
+      fromName: ws.sender_name,
+      replyTo: ws.reply_to,
+      html: layout({
+        brand: ws.brand_color,
+        firm: ws.name,
+        heading: "All signed: here is your copy",
+        body: `Hi ${escapeHtml(f.client_name.split(" ")[0])}. Both parties have signed. Your completed agreement is attached${link && until ? `, and you can download it again from the link below until ${until}` : ""}.`,
+        cta: link ? { href: link, label: "Download signed copy" } : undefined,
+      }),
+      attachments: [{ filename: downloadName(f), content: buf }],
+    });
+    if (r.delivered) run("UPDATE files SET copy_emailed_at = ? WHERE id = ?", now(), f.id);
+    if (r.error) audit(ws.id, f.id, "file.email_failed", actor.label, ctx, { to: f.client_email, kind: "completed", error: r.error });
+    else audit(ws.id, f.id, "file.copy_resent", actor.label, ctx, { to: f.client_email, delivery: r.delivered ? "sent" : "logged", sha256: doc.sha256 });
+    return { file: getFile(ws.id, f.id), delivered: r.delivered, error: r.error };
+  } finally {
+    locks.delete(key);
+  }
+}
+
+/** An email of this kind to this file went out (or was logged, with no provider) within the last `ms`. Failed attempts don't count. */
+export function recentlySent(fileId: string, kind: string, ms: number): boolean {
+  return !!one("SELECT 1 FROM emails WHERE file_id = ? AND kind = ? AND status IN ('sent','logged') AND created_at > ? LIMIT 1", fileId, kind, new Date(Date.now() - ms).toISOString());
+}

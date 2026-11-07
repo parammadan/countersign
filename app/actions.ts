@@ -6,7 +6,7 @@ import { headers } from "next/headers";
 import { z } from "zod";
 import { one, run, tx } from "@/lib/db";
 import { createSession, destroySession, hashPassword, requireAdmin, requireSession, verifyPassword } from "@/lib/auth";
-import { AppError, countersign, createFile, getFile, getWorkspace, sendFile, voidFile } from "@/lib/files";
+import { AppError, countersign, createFile, getFile, getWorkspace, recentlySent, resendSignedCopy, sendFile, voidFile } from "@/lib/files";
 import { ctxFromHeaders } from "@/lib/http";
 import { id, now, sha256, token } from "@/lib/util";
 import { audit } from "@/lib/audit";
@@ -191,6 +191,20 @@ export async function createFileAction(_: FormState, fd: FormData): Promise<Form
   redirect(`/app/files/${fid}?created=1`);
 }
 
+// The same email to the same file twice within a minute is almost always a double click or a second tab.
+// Only an email that actually went out (or was logged, with no provider) counts; a failed one never blocks a retry.
+// This guards the app's buttons only; the public API keeps its existing behaviour.
+const RESEND_GUARD_MS = 60_000;
+const GUARDED: Record<string, { kind: string; what: string }> = {
+  remind: { kind: "reminder", what: "A reminder" },
+  resend: { kind: "resend", what: "The signing email" },
+  resend_copy: { kind: "completed", what: "The signed copy" },
+};
+function sentMomentAgo(fileId: string, op: string): string | null {
+  const g = GUARDED[op];
+  return g && recentlySent(fileId, g.kind, RESEND_GUARD_MS) ? `${g.what} went to the client less than a minute ago, so it wasn't sent again.` : null;
+}
+
 export async function fileAction(_: FormState, fd: FormData): Promise<FormState> {
   try {
     const sess = await requireSession();
@@ -199,16 +213,17 @@ export async function fileAction(_: FormState, fd: FormData): Promise<FormState>
     const actor = { kind: "user" as const, label: sess.userEmail, userId: sess.userId };
     const ctx = await ctxFromHeaders();
     const op = s(fd.get("op"));
+    const dup = sentMomentAgo(f.id, op);
+    if (dup) return { error: dup };
     let msg = "";
-    if (op === "send") {
-      await sendFile(f, ws, "invite", actor, ctx);
-      msg = "Sent to the client.";
-    } else if (op === "resend") {
-      await sendFile(f, ws, "resend", actor, ctx);
-      msg = "Re-sent the signing email.";
-    } else if (op === "remind") {
-      await sendFile(f, ws, "reminder", actor, ctx);
-      msg = "Reminder sent.";
+    if (op === "send" || op === "resend" || op === "remind") {
+      const r = await sendFile(f, ws, op === "send" ? "invite" : op === "resend" ? "resend" : "reminder", actor, ctx);
+      revalidatePath(`/app/files/${f.id}`);
+      // say what really happened: a failed email is not "sent"
+      if (r.email_status === "failed")
+        return { error: `The email to ${f.client_email} couldn't be delivered (${r.email_error ?? "provider error"}). The signing link still works: copy it to send another way, or try again.` };
+      const logged = r.email_status === "logged" ? " Email delivery isn't configured on this server, so it was only recorded in the email log." : "";
+      msg = (op === "send" ? "Sent to the client." : op === "resend" ? "Signing email sent again." : "Reminder sent.") + logged;
     } else if (op === "void") {
       voidFile(f, ws, actor, s(fd.get("reason")), ctx);
       msg = "File voided. The signing link no longer works.";
@@ -216,6 +231,11 @@ export async function fileAction(_: FormState, fd: FormData): Promise<FormState>
       if (sess.role === "staff") throw new AppError("Only admins can countersign.", 403);
       await countersign(f, ws, actor, ctx);
       msg = "Countersigned. The file is complete.";
+    } else if (op === "resend_copy") {
+      const r = await resendSignedCopy(f, ws, actor, ctx);
+      revalidatePath(`/app/files/${f.id}`);
+      if (r.error) return { error: `The signed copy couldn't be emailed: ${r.error}. Nothing else changed; try again later, or share the client's download link.` };
+      msg = r.delivered ? `Signed copy emailed to ${f.client_email}.` : "Email delivery isn't configured on this server, so the copy was only recorded in the email log.";
     } else throw new AppError("Unknown action");
     revalidatePath(`/app/files/${f.id}`);
     return { ok: msg };
