@@ -6,7 +6,7 @@ import { headers } from "next/headers";
 import { z } from "zod";
 import { one, run, tx } from "@/lib/db";
 import { createSession, destroySession, hashPassword, requireAdmin, requireSession, verifyPassword } from "@/lib/auth";
-import { AppError, countersign, createFile, getFile, getWorkspace, recentlySent, resendSignedCopy, sendFile, voidFile } from "@/lib/files";
+import { AppError, countersign, createFile, getFile, getWorkspace, resendSignedCopy, sendFile, sendOnce, voidFile } from "@/lib/files";
 import { ctxFromHeaders } from "@/lib/http";
 import { id, now, sha256, token } from "@/lib/util";
 import { audit } from "@/lib/audit";
@@ -196,14 +196,11 @@ export async function createFileAction(_: FormState, fd: FormData): Promise<Form
 // This guards the app's buttons only; the public API keeps its existing behaviour.
 const RESEND_GUARD_MS = 60_000;
 const GUARDED: Record<string, { kind: string; what: string }> = {
+  send: { kind: "invite", what: "The signing email" },
   remind: { kind: "reminder", what: "A reminder" },
   resend: { kind: "resend", what: "The signing email" },
   resend_copy: { kind: "completed", what: "The signed copy" },
 };
-function sentMomentAgo(fileId: string, op: string): string | null {
-  const g = GUARDED[op];
-  return g && recentlySent(fileId, g.kind, RESEND_GUARD_MS) ? `${g.what} went to the client less than a minute ago, so it wasn't sent again.` : null;
-}
 
 export async function fileAction(_: FormState, fd: FormData): Promise<FormState> {
   try {
@@ -213,32 +210,38 @@ export async function fileAction(_: FormState, fd: FormData): Promise<FormState>
     const actor = { kind: "user" as const, label: sess.userEmail, userId: sess.userId };
     const ctx = await ctxFromHeaders();
     const op = s(fd.get("op"));
-    const dup = sentMomentAgo(f.id, op);
-    if (dup) return { error: dup };
-    let msg = "";
-    if (op === "send" || op === "resend" || op === "remind") {
-      const r = await sendFile(f, ws, op === "send" ? "invite" : op === "resend" ? "resend" : "reminder", actor, ctx);
+    const perform = async (): Promise<FormState> => {
+      let msg = "";
+      if (op === "send" || op === "resend" || op === "remind") {
+        const r = await sendFile(f, ws, op === "send" ? "invite" : op === "resend" ? "resend" : "reminder", actor, ctx);
+        revalidatePath(`/app/files/${f.id}`);
+        // say what really happened: a failed email is not "sent"
+        if (r.email_status === "failed")
+          return { error: `The email to ${f.client_email} couldn't be delivered (${r.email_error ?? "provider error"}). The signing link still works: copy it to send another way, or try again.` };
+        const logged = r.email_status === "logged" ? " Email delivery isn't configured on this server, so it was only recorded in the email log." : "";
+        msg = (op === "send" ? "Sent to the client." : op === "resend" ? "Signing email sent again." : "Reminder sent.") + logged;
+      } else if (op === "void") {
+        voidFile(f, ws, actor, s(fd.get("reason")), ctx);
+        msg = "File voided. The signing link no longer works.";
+      } else if (op === "countersign") {
+        if (sess.role === "staff") throw new AppError("Only admins can countersign.", 403);
+        await countersign(f, ws, actor, ctx);
+        msg = "Countersigned. The file is complete.";
+      } else if (op === "resend_copy") {
+        const r = await resendSignedCopy(f, ws, actor, ctx);
+        revalidatePath(`/app/files/${f.id}`);
+        if (r.error) return { error: `The signed copy couldn't be emailed: ${r.error}. Nothing else changed; try again later, or share the client's download link.` };
+        msg = r.delivered ? `Signed copy emailed to ${f.client_email}.` : "Email delivery isn't configured on this server, so the copy was only recorded in the email log.";
+      } else throw new AppError("Unknown action");
       revalidatePath(`/app/files/${f.id}`);
-      // say what really happened: a failed email is not "sent"
-      if (r.email_status === "failed")
-        return { error: `The email to ${f.client_email} couldn't be delivered (${r.email_error ?? "provider error"}). The signing link still works: copy it to send another way, or try again.` };
-      const logged = r.email_status === "logged" ? " Email delivery isn't configured on this server, so it was only recorded in the email log." : "";
-      msg = (op === "send" ? "Sent to the client." : op === "resend" ? "Signing email sent again." : "Reminder sent.") + logged;
-    } else if (op === "void") {
-      voidFile(f, ws, actor, s(fd.get("reason")), ctx);
-      msg = "File voided. The signing link no longer works.";
-    } else if (op === "countersign") {
-      if (sess.role === "staff") throw new AppError("Only admins can countersign.", 403);
-      await countersign(f, ws, actor, ctx);
-      msg = "Countersigned. The file is complete.";
-    } else if (op === "resend_copy") {
-      const r = await resendSignedCopy(f, ws, actor, ctx);
-      revalidatePath(`/app/files/${f.id}`);
-      if (r.error) return { error: `The signed copy couldn't be emailed: ${r.error}. Nothing else changed; try again later, or share the client's download link.` };
-      msg = r.delivered ? `Signed copy emailed to ${f.client_email}.` : "Email delivery isn't configured on this server, so the copy was only recorded in the email log.";
-    } else throw new AppError("Unknown action");
-    revalidatePath(`/app/files/${f.id}`);
-    return { ok: msg };
+      return { ok: msg };
+    };
+    // one send per file and kind at a time, and not twice within a minute (see sendOnce)
+    const g = GUARDED[op];
+    if (!g) return await perform();
+    const r = await sendOnce(f.id, g.kind, RESEND_GUARD_MS, perform);
+    if (r.ran) return r.value;
+    return { error: r.reason === "in_flight" ? `${g.what} is being sent right now, so it wasn't sent twice.` : `${g.what} went to the client less than a minute ago, so it wasn't sent again.` };
   } catch (e) {
     return fail(e);
   }
