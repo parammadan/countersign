@@ -207,11 +207,15 @@ no content rule fires.
   - any path on `critical-paths.txt`, or not on `routine-paths.txt`. That covers `lib/` (apart from a few
     presentation modules), every route handler and layout, server actions, scripts, configs, signing, auth,
     data, secrets, infrastructure, dependencies, and the checks themselves (this guard, CI, agent rules, test
-    runners and helpers, scoring fixtures, the policy's own test);
-  - in routine code: an added `"use server"`, any uppercase SQL keyword, or a new import of a data, auth or
-    signing module;
+    runners and helpers, scoring fixtures, the policy's own test), the security and signing test files,
+    `DevForms.tsx` (it shows new API keys and webhook secrets), and SVGs (they can carry scripts);
+  - in routine code: an added `"use server"`, SQL in any case, a reference to a data, auth or signing module
+    under `lib/` however the path is spelled, direct database, filesystem or process access (`node:sqlite`,
+    `globalThis`, `node:fs`, `child_process`), or anything touching workspace scoping or roles
+    (`workspaceId`, `.role`, `requireSession`);
   - any deletion in an existing test file, removing or renaming one, or any skip, fixme, fail, todo, skipIf or
-    runIf, conditional or not;
+    runIf, conditional or not; and in an existing test, added lines that can neutralize it (an early `return`,
+    `vi.mock`/`spyOn`, `process.exit`, `page.route`, or skip/only/fail through an alias);
   - a file whose diff GitHub doesn't show (other than binary fixtures, images and visual baselines).
 - **Blocked**: focused tests (`.only` in any form; Playwright also has `forbidOnly` in CI), a PR not into
   `main`, a file list GitHub truncates, secrets, attribution lines, AI-authored commits, real-looking emails,
@@ -219,12 +223,16 @@ no content rule fires.
 - **Routine**: pages and components that don't touch data, docs, static assets, new tests and added test
   lines, fixtures for new work, and reviewed visual baselines.
 
-**How a pull request merges.** Only through `scripts/agents/merge.sh <n>`. At merge time it re-checks:
+**How a pull request merges.** Only through `main`'s copy of `scripts/agents/merge.sh <n>`. It refuses to run
+as any other version, and reads the rules from `parammadan/countersign@main` through the API, never from a
+local clone. At merge time it re-checks:
 1. the PR is open into `main`, and its head is the exact commit that was reviewed;
-2. `test` and `guardrails/policy` are green on that commit;
-3. the freeze, read from the repository variable at that moment;
+2. `test` (from GitHub Actions) and `guardrails/policy` are green on that commit. The status must come from
+   the `agent-guard` workflow run on `pull_request_target` for this PR and this commit, posted by GitHub
+   Actions;
+3. the freeze, read from the repository variable at that moment; any error other than "not set" refuses;
 4. main's `classify.sh` on the PR as it is now (nothing blocks; anything material carries the owner's label);
-5. a recorded `Independent review: PASS at <sha>` comment for that commit.
+5. a line of its own, `Independent review: PASS at <full 40-character head sha>`, recorded after the review.
 
 It then squash-merges pinned to that commit (`--match-head-commit`) and waits for CI on `main`. If `main`
 goes red, nothing else merges until it is fixed.
@@ -242,8 +250,9 @@ after it; `merge.sh` closes that gap for the lead session by reading the variabl
   applied would look exactly like the owner's approval. It never applies `owner-approved-paths` or
   `freeze-exception`; a separate collaborator account for the lead session would make that enforceable.
 - The classification is a heuristic over the files GitHub lists and the lines a PR adds. It can't judge
-  intent: logic changed in a routine file using imports it already had, or data access through existing
-  helpers, is caught only by the independent review. That review is recorded on the PR but, being done with
+  intent. Logic changed in a routine page through calls it already makes (for example passing a different
+  workspace id to an existing helper without naming it), or a fixture script doing something unexpected
+  when run by hand, is caught only by the independent review. That review is recorded on the PR but, being done with
   the same token, can't be proven independent by GitHub.
 - A PR that edits `.github/workflows/` could post its own `guardrails/policy`. `.github/` is always material,
   and `merge.sh` re-runs the classification itself rather than trusting the status.
