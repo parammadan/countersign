@@ -1,0 +1,81 @@
+{
+  "name": "04-no-payment",
+  "description": "Mutual NDA: no payment language at all.",
+  "title": "MUTUAL NON-DISCLOSURE AGREEMENT",
+  "pages": [
+    "MUTUAL NON-DISCLOSURE AGREEMENT\nThis Agreement is made as of June 10, 2026 between Ridgeway Example Corp. (\"Disclosing Party\") and Tidewater Sample Ltd. (\"Receiving Party\").\nThe Receiving Party shall keep all Confidential Information secret and use it only to evaluate a possible business relationship.\nThese obligations last for 5 years from the date above.\nThis Agreement is governed by the laws of Delaware.\nSignature of Receiving Party: ____________________"
+  ],
+  "expect": [
+    {
+      "category": "parties",
+      "status": "stated",
+      "value": "Ridgeway Example Corp.",
+      "page": 1
+    },
+    {
+      "category": "parties",
+      "status": "stated",
+      "value": "Tidewater Sample Ltd.",
+      "page": 1
+    },
+    {
+      "category": "type",
+      "status": "stated",
+      "value": "non-disclosure",
+      "page": 1
+    },
+    {
+      "category": "dates",
+      "status": "stated",
+      "value": "June 10, 2026",
+      "page": 1
+    },
+    {
+      "category": "dates",
+      "status": "stated",
+      "value": "5 years",
+      "page": 1
+    },
+    {
+      "category": "payment",
+      "status": "missing"
+    },
+    {
+      "category": "obligations",
+      "status": "stated",
+      "value": "Confidential Information",
+      "page": 1
+    },
+    {
+      "category": "obligations",
+      "status": "stated",
+      "value": "Delaware",
+      "page": 1
+    },
+    {
+      "category": "signatures",
+      "status": "stated",
+      "page": 1
+    }
+  ],
+  "traps": [
+    {
+      "value": "$",
+      "note": "there is no money in this document"
+    }
+  ],
+  "fields": [
+    {
+      "id": "f1",
+      "type": "signature",
+      "role": "client",
+      "page": 0,
+      "x": 60,
+      "y": 600,
+      "w": 160,
+      "h": 24,
+      "label": "Signature of Receiving Party",
+      "required": true
+    }
+  ]
+}

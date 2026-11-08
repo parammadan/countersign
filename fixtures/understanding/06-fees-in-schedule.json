@@ -1,0 +1,91 @@
+{
+  "name": "06-fees-in-schedule",
+  "description": "Fees only in a schedule on page 2. Also rendered as PDF.",
+  "title": "MANAGED SERVICES AGREEMENT",
+  "pdf": true,
+  "pages": [
+    "MANAGED SERVICES AGREEMENT\nThis Agreement is made as of May 4, 2026 between Granite Example Systems Ltd (\"Provider\") and Willow Sample Foods Inc. (\"Client\").\nThe Provider will monitor and maintain the Client's office network.\nThe Client will pay the fees set out in Schedule A. Invoices are issued monthly.\nThe initial term is 24 months.\nClient signature: ____________________",
+    "SCHEDULE A - FEES\nMonthly retainer: $2,400\nOne-time setup fee: $600\nInvoices are due within 14 days."
+  ],
+  "expect": [
+    {
+      "category": "parties",
+      "status": "stated",
+      "value": "Granite Example Systems Ltd",
+      "page": 1
+    },
+    {
+      "category": "parties",
+      "status": "stated",
+      "value": "Willow Sample Foods Inc.",
+      "page": 1
+    },
+    {
+      "category": "type",
+      "status": "stated",
+      "value": "managed services",
+      "page": 1
+    },
+    {
+      "category": "dates",
+      "status": "stated",
+      "value": "May 4, 2026",
+      "page": 1
+    },
+    {
+      "category": "dates",
+      "status": "stated",
+      "value": "24 months",
+      "page": 1
+    },
+    {
+      "category": "payment",
+      "status": "stated",
+      "value": "$2,400",
+      "page": 2
+    },
+    {
+      "category": "payment",
+      "status": "stated",
+      "value": "$600",
+      "page": 2
+    },
+    {
+      "category": "payment",
+      "status": "stated",
+      "value": "14 days",
+      "page": 2
+    },
+    {
+      "category": "payment",
+      "status": "stated",
+      "value": "Schedule A",
+      "page": 1
+    },
+    {
+      "category": "signatures",
+      "status": "stated",
+      "page": 1
+    }
+  ],
+  "traps": [
+    {
+      "value": "$3,000",
+      "note": "not in the document"
+    }
+  ],
+  "fields": [
+    {
+      "id": "f1",
+      "type": "signature",
+      "role": "client",
+      "page": 0,
+      "x": 60,
+      "y": 600,
+      "w": 160,
+      "h": 24,
+      "label": "Client signature",
+      "required": true
+    }
+  ]
+}

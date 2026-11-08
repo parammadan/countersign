@@ -1,0 +1,85 @@
+{
+  "name": "02-conflicting-dates",
+  "description": "Two different start dates; the document contradicts itself. Also rendered as PDF.",
+  "title": "SERVICES AGREEMENT",
+  "pdf": true,
+  "pages": [
+    "SERVICES AGREEMENT\nThis Agreement is made between Harbor Example Ltd (\"Provider\") and Birchwood Sample LLC (\"Client\") and is effective as of January 5, 2026.\nThe Provider will start the Services on March 1, 2026.\nThe Client will pay $4,000 per month, due within 30 days of invoice.\nEither party may end this Agreement by giving 60 days' written notice.\nClient signature: ____________________"
+  ],
+  "expect": [
+    {
+      "category": "parties",
+      "status": "stated",
+      "value": "Birchwood Sample LLC",
+      "page": 1
+    },
+    {
+      "category": "parties",
+      "status": "stated",
+      "value": "Harbor Example Ltd",
+      "page": 1
+    },
+    {
+      "category": "type",
+      "status": "stated",
+      "value": "services agreement",
+      "page": 1
+    },
+    {
+      "category": "dates",
+      "status": "ambiguous",
+      "label": "date",
+      "page": 1
+    },
+    {
+      "category": "payment",
+      "status": "stated",
+      "value": "$4,000",
+      "page": 1
+    },
+    {
+      "category": "payment",
+      "status": "stated",
+      "value": "30 days",
+      "page": 1
+    },
+    {
+      "category": "dates",
+      "status": "stated",
+      "label": "notice",
+      "value": "60 days",
+      "page": 1
+    },
+    {
+      "category": "signatures",
+      "status": "stated",
+      "page": 1
+    },
+    {
+      "category": "gaps",
+      "status": "ambiguous",
+      "label": "start",
+      "page": 1
+    }
+  ],
+  "traps": [
+    {
+      "value": "February 1, 2026",
+      "note": "a date that appears nowhere"
+    }
+  ],
+  "fields": [
+    {
+      "id": "f1",
+      "type": "signature",
+      "role": "client",
+      "page": 0,
+      "x": 60,
+      "y": 600,
+      "w": 160,
+      "h": 24,
+      "label": "Client signature",
+      "required": true
+    }
+  ]
+}

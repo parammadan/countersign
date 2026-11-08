@@ -1,0 +1,93 @@
+{
+  "name": "12-buried-auto-renewal",
+  "description": "Automatic renewal buried in a late clause of a long agreement.",
+  "title": "SOFTWARE SUBSCRIPTION AGREEMENT",
+  "pages": [
+    "SOFTWARE SUBSCRIPTION AGREEMENT\nThis Agreement is made as of January 15, 2026 between Tarn Example Software Inc. (\"Supplier\") and Bramble Sample Ltd (\"Customer\").\nThe Supplier grants the Customer access to its scheduling software for an initial term of 12 months.\nThe Customer will pay $200 per month, invoiced monthly in advance.\n4. General. Each party shall comply with applicable law. Notices must be in writing. This clause survives termination. No waiver is effective unless in writing.\n5. General. Each party shall comply with applicable law. Notices must be in writing. This clause survives termination. No waiver is effective unless in writing.",
+    "6. General. Each party shall comply with applicable law. Notices must be in writing. This clause survives termination. No waiver is effective unless in writing.\n7. General. Each party shall comply with applicable law. Notices must be in writing. This clause survives termination. No waiver is effective unless in writing.\n8. Data. The Supplier shall back up the Customer's data weekly.\n9. General. Each party shall comply with applicable law. Notices must be in writing. This clause survives termination. No waiver is effective unless in writing.",
+    "10. General. Each party shall comply with applicable law. Notices must be in writing. This clause survives termination. No waiver is effective unless in writing.\n11. General. Each party shall comply with applicable law. Notices must be in writing. This clause survives termination. No waiver is effective unless in writing.\n12. Renewal. Notwithstanding clause 2, on expiry of the initial term this Agreement is automatically extended for successive terms of 12 months each unless a party gives written notice of non-renewal at least 60 days before the end of the then-current term.\n13. General. Each party shall comply with applicable law. Notices must be in writing. This clause survives termination. No waiver is effective unless in writing.\nCustomer signature: ____________________"
+  ],
+  "expect": [
+    {
+      "category": "parties",
+      "status": "stated",
+      "value": "Tarn Example Software Inc.",
+      "page": 1
+    },
+    {
+      "category": "parties",
+      "status": "stated",
+      "value": "Bramble Sample Ltd",
+      "page": 1
+    },
+    {
+      "category": "type",
+      "status": "stated",
+      "value": "subscription",
+      "page": 1
+    },
+    {
+      "category": "dates",
+      "status": "stated",
+      "value": "January 15, 2026",
+      "page": 1
+    },
+    {
+      "category": "dates",
+      "status": "stated",
+      "value": "12 months",
+      "page": 1
+    },
+    {
+      "category": "dates",
+      "status": "stated",
+      "label": "renew",
+      "value": "automatically extended",
+      "page": 3
+    },
+    {
+      "category": "dates",
+      "status": "stated",
+      "label": "notice",
+      "value": "60 days",
+      "page": 3
+    },
+    {
+      "category": "payment",
+      "status": "stated",
+      "value": "$200",
+      "page": 1
+    },
+    {
+      "category": "obligations",
+      "status": "stated",
+      "value": "back up",
+      "page": 2
+    },
+    {
+      "category": "signatures",
+      "status": "stated",
+      "page": 3
+    }
+  ],
+  "traps": [
+    {
+      "value": "does not renew",
+      "note": "it does renew"
+    }
+  ],
+  "fields": [
+    {
+      "id": "f1",
+      "type": "signature",
+      "role": "client",
+      "page": 2,
+      "x": 60,
+      "y": 600,
+      "w": 160,
+      "h": 24,
+      "label": "Customer signature",
+      "required": true
+    }
+  ]
+}

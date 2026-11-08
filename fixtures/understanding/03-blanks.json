@@ -1,0 +1,74 @@
+{
+  "name": "03-blanks",
+  "description": "Blank client name, date, rate and end date (____ and [insert] placeholders).",
+  "title": "CONSULTING AGREEMENT",
+  "pages": [
+    "CONSULTING AGREEMENT\nThis Agreement is made on [insert date] between Lakeside Example Co. (\"Consultant\") and [Client name] (\"Client\").\nThe Consultant will provide strategy consulting services to the Client.\nThe Client will pay the Consultant $____ per hour.\nThis Agreement continues until ____________.\nSigned: ____________________"
+  ],
+  "expect": [
+    {
+      "category": "parties",
+      "status": "stated",
+      "value": "Lakeside Example Co.",
+      "page": 1
+    },
+    {
+      "category": "parties",
+      "status": "missing",
+      "label": "client",
+      "page": 1
+    },
+    {
+      "category": "type",
+      "status": "stated",
+      "value": "consulting agreement",
+      "page": 1
+    },
+    {
+      "category": "dates",
+      "status": "missing",
+      "label": "date",
+      "page": 1
+    },
+    {
+      "category": "payment",
+      "status": "missing",
+      "label": "fee",
+      "page": 1
+    },
+    {
+      "category": "signatures",
+      "status": "stated",
+      "page": 1
+    },
+    {
+      "category": "gaps",
+      "status": "missing",
+      "page": 1
+    }
+  ],
+  "traps": [
+    {
+      "value": "$150",
+      "note": "no rate is given"
+    },
+    {
+      "value": "[Client name]",
+      "note": "a placeholder is not a party"
+    }
+  ],
+  "fields": [
+    {
+      "id": "f1",
+      "type": "signature",
+      "role": "client",
+      "page": 0,
+      "x": 60,
+      "y": 600,
+      "w": 160,
+      "h": 24,
+      "label": "Signed",
+      "required": true
+    }
+  ]
+}

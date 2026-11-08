@@ -1,0 +1,110 @@
+{
+  "name": "17-two-column",
+  "description": "Two-column page; the PDF interleaves the columns row by row. `pages` is in reading order (left column, then right). Rendered as PDF.",
+  "title": "TERMS OF SERVICE",
+  "pdf": true,
+  "layout": "two-column",
+  "pages": [
+    "TERMS OF SERVICE\nBetween Juniper Example Ltd\n(\"Provider\") and Sorrel Sample\nInc. (\"Client\"). Effective\nApril 20, 2026.\nThe Provider will supply\npayroll processing services.\nInitial term: 18 months.\nEither party may end it on\n45 days written notice.\nClient signature: _________\nProvider signature: _______\nFees. The Client will pay\n$650 per month, invoiced\nmonthly in arrears and due\nwithin 21 days.\nConfidentiality. Each party\nkeeps the other's information\nprivate.\nGoverning law: Texas.\nLate payment interest of 2%\nper month applies.\nDate: ____________\nDate: ____________"
+  ],
+  "expect": [
+    {
+      "category": "parties",
+      "status": "stated",
+      "value": "Juniper Example Ltd",
+      "page": 1
+    },
+    {
+      "category": "parties",
+      "status": "stated",
+      "value": "Sorrel Sample",
+      "page": 1
+    },
+    {
+      "category": "type",
+      "status": "stated",
+      "value": "payroll",
+      "page": 1
+    },
+    {
+      "category": "dates",
+      "status": "stated",
+      "value": "April 20, 2026",
+      "page": 1
+    },
+    {
+      "category": "dates",
+      "status": "stated",
+      "value": "18 months",
+      "page": 1
+    },
+    {
+      "category": "dates",
+      "status": "stated",
+      "label": "notice",
+      "value": "45 days",
+      "page": 1
+    },
+    {
+      "category": "payment",
+      "status": "stated",
+      "value": "$650",
+      "page": 1
+    },
+    {
+      "category": "payment",
+      "status": "stated",
+      "value": "21 days",
+      "page": 1
+    },
+    {
+      "category": "payment",
+      "status": "stated",
+      "value": "2%",
+      "page": 1
+    },
+    {
+      "category": "obligations",
+      "status": "stated",
+      "value": "Texas",
+      "page": 1
+    },
+    {
+      "category": "signatures",
+      "status": "stated",
+      "page": 1
+    }
+  ],
+  "traps": [
+    {
+      "value": "$65 per month",
+      "note": "column merge dropped a digit"
+    }
+  ],
+  "fields": [
+    {
+      "id": "f1",
+      "type": "signature",
+      "role": "client",
+      "page": 0,
+      "x": 60,
+      "y": 600,
+      "w": 160,
+      "h": 24,
+      "label": "Client signature",
+      "required": true
+    },
+    {
+      "id": "f2",
+      "type": "signature",
+      "role": "firm",
+      "page": 0,
+      "x": 60,
+      "y": 560,
+      "w": 160,
+      "h": 24,
+      "label": "Provider signature",
+      "required": true
+    }
+  ]
+}

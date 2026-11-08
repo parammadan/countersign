@@ -1,0 +1,65 @@
+{
+  "name": "08-commas-and-suffixes",
+  "description": "Party names containing commas, ampersands, Inc. and Ltd.",
+  "title": "RETAINER AGREEMENT",
+  "pages": [
+    "RETAINER AGREEMENT\nThis Retainer Agreement is made as of April 2, 2026 between Fenwick, Marlow & Example, Inc. (\"Firm\") and Gale, Brook and Sample Ltd. (\"Client\").\nThe Firm will advise the Client on its annual filings.\nThe Client will pay the Firm $300 per hour, invoiced monthly.\nClient signature: ____________________"
+  ],
+  "expect": [
+    {
+      "category": "parties",
+      "status": "stated",
+      "value": "Fenwick, Marlow & Example, Inc.",
+      "page": 1
+    },
+    {
+      "category": "parties",
+      "status": "stated",
+      "value": "Gale, Brook and Sample Ltd.",
+      "page": 1
+    },
+    {
+      "category": "type",
+      "status": "stated",
+      "value": "retainer agreement",
+      "page": 1
+    },
+    {
+      "category": "dates",
+      "status": "stated",
+      "value": "April 2, 2026",
+      "page": 1
+    },
+    {
+      "category": "payment",
+      "status": "stated",
+      "value": "$300",
+      "page": 1
+    },
+    {
+      "category": "signatures",
+      "status": "stated",
+      "page": 1
+    }
+  ],
+  "traps": [
+    {
+      "value": "Fenwick Marlow LLP",
+      "note": "a merged, invented firm name"
+    }
+  ],
+  "fields": [
+    {
+      "id": "f1",
+      "type": "signature",
+      "role": "client",
+      "page": 0,
+      "x": 60,
+      "y": 600,
+      "w": 160,
+      "h": 24,
+      "label": "Client signature",
+      "required": true
+    }
+  ]
+}
