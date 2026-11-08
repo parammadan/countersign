@@ -187,7 +187,7 @@ const NEG = "does not|doesn['’]t|do not|don['’]t|did not|is not|isn['’]t|a
 const ABSENCE_MARK = new RegExp(
   [
     `^(?:${TEXT_SUBJECT})\\b[^.;]{0,40}?\\b(?:${NEG})\\s+(?:\\w+\\s+)?(?:${TEXT_VERB})\\b`,
-    `^(?:nothing in (?:the|this|it)\\b[^.;]{0,30}|none of (?:the |its )?(?:[a-z'’]+ ){0,2}(?:clauses|terms|passages|provisions|sections)|no (?:other )?(?:clause|provision|term|passage|section|part)(?: of the agreement)?)\\s+(?:\\w+\\s+)?(?:${TEXT_VERB})\\b`,
+    `^(?:nothing in (?:the|this|it)\\b[^.;]{0,30}|none of (?:the |its )?(?:[a-z'’]+ ){0,2}(?:clauses|terms|passages|provisions|sections)|no (?:other )?(?:clause|provision|term|passage|section|part)(?: of the agreement)?)\\s+(?:(?:also|even|expressly|specifically|explicitly|directly|otherwise|actually|elsewhere)\\s+)?(?:${TEXT_VERB})\\b`,
     `^(?:${TEXT_SUBJECT})\\b[^.;]{0,40}?\\b(?:${TEXT_VERB})\\s+no\\b`,
     `^(?:${TEXT_SUBJECT})\\s+(?:is|are)\\s+silent\\b`,
     `^(?:${NEG})\\s+(?:\\w+\\s+)?(?:${TEXT_VERB})\\b`,
@@ -201,7 +201,8 @@ const opener = (t: string) =>
   t
     .replace(/^(?:no|yes)[,.:;!—–-]\s*/i, "")
     .replace(/^(?:but|and|so|also|however|therefore|thus|while)\b[,\s]*/i, "")
-    .replace(/^(?:beyond|apart from|other than|except for|besides|aside from|in short|overall)\b[^,]{0,40},\s*/i, "");
+    // a leading "Beyond the word 'total'," is skipped only when it states nothing: no term word, no figure
+    .replace(/^(?:beyond|apart from|other than|except for|besides|aside from|in short|overall)\b[^,]{0,40},\s*/i, (m) => (OBLIGATION.test(m) || /\d/.test(m) || NEGATION.test(m) ? m : ""));
 /** The claim's clauses, a verbless fragment joined to the clause after it ("The Fees" + "payment clause does not say…"). */
 function units(claim: string): string[] {
   const out: string[] = [];
@@ -216,17 +217,22 @@ function units(claim: string): string[] {
   });
   return out;
 }
-/** Every clause of the claim is an absence (or continues one): a term anywhere in it isn't exempt. */
+/** A list item continuing a clause ("dispute resolution procedures", "or a venue"): a few words, no term, no verb. */
+const continuation = (x: string) => x.split(/\s+/).filter(Boolean).length <= 6 && !HAS_VERB.test(x) && !OBLIGATION.test(x) && !NEGATION.test(x) && !/\d/.test(x) && !/\b\w+(?:s|ed)\s+(?:the|a|an|any|all|its|their|fees?|\d)\b/.test(x);
+// "does not give either party a right", "does not provide the Client any option": a negated right or duty is a term
+const NEGATED_RIGHT = /\b(?:give|gives|given|provide|provides|provided|grant|grants|granted|confer|confers|conferred|allow|allows|allowed)\b\s+(?:(?:either|any|the|a|an|each|both|its|no)\s+)*(?:(?:client|provider|consultant|firm|company|customer|supplier|contractor|vendor|agency|licensor|licensee|landlord|tenant|buyer|seller|employer|employee|party|parties|hirer|lessor|lessee|recipient|discloser)s?\b|[a-z]+\s+(?:right|rights|power|option|obligation|duty|entitlement|discretion)\b|(?:right|rights|power|option|options|obligation|duty|duties|entitlement|discretion)\b)/i;
+/** Every clause of the claim is an absence, or a bare list item continuing one: a term anywhere in it isn't exempt. */
 function allAbsence(claim: string): boolean {
+  if (NEGATED_RIGHT.test(normalize(claim))) return false;
   const cs = units(claim);
   if (!cs.length || !ABSENCE_MARK.test(cs[0])) return false;
-  return cs.every((x) => ABSENCE_MARK.test(x) || !HAS_VERB.test(x));
+  return cs.every((x) => ABSENCE_MARK.test(x) || continuation(x));
 }
 // a disclaimer clause: says the text isn't binding or doesn't change the terms, or reports what it says
 const DISCLAIM_CLAUSE = /\b(?:not binding|non-binding|nonbinding|not legally binding|not part of|isn['’]?t part of|does not form part|doesn['’]t form part|forms? no part|no contractual effect|no legal effect|has no effect|superseded|withdrawn|for information only|not one of (?:the |its )?(?:agreement['’]s )?terms|not a term|does not change|doesn['’]t change|does not alter|doesn['’]t alter|does not override|doesn['’]t override|does not affect|doesn['’]t affect|does not apply|doesn['’]t apply|not used|is labell?ed|is marked)\b/i;
 /** Every clause of a disclaimer disclaims the text, reports what it says, or continues a list. */
 function allDisclaimer(claim: string): boolean {
-  return units(claim).every((x) => DISCLAIM_CLAUSE.test(x) || REPORTED.test(x) || !HAS_VERB.test(x));
+  return units(claim).every((x) => DISCLAIM_CLAUSE.test(x) || REPORTED.test(x) || continuation(x));
 }
 const DISCLAIM = /\b(?:not binding|non-binding|nonbinding|not legally binding|not part of|isn['’]?t part of|does not form part|doesn['’]t form part|forms? no part|no contractual effect|no legal effect|has no effect|superseded|withdrawn|for information only)\b/i;
 const REPORTED = /\b(?:faq|draft|marketing|summary|brochure|pitch|deck|extract|appendix|annex|schedule|exhibit|rate card|note)\b[^.;,]{0,60}\b(?:says?|said|saying|states?|stated|stating|claims?|claimed|claiming|lists?|listed|listing|shows?|showing|suggests?|mentions?|advertis\w*|quotes?|offers?|gives?|gave|giving)\b/;
