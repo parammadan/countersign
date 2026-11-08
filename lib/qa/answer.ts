@@ -489,8 +489,14 @@ export async function answerWithModel(
     const t = normalize(clause);
     const term = Math.min(firstAt(t, TERM_VERB), firstAt(t, TERM_ASSERT), firstAt(t, ROLE_WORD), ...[...names.keys()].map((n) => (n && t.includes(n) ? t.indexOf(n) : Infinity)));
     if (term === Infinity) return false;
+    // reported speech only as "<that text> says [that] <term>": nothing in between breaks it up (a comma, "which",
+    // a semicolon), and it doesn't open with "Unlike…", "Per…" or the like
+    const aside = firstAt(t, ASIDE_REF);
     const said = firstAt(t, ATTRIB);
-    return !(said < term && firstAt(t, ASIDE_REF) < said);
+    if (!(aside < said && said < term)) return true;
+    const breaks = (a: number, b: number) => /[,;:]|\bwhich\b/.test(t.slice(a, b));
+    if (breaks(aside, said) || breaks(said, term)) return true;
+    return /\b(?:unlike|per|according to|contrary to|despite|instead of|rather than|compared with|as opposed to)\b/.test(t.slice(0, aside));
   };
   const figuresOk = (clause: string) => {
     const ns = [...numbersIn(stripPageRefs(clause))];
@@ -706,6 +712,8 @@ export async function answerWithModel(
     userText,
     question,
     names,
+    calcNums: new Set([...calcs.verified, ...calcs.operands]),
+    docNums: numbersIn(shown.map((p) => p.text).join("\n")),
   });
   if (judgement.show === "withheld") {
     // what failed is described by kind and count; a claim that failed is never shown, even with a warning

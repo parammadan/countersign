@@ -58,8 +58,10 @@ const verify: VerifyScript = (text, ps) => {
   const claims = text.split(/(?<=[.!?])\s+/).filter((c) => c.trim().length > 2).map((claim) => {
     if (/\$1 per month/.test(claim)) return { span: claim, claim, kind: "term", material: true, verdict: "contradicted", evidence: ev("fee of $4,800 per month"), reason: "Clause 1 sets $4,800." };
     if (/without written notice/.test(claim)) return { span: claim, claim, kind: "term", material: true, verdict: "contradicted", evidence: ev("on 30 days' written notice"), reason: "Clause 3 requires 30 days' written notice." };
-    const src = /1\.5%|\$72|interest/i.test(claim) ? "accrue interest at 1.5% per month" : /20 days|invoice/i.test(claim) ? "payable within 20 days of receipt" : "fee of $4,800 per month";
-    return { span: claim, claim, kind: "term", material: true, verdict: "supported", evidence: ev(src), reason: "" };
+    // a careful verifier quotes every clause whose figures the claim states
+    const sources = [["4,800", "fee of $4,800 per month"], ["20 days", "payable within 20 days of receipt"], ["1.5%", "accrue interest at 1.5% per month"], ["30 days", "on 30 days' written notice"]].filter(([k]) => claim.includes(k)).map(([, q]) => q);
+    const evidence = (sources.length ? sources : [/interest/i.test(claim) ? "accrue interest at 1.5% per month" : /invoice/i.test(claim) ? "payable within 20 days of receipt" : "fee of $4,800 per month"]).flatMap(ev);
+    return { span: claim, claim, kind: "term", material: true, verdict: "supported", evidence, reason: "" };
   });
   return { answer: { claims } };
 };

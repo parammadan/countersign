@@ -47,8 +47,8 @@ export const VERIFY_SYSTEM = [
   "Break the answer (its text, explanation, calculations and notes) into atomic claims, covering every statement in it",
   "(including a bare \"Yes\" or \"No\": span it with the sentence it answers for, and state in the claim what it",
   "affirms or denies), and judge each one. Don't add claims the answer doesn't make. For each claim:",
-  "- span: the exact words of the answer this claim is about, copied character for character (a phrase or a",
-  "  sentence; for a calculation, the calculation as written).",
+  "- span: the exact words of the answer this claim is about, copied character for character: a whole clause or",
+  "  sentence (never split a clause across claims); for a calculation, the calculation as written.",
   "- claim: the span restated as a self-contained statement, keeping its words, figures, parties and negations",
   "  (replace \"it\" or \"they\" with who or what is meant). Never correct the answer here: judge what it says.",
   "- material: true if it states or implies a figure, date, period, deadline, amount, rate, party, who must do what,",
@@ -65,7 +65,8 @@ export const VERIFY_SYSTEM = [
   "    false premise in the question).",
   "  unsupported: the agreement doesn't say it.",
   "  uncertain: the text is genuinely ambiguous on it.",
-  "- evidence: for supported or contradicted claims, the passage id(s) and exact quotes copied from those passages.",
+  "- evidence: for supported or contradicted claims, the passage id(s) and exact quotes copied from those passages;",
+  "  the quotes must include every figure the claim states that the agreement provides.",
   "- reason: one short sentence.",
   "<check_closely>, when present, lists points automated checks flagged; judge the claims they concern with care.",
   "Be strict about material claims and fair about paraphrase: wording may differ from the agreement if the meaning",
@@ -182,14 +183,27 @@ const STOP = new Set(["that", "this", "with", "from", "into", "which", "under", 
 
 const content = (s: string) => normalize(s).split(/[^\p{L}]+/u).filter((w) => w.length >= 4 && !STOP.has(w));
 const YESNO = /^(?:yes|no)\b/i;
-/** The claim keeps the span's wording: at least half the span's content words (by stem or synonym group). */
-function sameWords(span: string, claim: string): boolean {
+// a small count in words ("two packs", "one month's interest", "three items") isn't a figure of the agreement's;
+// one with a unit of time, money or rate ("nine months", "three percent") is
+const COUNT_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
+const UNITS = /^\s*(?:\(\s*\d+\s*\)\s*)?(?:(?:business|calendar|working|full|consecutive)\s+)?(?:hours?|days?|weeks?|months?|years?|quarters?|percent|per\s?cent|%|dollars?|pounds?|euros?)\b/i;
+function isCount(claim: string, n: string): boolean {
+  const v = Number(n);
+  if (!Number.isInteger(v) || v > 12) return false;
+  const t = normalize(claim);
+  // the figure must not also appear in digits
+  if (new RegExp(`(?<![\\d.,])${n}(?![\\d]|[.,]\\d)`).test(t)) return false;
+  if (v <= 2) return true;
+  return [...t.matchAll(new RegExp(`\\b${COUNT_WORDS[v]}\\b`, "g"))].every((m) => !UNITS.test(t.slice(m.index! + m[0].length)));
+}
+/** `claim` keeps `span`'s wording: at least `share` of span's content words are in claim (by stem or synonym group). */
+function sameWords(span: string, claim: string, share = 0.5): boolean {
   const ws = content(span);
   if (!ws.length) return true;
   const cs = content(claim);
   const stems = new Set(cs.map(stemWord));
   const groups = new Set(cs.map((w) => GROUP_OF.get(w)).filter((g) => g !== undefined));
-  return ws.filter((w) => stems.has(stemWord(w)) || (GROUP_OF.has(w) && groups.has(GROUP_OF.get(w)!))).length / ws.length >= 0.5;
+  return ws.filter((w) => stems.has(stemWord(w)) || (GROUP_OF.has(w) && groups.has(GROUP_OF.get(w)!))).length / ws.length >= share;
 }
 /** At least one word of substance in common (by stem or synonym group), when `a` has any. */
 function sharesWord(a: string, b: string): boolean {
@@ -219,6 +233,10 @@ export type JudgeContext = {
   userText: string;
   /** this question: what a "Yes" or "No" answers */
   question?: string;
+  /** figures the deterministic checks re-did (calculation inputs and results): a claim may state them */
+  calcNums?: Set<string>;
+  /** every figure in the agreement text the models saw (for years, which a claim may restate from a heading) */
+  docNums?: Set<string>;
   /** defined parties: name -> role */
   names: Map<string, string>;
 };
@@ -260,6 +278,24 @@ export function judge(claims: VerifiedClaim[], ctx: JudgeContext): Judgement {
   const whole = normalize(ctx.parts.join("\n"));
   const wordless = ctx.parts.map(trim).filter((p) => p && !content(p).length);
   const userNums = nums(ctx.userText);
+  const calcNums = ctx.calcNums ?? new Set<string>();
+  // the answer's sentences, part by part (a bare "Yes." or "No." belongs to the sentence after it)
+  const sentencesOf = (part: string) => {
+    const xs = part.split(/(?<=[.!?;])\s+|\n+/).map((x) => x.trim()).filter(Boolean);
+    for (let i = 0; i < xs.length - 1; i++) if (/^(?:yes|no)[.!,]?$/i.test(xs[i])) xs.splice(i, 2, `${xs[i]} ${xs[i + 1]}`);
+    return xs;
+  };
+  const parts = ctx.parts.map(sentencesOf);
+  /** The sentences a span sits in, and the one before (where "it" or "they" may point). */
+  const around = (span: string) => {
+    const out: string[] = [];
+    for (const ss of parts)
+      ss.forEach((x, i) => {
+        const t = trim(x);
+        if (within(t, span) || within(span, t)) out.push(...(i > 0 ? [ss[i - 1]] : []), x);
+      });
+    return out.join("\n");
+  };
   const tied: string[] = [];
   for (const c of claims) {
     const span = trim(c.span);
@@ -275,8 +311,14 @@ export function judge(claims: VerifiedClaim[], ctx: JudgeContext): Judgement {
       fail("a claim that didn't match the answer's words", c);
       continue;
     }
-    // a "Yes" or "No" is judged as an answer to this question: its claim restates the question
-    if (YESNO.test(span) && ctx.question && !sharesWord(ctx.question, c.claim)) {
+    // the claim is about what its span says: most of its words come from the sentence it sits in (or the one
+    // before), so it can't bring in another term ("Invoices are payable within 15 days" for "15 days' notice")
+    if (!sameWords(c.claim, `${around(span)}\n${ctx.question ?? ""}`, 0.6)) {
+      fail("a claim that didn't match the answer's words", c);
+      continue;
+    }
+    // a "Yes" or "No" is judged as an answer to this question: its claim restates it
+    if (YESNO.test(span) && ctx.question && !(content(ctx.question).length >= 2 ? sameWords(ctx.question, c.claim, 0.8) : sharesWord(ctx.question, c.claim))) {
       fail("a claim that didn't match the answer's words", c);
       continue;
     }
@@ -289,22 +331,22 @@ export function judge(claims: VerifiedClaim[], ctx: JudgeContext): Judgement {
     }
     const fromBinding = c.evidenceChecked && c.evidence.every((e) => ctx.bindingIds.has(e.passage));
     const claimNums = nums(c.claim);
+    // a supported claim's figures are in the evidence it quotes (or the user's words, or a re-done calculation)
+    const evidenceNums = nums(c.evidence.map((e) => e.quote).join("\n"));
+    const backed = [...claimNums].every((n) => evidenceNums.has(n) || userNums.has(n) || calcNums.has(n) || isCount(c.claim, n) || (/^(?:19|20)\d\d$/.test(n) && !!ctx.docNums?.has(n)));
     const absence = c.kind === "absence" && !c.evidence.length && ABSENCE_MARK.test(c.claim) && claimNums.size === 0;
     const scenario = c.kind === "scenario" && !c.evidence.length && USER_ATTRIB.test(c.claim) && subset(claimNums, userNums) && !OBLIGATION.test(c.claim) && !partiesIn(c.claim, ctx.names).size;
     const disclaimer =
       c.kind === "context" && DISCLAIM.test(c.claim) && !TERM_VERB.test(c.claim) && !partiesIn(c.claim, ctx.names).size && c.evidenceChecked && c.evidence.some((e) => ctx.unofficialIds.has(e.passage)) &&
-      c.evidence.every((e) => ctx.bindingIds.has(e.passage) || ctx.unofficialIds.has(e.passage)) && subset(claimNums, nums(c.evidence.map((e) => e.quote).join("\n")));
-    const grounded = c.verdict === "supported" && (fromBinding || absence || scenario || disclaimer);
+      c.evidence.every((e) => ctx.bindingIds.has(e.passage) || ctx.unofficialIds.has(e.passage)) && backed;
+    const grounded = c.verdict === "supported" && ((fromBinding && backed) || absence || scenario || disclaimer);
     if (material && !grounded) fail(c.verdict === "supported" ? "supported without evidence that checks out" : c.verdict, c);
     else if (!material && c.verdict !== "supported") qualifications.push(`${c.span.slice(0, 160)} (${c.verdict})`);
     if (grounded && fromBinding) evidence.push(...c.evidence);
   }
   // coverage: each clause of the answer with a figure, negation, party or term in it is inside judged spans: its
   // figures, negation and parties, and at least 80% of its words of substance; a leading "Yes" or "No" too
-  for (const part of ctx.parts) {
-    const sentences = part.split(/(?<=[.!?;])\s+|\n+/).map((x) => x.trim()).filter(Boolean);
-    // a bare "Yes." or "No." belongs to the sentence after it
-    for (let i = 0; i < sentences.length - 1; i++) if (/^(?:yes|no)[.!,]?$/i.test(sentences[i])) sentences.splice(i, 2, `${sentences[i]} ${sentences[i + 1]}`);
+  for (const sentences of parts) {
     for (const sentence of sentences) {
       const s = trim(sentence);
       const spans = tied.filter((t) => within(s, t) || within(t, s));
@@ -320,8 +362,10 @@ export function judge(claims: VerifiedClaim[], ctx: JudgeContext): Judgement {
         const words = content(u);
         const have = new Set(content(inside).map(stemWord));
         const coveredWords = words.filter((w) => have.has(stemWord(w))).length;
-        const whole = spans.some((t) => within(t, u));
-        if (!inside || !subset(nums(unit), nums(inside)) || (neg(unit) && !neg(inside)) || !subset(partiesIn(unit, ctx.names), partiesIn(inside, ctx.names)) || (!whole && words.length > 0 && coveredWords / words.length < 0.8)) {
+        // (clauses() drops clause references, "in clause 5.1"; the spans are compared the same way)
+        const whole = spans.some((t) => within(t, u) || within(trim(stripPageRefs(t)), u));
+        // a negated clause is judged whole: its scope can't be split across claims
+        if (!inside || !subset(nums(unit), nums(inside)) || (neg(unit) && !whole) || !subset(partiesIn(unit, ctx.names), partiesIn(inside, ctx.names)) || (!whole && words.length > 0 && coveredWords / words.length < 0.8)) {
           fail("part of the answer wasn't checked");
         }
       }
