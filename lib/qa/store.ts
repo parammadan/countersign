@@ -14,7 +14,9 @@ import { latestAnalysis, MAX_PAGES } from "../understand/store";
 import { AnalysisError, type ModelProvider, type Usage } from "../understand/model";
 import { configuredProvider, configuredVerifier } from "../ai/anthropic";
 import { costMicroUsd, worstCaseMicroUsd } from "../ai/pricing";
-import { answerFromPassages, answerWithModel, cleanQuestion, QA_LIMITS, QaModelError, type QaResult, type Turn } from "./answer";
+import { answerFromPassages, answerWithModel, cleanQuestion, modelContext, QA_LIMITS, QaModelError, requestTokens, type QaResult, type Turn } from "./answer";
+import type { PageLines } from "../understand/text";
+import type { Finding } from "../understand/schema";
 import { VERIFY_LIMITS } from "./verify";
 
 export const QA_PER_USER_PER_MINUTE = 6;
@@ -23,12 +25,12 @@ export const QA_DAILY = { model: 50, passages: 300 };
 /** Spend on AI answers across all workspaces per 24 hours (USD); past it, answers fall back to passages. */
 export const aiDailyBudgetUsd = (env: Record<string, string | undefined> = process.env) => {
   const v = Number(env.AI_DAILY_BUDGET_USD);
-  return Number.isFinite(v) && v >= 0 ? v : 5;
+  return Number.isFinite(v) && v >= 0 ? v : 10;
 };
 /** Spend on AI answers per workspace per 24 hours (USD), so one workspace can't use up the global budget. */
 export const aiWorkspaceDailyBudgetUsd = (env: Record<string, string | undefined> = process.env) => {
   const v = Number(env.AI_WORKSPACE_DAILY_BUDGET_USD);
-  return Number.isFinite(v) && v >= 0 ? v : 2;
+  return Number.isFinite(v) && v >= 0 ? v : 3;
 };
 const COMPLETED = "('passages', 'model', 'model_failed')";
 
@@ -59,12 +61,22 @@ export async function askQuestion(
   if (limited(`qa-user:${user.id}`, QA_PER_USER_PER_MINUTE, 60_000)) throw new AppError("You're asking quickly. Wait a minute and try again.", 429);
   if ((JSON.parse(version.pages_json) as unknown[]).length > MAX_PAGES) throw new AppError(`This agreement has more than ${MAX_PAGES} pages, more than we read.`, 422);
   const notes: string[] = [];
-  // a model call is paid for before anyone knows its cost: the worst case (the longest agreement written to the
-  // cache, every output token) is booked when the question is accepted, inside the same transaction as the budget
-  // checks, and replaced by the real cost once the API reports it. A call that times out keeps the worst case.
-  // With the verifier, both calls are booked: it reads the agreement plus the answer.
-  const docTokens = Math.ceil(QA_LIMITS.maxDocumentChars / 3) + 4000;
-  const reserve = provider ? worstCaseMicroUsd(provider.model, docTokens, QA_LIMITS.maxOutputTokens) + (verifier ? worstCaseMicroUsd(verifier.model, docTokens + 4000, VERIFY_LIMITS.maxOutputTokens) : 0) : 0;
+  // the agreement is read first (no cost), so what each call will read is known before it's booked
+  let read: { pages: PageLines[]; findings: Finding[] } | null = null;
+  let readError: AppError | null = null;
+  try {
+    read = await readAgreement(wsId, version);
+  } catch (e) {
+    if (!(e instanceof AppError)) throw e;
+    readError = e;
+  }
+  const turns = threadId ? history(wsId, threadId, "") : [];
+  // a model call is paid for before anyone knows its cost: its worst case (everything it reads written to the
+  // cache, every output token, and a fallback attempt) is booked when the question is accepted, inside the same
+  // transaction as the budget checks, and replaced by the real cost once the API reports it. A call that times out
+  // keeps its worst case. With the verifier, both calls are booked: it reads the agreement plus the answer.
+  const booked = provider && read ? reservation(provider, verifier, question, read.pages, turns) : { answer: 0, verify: 0 };
+  const reserve = booked.answer + booked.verify;
   const qid = id("qa_");
   const useModel = tx(() => {
     const since = new Date(Date.now() - 86400_000).toISOString();
@@ -92,9 +104,14 @@ export async function askQuestion(
     provider = null;
     verifier = null;
   }
+  // the agreement couldn't be read: the attempt counts toward the day's questions, and nothing was spent
+  if (readError || !read) {
+    run("UPDATE qa_answers SET mode = 'failed', cost_microusd = 0 WHERE id = ?", qid);
+    throw readError ?? new AppError("We couldn't read the text in this agreement.", 422);
+  }
   const state = { called: false };
   try {
-    return await answerAndStore(qid, wsId, template.name, version, user, question, provider, verifier, threadId ? history(wsId, threadId, qid) : [], notes, reserve, state);
+    return await answerAndStore(qid, wsId, template.name, version, user, question, provider, verifier, turns, notes, booked, state, read);
   } catch (e) {
     // no model call was made: nothing was spent, so the reservation is released
     run("UPDATE qa_answers SET mode = 'failed', cost_microusd = CASE WHEN ? THEN cost_microusd ELSE 0 END WHERE id = ?", state.called ? 1 : 0, qid);
@@ -118,20 +135,19 @@ function history(wsId: string, threadId: string, exclude: string): Turn[] {
     });
 }
 
-async function answerAndStore(
-  qid: string,
-  wsId: string,
-  templateName: string,
-  version: ReturnType<typeof getTemplateVersion>["version"],
-  user: { id: string; email: string },
-  question: string,
-  provider: ModelProvider | null,
-  verifier: ModelProvider | null,
-  turns: Turn[],
-  notes: string[],
-  reserve: number,
-  state: { called: boolean },
-): Promise<string> {
+/** The worst case of each call, from what it will actually read. */
+export function reservation(provider: ModelProvider, verifier: ModelProvider | null, question: string, pages: PageLines[], turns: Turn[]) {
+  const input = requestTokens(modelContext(question, pages, QA_LIMITS, turns).shown);
+  return {
+    answer: worstCaseMicroUsd(provider.model, input, QA_LIMITS.maxOutputTokens),
+    // the verifier reads the same agreement, the answer under review (no longer than the first call's output) and
+    // its own prompt
+    verify: verifier ? worstCaseMicroUsd(verifier.model, input + QA_LIMITS.maxOutputTokens + 1500, VERIFY_LIMITS.maxOutputTokens) : 0,
+  };
+}
+
+/** The agreement's text (the stored PDF, checked against its fingerprint) and the M2.1 findings nobody dismissed. */
+export async function readAgreement(wsId: string, version: ReturnType<typeof getTemplateVersion>["version"]): Promise<{ pages: PageLines[]; findings: Finding[] }> {
   const pdf = await getBlob(version.pdf_path);
   if (sha256(pdf) !== version.sha256) throw new AppError("The stored agreement doesn't match its fingerprint, so it wasn't read.", 409);
   let ex: Awaited<ReturnType<typeof extractPdf>>;
@@ -145,6 +161,24 @@ async function answerAndStore(
   // M2.1 findings someone dismissed aren't used
   const analysis = latestAnalysis(wsId, version.id);
   const findings = (analysis?.result.findings ?? []).filter((f) => analysis?.reviews[f.id]?.decision !== "dismissed");
+  return { pages, findings };
+}
+
+async function answerAndStore(
+  qid: string,
+  wsId: string,
+  templateName: string,
+  version: ReturnType<typeof getTemplateVersion>["version"],
+  user: { id: string; email: string },
+  question: string,
+  provider: ModelProvider | null,
+  verifier: ModelProvider | null,
+  turns: Turn[],
+  notes: string[],
+  booked: { answer: number; verify: number },
+  state: { called: boolean },
+  { pages, findings }: { pages: PageLines[]; findings: Finding[] },
+): Promise<string> {
 
   let result: QaResult;
   let mode = "passages";
@@ -173,9 +207,8 @@ async function answerAndStore(
   // billed, so the worst case stays booked
   // both calls: the verifier's real cost when reported; a verifier call that failed without a report (timeout,
   // network) keeps its worst case booked, like the first
-  const verifyWorst = verifier ? worstCaseMicroUsd(verifier.model, Math.ceil(QA_LIMITS.maxDocumentChars / 3) + 8000, VERIFY_LIMITS.maxOutputTokens) : 0;
-  const verifyCost = verifier && verifyBilled ? costMicroUsd(verifier.model, verifyBilled) : verifier && result.verifyCostUnknown ? verifyWorst : 0;
-  const cost = provider ? (billed ? costMicroUsd(provider.model, billed) + verifyCost : reserve) : 0;
+  const verifyCost = verifier && verifyBilled ? costMicroUsd(verifier.model, verifyBilled) : verifier && result.verifyCostUnknown ? booked.verify : 0;
+  const cost = provider ? (billed ? costMicroUsd(provider.model, billed) + verifyCost : booked.answer) : 0;
   const tokens = (k: keyof Usage) => (Number(billed?.[k]) || 0) + (Number(verifyBilled?.[k]) || 0);
   run(
     "UPDATE qa_answers SET result_json = ?, mode = ?, input_tokens = ?, output_tokens = ?, cache_write_tokens = ?, cache_read_tokens = ?, cost_microusd = ? WHERE id = ? AND workspace_id = ?",

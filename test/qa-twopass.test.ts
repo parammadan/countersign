@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { answerWithModel, derivableFrom, QA_LIMITS, type QaResult, type Turn } from "@/lib/qa/answer";
-import { decide, type VerifiedClaim } from "@/lib/qa/verify";
+import { judge, type VerifiedClaim } from "@/lib/qa/verify";
 import { linesFromText } from "@/lib/understand/text";
 import type { ModelProvider, ModelRequest } from "@/lib/understand/model";
 import { containsFact, normalize as qn } from "@/evals/text.mjs";
@@ -104,7 +104,8 @@ describe("imprecise checks are hints; the verifier decides", () => {
       const calls: ModelRequest[] = [];
       const r = await ask(q, o, flags(bad, "contradicted", calls));
       expect(shown(r), r.warnings.join(" / ")).toBe(false);
-      expect(r.warnings.join(" ")).toMatch(/contradicted/);
+      // withheld by the verifier (contradicted) or, before it, by a precise check
+      if (calls.length) expect(r.warnings.join(" ")).toMatch(/contradicted/);
       // the failing claim isn't shown, not even in a warning or the list of checks
       expect(r.checks).toBeUndefined();
       expect(r.warnings.join(" ")).not.toContain(o.answer);
@@ -134,7 +135,10 @@ describe("correct answers pass both checks", () => {
     it(q, async () => {
       const r = await ask(q, o, approveAll());
       expect(shown(r), r.warnings.join(" / ")).toBe(true);
-      expect(r.verification).toBe("checked");
+      // what the deterministic checks couldn't confirm on their own stays on the record (strict mode may withhold
+      // what the verifier confirms, like the counterfactual)
+      const strict = await ask(q, o, null);
+      expect(r.verification).toBe(shown(strict) ? strict.verification : "checked");
       expect(r.verifiedBy).toBe("claude-opus-5-5");
       expect(r.answer).toBe(o.answer);
     });
@@ -174,8 +178,8 @@ describe("decision rules", () => {
         { claim: "This is the main commercial term.", kind: "context", material: false, verdict: "uncertain", evidence: [], reason: "" },
       ],
     }));
-    const r = await ask(q, o, v);
-    expect(shown(r)).toBe(true);
+    const r = await ask(q, { answer: "The Client pays $3,200 per month. This is the main commercial term." }, v);
+    expect(shown(r), r.warnings.join(" / ")).toBe(true);
     expect(r.verification).toBe("qualified");
     expect(r.unverified?.join(" ")).toMatch(/main commercial term/);
   });
@@ -183,7 +187,7 @@ describe("decision rules", () => {
     const v = scripted((req) => ({ claims: [{ claim: "The Client pays a monthly fee.", kind: "term", material: true, verdict: "supported", evidence: [evidenceFor(req, /\$3,200/)], reason: "" }] }));
     const r = await ask(q, o, v);
     expect(shown(r)).toBe(false);
-    expect(r.warnings.join(" ")).toMatch(/1 a figure wasn't checked/);
+    expect(r.warnings.join(" ")).toMatch(/part of the answer wasn't checked/);
   });
   it("an empty or malformed verdict withholds the answer, keeping what the call cost", async () => {
     for (const bad of [{ claims: [] }, { verdicts: "all good" }, "APPROVED"]) {
@@ -212,12 +216,14 @@ describe("decision rules", () => {
     expect(shown(r), r.warnings.join(" / ")).toBe(true);
     expect(r.citations.some((c) => c.added && /1\.5%/.test(c.context ?? ""))).toBe(true);
   });
-  it("decide(): absence and scenario claims may be supported without quoted evidence; terms may not", () => {
+  it("judge(): absence and scenario claims may be supported without quoted evidence; terms may not", () => {
     const base = { reason: "", evidence: [], evidenceChecked: false, material: true, verdict: "supported" as const };
-    expect(decide([{ ...base, claim: "The agreement sets no late fee.", kind: "absence" }], new Set()).show).toBe("verified");
-    expect(decide([{ ...base, claim: "You said the invoice is 10 days late.", kind: "scenario" }], new Set()).show).toBe("verified");
-    expect(decide([{ ...base, claim: "The fee is $3,200.", kind: "term" }], new Set()).show).toBe("withheld");
-    expect(decide([], new Set()).show).toBe("withheld");
+    const one = (claim: string, kind: VerifiedClaim["kind"], userText = "") => judge([{ ...base, span: claim, claim, kind }], { parts: [claim], bindingIds: new Set(), unofficialIds: new Set(), userText, names: new Map() }).show;
+    expect(one("The agreement doesn't set a late fee.", "absence")).toBe("verified");
+    expect(one("You said the invoice is 10 days late.", "scenario", "My invoice is 10 days late.")).toBe("verified");
+    expect(one("You said the invoice is 12 days late.", "scenario", "My invoice is 10 days late.")).toBe("withheld");
+    expect(one("The fee is $3,200.", "term")).toBe("withheld");
+    expect(judge([], { parts: ["x"], bindingIds: new Set(), unofficialIds: new Set(), userText: "", names: new Map() }).show).toBe("withheld");
   });
 });
 

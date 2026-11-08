@@ -84,7 +84,7 @@ async function runCases(cases: Case[], concurrency = 4): Promise<Row[]> {
     ? { name: "dry", model: AI_MODEL_DEFAULT, complete: async (r) => { r.onUsage?.({ inputTokens: 2000, outputTokens: 1500 }); const m = firstPassage(r); return { status: "partial", answer: "dry run.", citations: m ? [{ passage: m[1], quote: m[2] }] : [] }; } }
     : anthropicProvider({ model: process.env.AI_MODEL || AI_MODEL_DEFAULT, effort: "medium", client: client() });
   const verifier: ModelProvider = DRY
-    ? { name: "dry-verifier", model: VERIFY_MODEL, complete: async (r) => { r.onUsage?.({ inputTokens: 2500, outputTokens: 600 }); return { claims: [{ claim: "dry run.", kind: "context", material: false, verdict: "supported", evidence: [], reason: "" }] }; } }
+    ? { name: "dry-verifier", model: VERIFY_MODEL, complete: async (r) => { r.onUsage?.({ inputTokens: 2500, outputTokens: 600 }); return { claims: [{ span: "dry run.", claim: "dry run.", kind: "context", material: false, verdict: "supported", evidence: [], reason: "" }] }; } }
     : anthropicProvider({ model: VERIFY_MODEL, effort: (process.env.AI_VERIFY_EFFORT as "low" | "medium" | "high" | undefined) ?? "medium", client: client() });
   const rows: Row[] = new Array(cases.length);
   let next = 0;

@@ -17,8 +17,14 @@ describe("two-pass answers: booking and recording both calls", () => {
   let Q: typeof import("../lib/qa/store");
   let P: typeof import("../lib/ai/pricing");
   let A: typeof import("../lib/qa/answer");
-  let V: typeof import("../lib/qa/verify");
   let vid = "";
+  let T: typeof import("../lib/templates");
+  /** What the store books for each call on this agreement, computed the way the store does. */
+  const booking = async (q: string, verifierOn: boolean) => {
+    const { version } = T.getTemplateVersion("ws_v", vid);
+    const { pages } = await Q.readAgreement("ws_v", version);
+    return Q.reservation(answerer, verifierOn ? verifier(true) : null, q, pages, []);
+  };
   const pdfBytes = fs.readFileSync(path.join(process.cwd(), "fixtures/agreements/13-engagement-letter-filled-header.pdf"));
 
   // answers with the first passage, quoted; reports usage
@@ -39,7 +45,7 @@ describe("two-pass answers: booking and recording both calls", () => {
       if (usage) r.onUsage?.({ inputTokens: 5000, outputTokens: 800 });
       const m = (r.context ?? "").match(/<passage id="(p[^"]+)" page="\d+">([^<]{20,})<\/passage>/)!;
       const text = /<text>([\s\S]*?)<\/text>/.exec(r.document)![1];
-      return { claims: [{ claim: text, kind: "term", material: true, verdict: "supported", evidence: [{ passage: m[1], quote: m[2].slice(0, 40) }], reason: "" }] };
+      return { claims: [{ span: text, claim: text, kind: "term", material: true, verdict: "supported", evidence: [{ passage: m[1], quote: m[2].slice(0, 40) }], reason: "" }] };
     },
   });
 
@@ -48,9 +54,8 @@ describe("two-pass answers: booking and recording both calls", () => {
     Q = await import("../lib/qa/store");
     P = await import("../lib/ai/pricing");
     A = await import("../lib/qa/answer");
-    V = await import("../lib/qa/verify");
     const files = await import("../lib/files");
-    const T = await import("../lib/templates");
+    T = await import("../lib/templates");
     db.run(
       "INSERT INTO workspaces (id, name, legal_name, sender_name, countersigner_name, countersigner_email, inbound_token, created_at) VALUES (?,?,?,?,?,?,?,?)",
       "ws_v", "Firm V", "Firm V LLC", "Firm V", "Avery Tester", "avery-v@example.com", "inb_v", new Date().toISOString(),
@@ -73,19 +78,20 @@ describe("two-pass answers: booking and recording both calls", () => {
     const silent: ModelProvider = { name: "x", model: "claude-opus-5-5", complete: async () => { throw new Error("socket hang up"); } };
     await Q.askQuestion("ws_v", vid, { id: "u_b", email: "b@example.com" }, "What are the payment terms?", answerer, null, silent);
     const row = db.one<{ c: number; result_json: string }>("SELECT cost_microusd c, result_json FROM qa_answers WHERE asked_by = 'b@example.com'")!;
-    const worst = P.worstCaseMicroUsd("claude-opus-5-5", Math.ceil(A.QA_LIMITS.maxDocumentChars / 3) + 8000, V.VERIFY_LIMITS.maxOutputTokens);
-    expect(row.c).toBe(31_200 + worst);
+    expect(row.c).toBe(31_200 + (await booking("What are the payment terms?", true)).verify);
     expect(JSON.parse(row.result_json).warnings.join(" ")).toMatch(/couldn't be verified/);
   });
 
   it("both calls' worst cases are booked before either is made: a budget that fits one but not both falls back to passages", async () => {
     let called = 0;
     const counting: ModelProvider = { ...answerer, complete: async (r) => (called++, answerer.complete(r)) };
-    const doc = Math.ceil(A.QA_LIMITS.maxDocumentChars / 3) + 4000;
-    const one = P.worstCaseMicroUsd("claude-opus-5-5", doc, A.QA_LIMITS.maxOutputTokens);
+    const b = await booking("What are the payment terms?", true);
+    // the booking follows the agreement's real size, well under the cap-sized worst case
+    expect(b.answer).toBeLessThan(P.worstCaseMicroUsd("claude-opus-5-5", Math.ceil(A.QA_LIMITS.maxDocumentChars / 3), A.QA_LIMITS.maxOutputTokens));
+    expect(b.verify).toBeGreaterThan(b.answer);
     db.run("DELETE FROM qa_answers WHERE workspace_id = 'ws_v'");
     const before = process.env.AI_WORKSPACE_DAILY_BUDGET_USD;
-    process.env.AI_WORKSPACE_DAILY_BUDGET_USD = String((one * 1.2) / 1e6);
+    process.env.AI_WORKSPACE_DAILY_BUDGET_USD = String((b.answer + b.verify / 2) / 1e6);
     try {
       await Q.askQuestion("ws_v", vid, { id: "u_c", email: "c@example.com" }, "What are the payment terms?", counting, null, verifier(true));
       expect(called).toBe(0);

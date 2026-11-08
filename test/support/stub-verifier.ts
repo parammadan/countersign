@@ -2,7 +2,7 @@
 // binding passage, and one that returns whatever verdicts a test scripts.
 import type { ModelProvider, ModelRequest } from "@/lib/understand/model";
 
-/** The answer under review, as the verifier sees it, split into sentence-sized claims. */
+/** The answer under review, as the verifier sees it, split into sentence-sized claims (each its own span). */
 export function claimsOf(req: ModelRequest): string[] {
   const body = /<answer>([\s\S]*)<\/answer>/.exec(req.document)?.[1] ?? "";
   const text = body.replace(/<\/?(?:text|explanation|calculation|note)>/g, "\n");
@@ -25,15 +25,18 @@ export const approveAll = (calls: ModelRequest[] = []): ModelProvider => ({
   complete: async (req) => {
     calls.push(req);
     const ev = firstBindingEvidence(req);
-    return { claims: claimsOf(req).map((claim) => ({ claim, kind: "term", material: true, verdict: "supported", evidence: [ev], reason: "stub" })) };
+    return { claims: claimsOf(req).map((claim) => ({ span: claim, claim, kind: "term", material: true, verdict: "supported", evidence: [ev], reason: "stub" })) };
   },
 });
 
+/** Scripted verdicts; a claim with no `span` gets its own text as the span (an explicit "" stays empty). */
 export const scripted = (verdicts: (req: ModelRequest) => unknown, calls: ModelRequest[] = []): ModelProvider => ({
   name: "stub-verifier",
   model: "claude-opus-5-5",
   complete: async (req) => {
     calls.push(req);
-    return verdicts(req);
+    const out = verdicts(req) as { claims?: { claim?: string; span?: string }[] };
+    if (out && typeof out === "object" && Array.isArray(out.claims)) out.claims = out.claims.map((c) => (c && typeof c === "object" && c.span === undefined ? { ...c, span: c.claim } : c));
+    return out;
   },
 });

@@ -56,9 +56,10 @@ const script: Script = (q, ps, seen) => {
 const verify: VerifyScript = (text, ps) => {
   const ev = (s: string) => { const p = find(ps, s); return [{ passage: p.id, quote: s }]; };
   const claims = text.split(/(?<=[.!?])\s+/).filter((c) => c.trim().length > 2).map((claim) => {
-    if (/without written notice/.test(claim)) return { claim, kind: "term", material: true, verdict: "contradicted", evidence: ev("on 30 days' written notice"), reason: "Clause 3 requires 30 days' written notice." };
+    if (/\$1 per month/.test(claim)) return { span: claim, claim, kind: "term", material: true, verdict: "contradicted", evidence: ev("fee of $4,800 per month"), reason: "Clause 1 sets $4,800." };
+    if (/without written notice/.test(claim)) return { span: claim, claim, kind: "term", material: true, verdict: "contradicted", evidence: ev("on 30 days' written notice"), reason: "Clause 3 requires 30 days' written notice." };
     const src = /1\.5%|\$72|interest/i.test(claim) ? "accrue interest at 1.5% per month" : /20 days|invoice/i.test(claim) ? "payable within 20 days of receipt" : "fee of $4,800 per month";
-    return { claim, kind: /not|no /i.test(claim) && /doesn|not stated|how invoices/i.test(claim) ? "absence" : "term", material: true, verdict: "supported", evidence: ev(src), reason: "" };
+    return { span: claim, claim, kind: "term", material: true, verdict: "supported", evidence: ev(src), reason: "" };
   });
   return { answer: { claims } };
 };

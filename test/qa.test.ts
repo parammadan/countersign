@@ -130,7 +130,9 @@ describe("answers from a model are checked before they're shown", () => {
     expect(r.status).toBe("partial");
     expect(r.answer).not.toMatch(/\$1 /);
     expect(r.citations[0].quote).toContain("$4,800");
-    expect(r.warnings.join(" ")).toMatch(/\$1, which the (?:agreement doesn.t|passages it cites don.t) contain/);
+    expect(r.warnings.join(" ")).toMatch(/mentioned (?:a figure, name or detail the agreement doesn't|details the passages it cites don't) contain/);
+    // the failing figure itself isn't repeated in the warning
+    expect(r.warnings.join(" ")).not.toMatch(/\$1\b/);
   });
 
   it("a 'not found' from the model shows the standard message, never the model's own text", async () => {

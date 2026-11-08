@@ -12,7 +12,7 @@ export type Script = (q: string, ps: Passage[], seen: Seen) => { status?: number
 export type VerifyScript = (answer: string, ps: Passage[], q: string) => { status?: number; answer?: Record<string, unknown> };
 const approve: VerifyScript = (answer, ps) => {
   const p = ps.find((x) => !/binding="false"/.test(x.text)) ?? ps[0];
-  return { answer: { claims: answer.split(/(?<=[.!?])\s+/).filter((c) => c.trim().length > 2).map((claim) => ({ claim, kind: "term", material: true, verdict: "supported", evidence: [{ passage: p.id, quote: p.text.slice(0, 40) }], reason: "" })) } };
+  return { answer: { claims: answer.split(/(?<=[.!?])\s+/).filter((c) => c.trim().length > 2).map((claim) => ({ claim, kind: "term", material: true, verdict: "supported", evidence: [{ passage: p.id, quote: p.text.slice(0, 40) }], reason: "", span: claim })) } };
 };
 
 export function startMockAnthropic(script: Script, verify: VerifyScript = approve): Promise<{ close: () => Promise<void>; seen: Seen[] }> {

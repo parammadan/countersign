@@ -44,7 +44,7 @@ export const stripPageRefs = (s: string) =>
   s.replace(/\b(?:pages?|clauses?|sections?|paragraphs?|articles?|schedules?|exhibits?|appendi(?:x|ces)|annex(?:es)?|§)\s*\(?\d{1,4}(?:\.\d{1,3})*[a-z]?\)?(?:\s*(?:,|and|&|-|–|to|or)\s*\(?\d{1,4}(?:\.\d{1,3})*[a-z]?\)?)*/gi, " ");
 
 // ---- binding ----
-const ROLES = ["client", "clients", "provider", "consultant", "firm", "company", "customer", "supplier", "contractor", "vendor", "agency", "licensor", "licensee", "landlord", "tenant", "buyer", "seller", "employer", "employee", "party", "parties", "counterparty"];
+export const ROLES = ["client", "clients", "provider", "consultant", "firm", "company", "customer", "supplier", "contractor", "vendor", "agency", "licensor", "licensee", "landlord", "tenant", "buyer", "seller", "employer", "employee", "party", "parties", "counterparty"];
 const UNIT_WORDS = /^(?:hours?|days?|weeks?|months?|years?|hourly|daily|weekly|monthly|yearly|annual|annually|percent|per|cent|dollars?|usd|business|calendar|working)$/;
 const MONTHS = /^(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)$/;
 const NUMBER_WORDS = /^(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million)$/;
@@ -122,7 +122,7 @@ export function segments(text: string): string[] {
   return text.slice(0, MAX_TEXT * 4).split(/(?<=[.!?])\s+(?=[A-Z0-9("“])|;\s*|\n+/).map((s) => s.trim()).filter(Boolean);
 }
 /** Answer text split finer, into clauses, so "invoices are due in 30 days and late fees are 2%" is two claims. */
-function clauses(text: string): string[] {
+export function clauses(text: string): string[] {
   // "and" splits two claims, not a range of numbers ("Lease Years 3 and 4")
   return stripPageRefs(text.slice(0, MAX_TEXT)).split(/(?<=[.!?])\s+|;\s*|\n+|,?\s+(?:and|but|while|whereas|plus)\s+(?!\d)|,\s+(?:so|therefore|thus|which means|meaning|hence)\s+/i).map((s) => s.trim()).filter(Boolean);
 }
@@ -341,6 +341,14 @@ function subjectRole(sentence: string, names: Map<string, string>): string | nul
   if (m && (!best || m.index < best.at)) best = { at: m.index, role: m[1] };
   return best?.role ?? null;
 }
+/** The parties a text mentions, as roles: by role word ("the Client") or by defined name ("Quill Sample Inc"). */
+export function partiesIn(text: string, names: Map<string, string>): Set<string> {
+  const t = normalize(text);
+  const out = new Set<string>();
+  for (const [name, role] of names) if (name && t.includes(name)) out.add(role);
+  for (const m of t.matchAll(new RegExp(`\\b(${ROLES.filter((r) => !/part/.test(r)).join("|")})\\b`, "g"))) out.add(m[1].replace(/s$/, ""));
+  return out;
+}
 /**
  * Clauses where the answer has one party do what the cited text has another party do ("the Provider pays" when
  * the agreement says the Client pays). Passive wording and "either party" aren't judged.
@@ -479,12 +487,10 @@ export type CalcCheck = {
   fromAgreement: Set<string>;
   /** every calculation that didn't check out: `wrong` plus `unproven` */
   failed: string[];
-  /** the arithmetic itself is wrong: the expression doesn't give the stated result */
+  /** always withheld: the arithmetic is wrong or can't be parsed */
   wrong: string[];
-  /** the arithmetic can't be confirmed from the agreement (an input of unknown origin, an off-topic figure, an unparsed expression) */
+  /** the arithmetic is right but an input's origin isn't confirmed (unknown, from an unrelated clause), or its label adds figures */
   unproven: string[];
-  /** figures of unproven calculations whose arithmetic is right (inputs and result), for a second check to judge */
-  unprovenFigures: Set<string>;
   qualified: string[];
 };
 /**
@@ -505,7 +511,6 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
   const failed: string[] = [];
   const wrong: string[] = [];
   const unproven: string[] = [];
-  const unprovenFigures = new Set<string>();
   const qualified: string[] = [];
   const cited = supportSegments(support);
   const everywhere = supportSegments(agreement);
@@ -565,30 +570,31 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
       wrong.push(label);
       continue;
     }
-    const unprove = (why: string, figures: boolean) => {
+    const hard = (why: string) => {
+      failed.push(why);
+      wrong.push(why);
+    };
+    const unprove = (why: string) => {
       failed.push(why);
       unproven.push(why);
-      if (figures && arithmeticOk) {
-        for (const o of operands) unprovenFigures.add(o.n);
-        unprovenFigures.add(String(Number(stated)));
-      }
     };
+    // nothing to re-do: an expression that doesn't parse, or has no figures, is never taken on trust
     if (!arithmeticOk || operands.length === 0) {
-      unprove(label, false);
+      hard(label);
       continue;
     }
     if (!operands.every(known)) {
-      unprove(label, true);
+      unprove(label);
       continue;
     }
     // a figure taken from a clause that isn't about the question makes the result a material claim it doesn't support
     if (offTopic) {
-      unprove(`${label} (uses a figure from an unrelated clause)`, true);
+      unprove(`${label} (uses a figure from an unrelated clause)`);
       continue;
     }
     // a label may restate known figures ("9500 (monthly cap; 3800 is below it)"), not add new ones ("48 plus a $900 fee")
     if (labelFigures.some((n) => !verified.has(n) && !fromQuestion.has(n) && !has(everywhere, n, null).length)) {
-      unprove(label, false);
+      unprove(label);
       continue;
     }
     for (const o of operands) {
@@ -601,7 +607,7 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
     verified.add(String(Number(value!.toFixed(2))));
     verified.add(String(Math.round(value!)));
   }
-  return { verified, operands: operandsOk, fromAgreement: agreementInputs, failed, wrong, unproven, unprovenFigures, qualified };
+  return { verified, operands: operandsOk, fromAgreement: agreementInputs, failed, wrong, unproven, qualified };
 }
 
 // ---- quotations inside the answer ----

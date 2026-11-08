@@ -185,14 +185,18 @@ describe("questions about an agreement", () => {
     const [h] = Q.recentAnswers("ws_a", vid);
     expect(h.result.mode).toBe("passages");
     expect(h.result.warnings[0]).toMatch(/spending limit/);
-    expect(Q.aiDailyBudgetUsd({})).toBe(5);
-    expect(Q.aiDailyBudgetUsd({ AI_DAILY_BUDGET_USD: "abc" })).toBe(5);
+    expect(Q.aiDailyBudgetUsd({})).toBe(10);
+    expect(Q.aiDailyBudgetUsd({ AI_DAILY_BUDGET_USD: "abc" })).toBe(10);
   });
 
   it("a call that fails without reporting usage keeps its worst-case cost booked; a failure before any call books nothing", async () => {
     const { worstCaseMicroUsd } = await import("../lib/ai/pricing");
     const { QA_LIMITS } = await import("../lib/qa/answer");
-    const worst = worstCaseMicroUsd("claude-opus-5-5", Math.ceil(QA_LIMITS.maxDocumentChars / 3) + 4000, QA_LIMITS.maxOutputTokens);
+    const { getTemplateVersion } = await import("../lib/templates");
+    const { pages } = await Q.readAgreement("ws_a", getTemplateVersion("ws_a", vid).version);
+    const worst = Q.reservation({ name: "x", model: "claude-opus-5-5", complete: async () => ({}) }, null, "What are the payment terms?", pages, []).answer;
+    // never more than the cap-sized worst case
+    expect(worst).toBeLessThanOrEqual(worstCaseMicroUsd("claude-opus-5-5", Math.ceil(QA_LIMITS.maxDocumentChars / 3) + 8000, QA_LIMITS.maxOutputTokens));
     const silent: ModelProvider = { name: "x", model: "claude-opus-5-5", complete: async () => { throw new Error("socket hang up"); } };
     db.run("DELETE FROM qa_answers WHERE workspace_id = 'ws_a'");
     await Q.askQuestion("ws_a", vid, { id: "u_n", email: "n@example.com" }, "What are the payment terms?", silent);
