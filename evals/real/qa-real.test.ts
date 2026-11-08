@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { answerWithModel, QA_LIMITS, type QaResult, type Turn } from "@/lib/qa/answer";
+import Anthropic from "@anthropic-ai/sdk";
 import { anthropicProvider, AI_MODEL_DEFAULT } from "@/lib/ai/anthropic";
 import { costMicroUsd, worstCaseMicroUsd } from "@/lib/ai/pricing";
 import { linesFromText } from "@/lib/understand/text";
@@ -71,7 +72,8 @@ type Row = { id: string; category: string; question: string; shown: QaResult | n
 async function runCases(cases: Case[], concurrency = 4): Promise<Row[]> {
   const provider: ModelProvider = DRY
     ? { name: "dry", model: AI_MODEL_DEFAULT, complete: async (r) => { r.onUsage?.({ inputTokens: 2000, outputTokens: 1500 }); return { status: "not_found", answer: "dry run", citations: [] }; } }
-    : anthropicProvider({ apiKey: process.env.ANTHROPIC_API_KEY, model: process.env.AI_MODEL || AI_MODEL_DEFAULT, effort: "medium" });
+    : // no automatic retries in a paid evaluation: a failed call is reported, never silently repeated
+      anthropicProvider({ model: process.env.AI_MODEL || AI_MODEL_DEFAULT, effort: "medium", client: new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, maxRetries: 0, logLevel: "off", baseURL: "https://api.anthropic.com" }) });
   const rows: Row[] = new Array(cases.length);
   let next = 0;
   let stopped = false;
