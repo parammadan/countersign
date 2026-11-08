@@ -1,0 +1,75 @@
+{
+  "name": "11-amounts-in-words",
+  "description": "Amounts written in words, with and without figures.",
+  "title": "CONSULTANCY AGREEMENT",
+  "pages": [
+    "CONSULTANCY AGREEMENT\nThis Agreement is made as of September 1, 2026 between Pennant Example Advisory Ltd (\"Consultant\") and Cobble Sample Inc. (\"Client\").\nThe Client shall pay the Consultant a fee of five thousand dollars ($5,000) on signing.\nThe Client shall also pay a deposit of two thousand five hundred dollars, refundable if the work does not start.\nClient signature: ____________________"
+  ],
+  "expect": [
+    {
+      "category": "parties",
+      "status": "stated",
+      "value": "Pennant Example Advisory Ltd",
+      "page": 1
+    },
+    {
+      "category": "parties",
+      "status": "stated",
+      "value": "Cobble Sample Inc.",
+      "page": 1
+    },
+    {
+      "category": "type",
+      "status": "stated",
+      "value": "consultancy",
+      "page": 1
+    },
+    {
+      "category": "dates",
+      "status": "stated",
+      "value": "September 1, 2026",
+      "page": 1
+    },
+    {
+      "category": "payment",
+      "status": "stated",
+      "value": "5,000",
+      "page": 1
+    },
+    {
+      "category": "payment",
+      "status": "stated",
+      "value": "two thousand five hundred",
+      "page": 1
+    },
+    {
+      "category": "signatures",
+      "status": "stated",
+      "page": 1
+    }
+  ],
+  "traps": [
+    {
+      "value": "$2,500",
+      "note": "words-only amount reported as a figure it never states"
+    },
+    {
+      "value": "$7,500",
+      "note": "sum never stated"
+    }
+  ],
+  "fields": [
+    {
+      "id": "f1",
+      "type": "signature",
+      "role": "client",
+      "page": 0,
+      "x": 60,
+      "y": 600,
+      "w": 160,
+      "h": 24,
+      "label": "Client signature",
+      "required": true
+    }
+  ]
+}

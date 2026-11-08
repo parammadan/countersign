@@ -1,0 +1,125 @@
+{
+  "name": "01-engagement-basic",
+  "description": "Clean engagement letter, every category present. Also rendered as PDF.",
+  "title": "ENGAGEMENT LETTER",
+  "pdf": true,
+  "pages": [
+    "ENGAGEMENT LETTER\nThis Engagement Letter is made between Fakewood Bookkeeping LLC (\"Firm\") and Northwind Example Inc. (\"Client\").\nIt sets out the monthly bookkeeping services the Firm will provide to the Client.\nThis letter is effective as of March 3, 2026.\n1. Fees. The Client will pay a fee of $1,250 per month. Invoices are payable within 15 days of receipt.\n2. Term. This letter remains in effect for 12 months and then ends unless the parties agree in writing to extend it.\n3. Confidentiality. Each party will keep the other's confidential information private.",
+    "4. Governing law. This letter is governed by the laws of the State of Ohio.\n5. Client duties. The Client shall provide read-only access to its bank accounts.\nClient signature: ____________________ Date: __________\nFirm signature: ____________________ Date: __________"
+  ],
+  "expect": [
+    {
+      "category": "parties",
+      "status": "stated",
+      "value": "Northwind Example Inc.",
+      "page": 1
+    },
+    {
+      "category": "parties",
+      "status": "stated",
+      "value": "Fakewood Bookkeeping LLC",
+      "page": 1
+    },
+    {
+      "category": "type",
+      "status": "stated",
+      "value": "engagement letter",
+      "page": 1
+    },
+    {
+      "category": "type",
+      "status": "stated",
+      "label": "purpose",
+      "value": "bookkeeping",
+      "page": 1
+    },
+    {
+      "category": "dates",
+      "status": "stated",
+      "value": "March 3, 2026",
+      "page": 1
+    },
+    {
+      "category": "dates",
+      "status": "stated",
+      "value": "12 months",
+      "page": 1
+    },
+    {
+      "category": "payment",
+      "status": "stated",
+      "value": "$1,250",
+      "page": 1
+    },
+    {
+      "category": "payment",
+      "status": "stated",
+      "value": "15 days",
+      "page": 1
+    },
+    {
+      "category": "obligations",
+      "status": "stated",
+      "value": "read-only access",
+      "page": 2
+    },
+    {
+      "category": "obligations",
+      "status": "stated",
+      "value": "confidential",
+      "page": 1
+    },
+    {
+      "category": "obligations",
+      "status": "stated",
+      "value": "Ohio",
+      "page": 2
+    },
+    {
+      "category": "signatures",
+      "status": "stated",
+      "page": 2
+    },
+    {
+      "category": "gaps",
+      "status": "missing",
+      "label": "termination"
+    }
+  ],
+  "traps": [
+    {
+      "value": "$12,500",
+      "note": "never in the document"
+    },
+    {
+      "value": "New York",
+      "note": "governing law is Ohio"
+    }
+  ],
+  "fields": [
+    {
+      "id": "f1",
+      "type": "signature",
+      "role": "client",
+      "page": 1,
+      "x": 60,
+      "y": 600,
+      "w": 160,
+      "h": 24,
+      "label": "Client signature",
+      "required": true
+    },
+    {
+      "id": "f2",
+      "type": "signature",
+      "role": "firm",
+      "page": 1,
+      "x": 60,
+      "y": 560,
+      "w": 160,
+      "h": 24,
+      "label": "Firm signature",
+      "required": true
+    }
+  ]
+}

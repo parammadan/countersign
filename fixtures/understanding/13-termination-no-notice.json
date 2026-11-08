@@ -1,0 +1,80 @@
+{
+  "name": "13-termination-no-notice",
+  "description": "Termination at will with no notice period given.",
+  "title": "FREELANCE AGREEMENT",
+  "pages": [
+    "FREELANCE AGREEMENT\nThis Agreement is made as of October 5, 2026 between Alder Example Studio (\"Client\") and Rowan Sample (\"Freelancer\").\nThe Freelancer will design a logo for the Client.\nThe Client will pay the Freelancer $1,500 on delivery.\nEither party may terminate this Agreement at any time, with immediate effect.\nFreelancer signature: ____________________"
+  ],
+  "expect": [
+    {
+      "category": "parties",
+      "status": "stated",
+      "value": "Alder Example Studio",
+      "page": 1
+    },
+    {
+      "category": "parties",
+      "status": "stated",
+      "value": "Rowan Sample",
+      "page": 1
+    },
+    {
+      "category": "type",
+      "status": "stated",
+      "value": "freelance",
+      "page": 1
+    },
+    {
+      "category": "dates",
+      "status": "stated",
+      "value": "October 5, 2026",
+      "page": 1
+    },
+    {
+      "category": "payment",
+      "status": "stated",
+      "value": "$1,500",
+      "page": 1
+    },
+    {
+      "category": "obligations",
+      "status": "stated",
+      "value": "terminate",
+      "page": 1
+    },
+    {
+      "category": "dates",
+      "status": "missing",
+      "label": "notice"
+    },
+    {
+      "category": "signatures",
+      "status": "stated",
+      "page": 1
+    }
+  ],
+  "traps": [
+    {
+      "value": "30 days",
+      "note": "no notice period in the document"
+    },
+    {
+      "value": "14 days",
+      "note": "no notice period in the document"
+    }
+  ],
+  "fields": [
+    {
+      "id": "f1",
+      "type": "signature",
+      "role": "client",
+      "page": 0,
+      "x": 60,
+      "y": 600,
+      "w": 160,
+      "h": 24,
+      "label": "Freelancer signature",
+      "required": true
+    }
+  ]
+}

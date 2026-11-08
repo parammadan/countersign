@@ -1,0 +1,79 @@
+{
+  "name": "10-date-formats",
+  "description": "Ordinal date and an ambiguous numeric date (03/04/2026 is March 4 in the US and 3 April in the UK).",
+  "title": "TRANSLATION AGREEMENT",
+  "pages": [
+    "TRANSLATION AGREEMENT\nThis Agreement is made between Lintel Example Translations Ltd (\"Provider\") and Moss Sample GmbH (\"Client\").\nIt takes effect on 3rd March 2026.\nThe Services end on 03/04/2026.\nThe Client will pay GBP 900 for the Services.\nClient signature: ____________________"
+  ],
+  "expect": [
+    {
+      "category": "parties",
+      "status": "stated",
+      "value": "Lintel Example Translations Ltd",
+      "page": 1
+    },
+    {
+      "category": "parties",
+      "status": "stated",
+      "value": "Moss Sample GmbH",
+      "page": 1
+    },
+    {
+      "category": "type",
+      "status": "stated",
+      "value": "translation",
+      "page": 1
+    },
+    {
+      "category": "dates",
+      "status": "stated",
+      "value": "3rd March 2026",
+      "page": 1
+    },
+    {
+      "category": "dates",
+      "status": "ambiguous",
+      "label": "date",
+      "page": 1
+    },
+    {
+      "category": "payment",
+      "status": "stated",
+      "value": "900",
+      "page": 1
+    },
+    {
+      "category": "signatures",
+      "status": "stated",
+      "page": 1
+    }
+  ],
+  "traps": [
+    {
+      "value": "March 4, 2026",
+      "note": "picks the US reading of 03/04/2026"
+    },
+    {
+      "value": "April 3, 2026",
+      "note": "picks the UK reading of 03/04/2026"
+    },
+    {
+      "value": "4 March 2026",
+      "note": "picks the US reading"
+    }
+  ],
+  "fields": [
+    {
+      "id": "f1",
+      "type": "signature",
+      "role": "client",
+      "page": 0,
+      "x": 60,
+      "y": 600,
+      "w": 160,
+      "h": 24,
+      "label": "Client signature",
+      "required": true
+    }
+  ]
+}

@@ -1,0 +1,107 @@
+{
+  "name": "07-three-parties",
+  "description": "Three parties with three roles.",
+  "title": "ESCROW AGREEMENT",
+  "pages": [
+    "ESCROW AGREEMENT\nThis Agreement is made as of April 1, 2026 among Meadow Example LLC (\"Seller\"), Summit Sample Inc. (\"Buyer\") and Keystone Example Escrow Co. (\"Escrow Agent\").\nThe Buyer will deposit $18,000 with the Escrow Agent.\nThe Escrow Agent will release the funds to the Seller on closing, which is scheduled for June 30, 2026.\nSeller signature: ____________________\nBuyer signature: ____________________\nEscrow Agent signature: ____________________"
+  ],
+  "expect": [
+    {
+      "category": "parties",
+      "status": "stated",
+      "value": "Meadow Example LLC",
+      "page": 1
+    },
+    {
+      "category": "parties",
+      "status": "stated",
+      "value": "Summit Sample Inc.",
+      "page": 1
+    },
+    {
+      "category": "parties",
+      "status": "stated",
+      "value": "Keystone Example Escrow Co.",
+      "page": 1
+    },
+    {
+      "category": "type",
+      "status": "stated",
+      "value": "escrow agreement",
+      "page": 1
+    },
+    {
+      "category": "dates",
+      "status": "stated",
+      "value": "April 1, 2026",
+      "page": 1
+    },
+    {
+      "category": "dates",
+      "status": "stated",
+      "value": "June 30, 2026",
+      "page": 1
+    },
+    {
+      "category": "payment",
+      "status": "stated",
+      "value": "$18,000",
+      "page": 1
+    },
+    {
+      "category": "obligations",
+      "status": "stated",
+      "value": "release the funds",
+      "page": 1
+    },
+    {
+      "category": "signatures",
+      "status": "stated",
+      "page": 1
+    }
+  ],
+  "traps": [
+    {
+      "value": "$180,000",
+      "note": "amount is $18,000"
+    }
+  ],
+  "fields": [
+    {
+      "id": "f1",
+      "type": "signature",
+      "role": "firm",
+      "page": 0,
+      "x": 60,
+      "y": 600,
+      "w": 160,
+      "h": 24,
+      "label": "Seller signature",
+      "required": true
+    },
+    {
+      "id": "f2",
+      "type": "signature",
+      "role": "client",
+      "page": 0,
+      "x": 60,
+      "y": 560,
+      "w": 160,
+      "h": 24,
+      "label": "Buyer signature",
+      "required": true
+    },
+    {
+      "id": "f3",
+      "type": "signature",
+      "role": "client",
+      "page": 0,
+      "x": 60,
+      "y": 520,
+      "w": 160,
+      "h": 24,
+      "label": "Escrow Agent signature",
+      "required": true
+    }
+  ]
+}

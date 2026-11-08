@@ -1,0 +1,71 @@
+{
+  "name": "09-definitions-first",
+  "description": "Defined terms come before the parties are named.",
+  "title": "SERVICES AGREEMENT",
+  "pages": [
+    "SERVICES AGREEMENT\n1. Definitions. In this Agreement: \"Client\" means the customer named in the parties clause; \"Provider\" means the supplier named in the parties clause; \"Services\" means the website maintenance described in clause 3; \"Hourly Rate\" means $75 per hour.\n2. Parties. This Agreement is made on August 12, 2026 between Westbrook Example LLC (the Provider) and Ivy Sample Ltd (the Client).\n3. Services. The Provider shall maintain the Client's website.\n4. Fees. The Client shall pay the Hourly Rate for time worked.\nClient signature: ____________________"
+  ],
+  "expect": [
+    {
+      "category": "parties",
+      "status": "stated",
+      "value": "Westbrook Example LLC",
+      "page": 1
+    },
+    {
+      "category": "parties",
+      "status": "stated",
+      "value": "Ivy Sample Ltd",
+      "page": 1
+    },
+    {
+      "category": "type",
+      "status": "stated",
+      "value": "services agreement",
+      "page": 1
+    },
+    {
+      "category": "dates",
+      "status": "stated",
+      "value": "August 12, 2026",
+      "page": 1
+    },
+    {
+      "category": "payment",
+      "status": "stated",
+      "value": "$75",
+      "page": 1
+    },
+    {
+      "category": "obligations",
+      "status": "stated",
+      "value": "maintain the Client's website",
+      "page": 1
+    },
+    {
+      "category": "signatures",
+      "status": "stated",
+      "page": 1
+    }
+  ],
+  "traps": [
+    {
+      "value": "the customer named",
+      "note": "a definition is not a party name"
+    }
+  ],
+  "fields": [
+    {
+      "id": "f1",
+      "type": "signature",
+      "role": "client",
+      "page": 0,
+      "x": 60,
+      "y": 600,
+      "w": 160,
+      "h": 24,
+      "label": "Client signature",
+      "required": true
+    }
+  ]
+}

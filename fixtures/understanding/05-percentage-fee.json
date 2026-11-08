@@ -1,0 +1,75 @@
+{
+  "name": "05-percentage-fee",
+  "description": "Contingency fee expressed only as a percentage.",
+  "title": "CONTINGENCY FEE AGREEMENT",
+  "pages": [
+    "CONTINGENCY FEE AGREEMENT\nThis Agreement is made on July 7, 2026 between Quarry Example LLP (\"Firm\") and Elm Street Sample Ltd (\"Client\").\nThe Firm will pursue the Client's unpaid invoice claim against a former customer.\nThe Client will pay the Firm a success fee of 15% of any amount recovered. No fee is payable if nothing is recovered.\nThe success fee is due within 10 days of the Firm receiving the recovered funds.\nClient signature: ____________________ Date: __________"
+  ],
+  "expect": [
+    {
+      "category": "parties",
+      "status": "stated",
+      "value": "Elm Street Sample Ltd",
+      "page": 1
+    },
+    {
+      "category": "parties",
+      "status": "stated",
+      "value": "Quarry Example LLP",
+      "page": 1
+    },
+    {
+      "category": "type",
+      "status": "stated",
+      "value": "contingency fee",
+      "page": 1
+    },
+    {
+      "category": "dates",
+      "status": "stated",
+      "value": "July 7, 2026",
+      "page": 1
+    },
+    {
+      "category": "payment",
+      "status": "stated",
+      "value": "15%",
+      "page": 1
+    },
+    {
+      "category": "payment",
+      "status": "stated",
+      "value": "10 days",
+      "page": 1
+    },
+    {
+      "category": "signatures",
+      "status": "stated",
+      "page": 1
+    }
+  ],
+  "traps": [
+    {
+      "value": "flat fee",
+      "note": "fee is a percentage"
+    },
+    {
+      "value": "$15",
+      "note": "no dollar figure"
+    }
+  ],
+  "fields": [
+    {
+      "id": "f1",
+      "type": "signature",
+      "role": "client",
+      "page": 0,
+      "x": 60,
+      "y": 600,
+      "w": 160,
+      "h": 24,
+      "label": "Client signature",
+      "required": true
+    }
+  ]
+}
