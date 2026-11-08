@@ -10,7 +10,9 @@ import type { ModelProvider } from "@/lib/understand/model";
 import { containsFact, normalize as qn } from "@/evals/text.mjs";
 
 type R = { set: string; id: string; category: string; question: string; history: { question: string; answer: string }[]; pages: string[]; gold: { status: string; facts: (string | string[])[]; traps: string[] }; raw: unknown };
-const RESPONSES: R[] = JSON.parse(fs.readFileSync(path.join(process.cwd(), "fixtures/qa-real/responses.json"), "utf8"));
+// the deterministic checks alone (no verifier), on the 130 responses they were tuned on; sealed set 2 is in
+// test/qa-twopass.test.ts, which runs them as the first of two passes
+const RESPONSES: R[] = (JSON.parse(fs.readFileSync(path.join(process.cwd(), "fixtures/qa-real/responses.json"), "utf8")) as R[]).filter((r) => r.set !== "sealed-2");
 // still withheld, known and reported: an uptime figure inside a table of bands, a balance the user states as a fact,
 // an alternative calculation that uses a figure the agreement doesn't state, and other clauses' percentages listed
 // in a contrast (the rule that stops a figure being borrowed from another clause can't tell the contrast apart)

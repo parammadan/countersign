@@ -67,13 +67,25 @@ function budgeted(inner: ModelProvider, raw: { out?: unknown; costMicro?: number
   };
 }
 
-type Row = { id: string; category: string; question: string; shown: QaResult | null; raw: unknown; error?: string; costMicro: number; ms: number; budgetStopped?: boolean };
+type Call = { out?: unknown; costMicro?: number; ms?: number; budget?: boolean };
+/**
+ * One case. `raw` is the answering model's output; `verifyRaw` the verifier's (absent when the deterministic checks
+ * withheld the answer first, or the answer was a plain "not found" with nothing to check).
+ */
+type Row = { id: string; category: string; question: string; shown: QaResult | null; raw: unknown; verifyRaw?: unknown; error?: string; costMicro: number; ms: number; verifyCostMicro?: number; verifyMs?: number; budgetStopped?: boolean };
+
+// no automatic retries in a paid evaluation: a failed call is reported, never silently repeated
+const client = () => new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, maxRetries: 0, logLevel: "off", baseURL: "https://api.anthropic.com" });
+const VERIFY_MODEL = process.env.AI_VERIFY_MODEL || AI_MODEL_DEFAULT;
+const firstPassage = (r: ModelRequest) => /<passage id="(p[^"]+)" page="\d+">([^<]{12})/.exec(r.context ?? "");
 
 async function runCases(cases: Case[], concurrency = 4): Promise<Row[]> {
   const provider: ModelProvider = DRY
-    ? { name: "dry", model: AI_MODEL_DEFAULT, complete: async (r) => { r.onUsage?.({ inputTokens: 2000, outputTokens: 1500 }); return { status: "not_found", answer: "dry run", citations: [] }; } }
-    : // no automatic retries in a paid evaluation: a failed call is reported, never silently repeated
-      anthropicProvider({ model: process.env.AI_MODEL || AI_MODEL_DEFAULT, effort: "medium", client: new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, maxRetries: 0, logLevel: "off", baseURL: "https://api.anthropic.com" }) });
+    ? { name: "dry", model: AI_MODEL_DEFAULT, complete: async (r) => { r.onUsage?.({ inputTokens: 2000, outputTokens: 1500 }); const m = firstPassage(r); return { status: "partial", answer: "dry run.", citations: m ? [{ passage: m[1], quote: m[2] }] : [] }; } }
+    : anthropicProvider({ model: process.env.AI_MODEL || AI_MODEL_DEFAULT, effort: "medium", client: client() });
+  const verifier: ModelProvider = DRY
+    ? { name: "dry-verifier", model: VERIFY_MODEL, complete: async (r) => { r.onUsage?.({ inputTokens: 2500, outputTokens: 600 }); return { claims: [{ claim: "dry run.", kind: "context", material: false, verdict: "supported", evidence: [], reason: "" }] }; } }
+    : anthropicProvider({ model: VERIFY_MODEL, effort: (process.env.AI_VERIFY_EFFORT as "low" | "medium" | "high" | undefined) ?? "medium", client: client() });
   const rows: Row[] = new Array(cases.length);
   let next = 0;
   let stopped = false;
@@ -81,18 +93,26 @@ async function runCases(cases: Case[], concurrency = 4): Promise<Row[]> {
     while (next < cases.length) {
       const i = next++;
       const c = cases[i];
-      const raw: { out?: unknown; costMicro?: number; ms?: number; budget?: boolean } = {};
+      const raw: Call = {};
+      const ver: Call = {};
       if (stopped) { rows[i] = { id: c.id, category: c.category, question: c.question, shown: null, raw: null, error: "not run (budget)", costMicro: 0, ms: 0, budgetStopped: true }; continue; }
+      const base = () => ({ raw: raw.out ?? null, verifyRaw: ver.out, costMicro: (raw.costMicro ?? 0) + (ver.costMicro ?? 0), ms: (raw.ms ?? 0) + (ver.ms ?? 0), verifyCostMicro: ver.costMicro, verifyMs: ver.ms });
       try {
-        const shown = await answerWithModel(budgeted(provider, raw), c.question, linesFromText(c.documents[0].pages), QA_LIMITS, { history: c.history ?? [], title: c.documents[0].id });
-        rows[i] = { id: c.id, category: c.category, question: c.question, shown, raw: raw.out ?? null, costMicro: raw.costMicro ?? 0, ms: raw.ms ?? 0 };
+        const shown = await answerWithModel(budgeted(provider, raw), c.question, linesFromText(c.documents[0].pages), QA_LIMITS, { history: c.history ?? [], title: c.documents[0].id, verifier: budgeted(verifier, ver) });
+        // a verifier call refused by the budget isn't a verdict: the case counts as not run
+        if (ver.budget) {
+          stopped = true;
+          rows[i] = { id: c.id, category: c.category, question: c.question, shown: null, ...base(), error: "not run (budget)", budgetStopped: true };
+        } else rows[i] = { id: c.id, category: c.category, question: c.question, shown, ...base() };
       } catch (e) {
         // the app wraps provider errors in its own fixed message, so the budget stop is flagged on the side
         const budget = raw.budget === true;
         if (budget) stopped = true;
-        rows[i] = { id: c.id, category: c.category, question: c.question, shown: null, raw: raw.out ?? null, error: budget ? "not run (budget)" : (e as Error).constructor.name + ": " + String((e as Error).message).slice(0, 200), costMicro: raw.costMicro ?? 0, ms: raw.ms ?? 0, budgetStopped: budget };
+        rows[i] = { id: c.id, category: c.category, question: c.question, shown: null, ...base(), error: budget ? "not run (budget)" : (e as Error).constructor.name + ": " + String((e as Error).message).slice(0, 200), budgetStopped: budget };
       }
-      process.stdout.write(`  ${c.id}: ${rows[i].shown?.status ?? rows[i].error} ($${((rows[i].costMicro) / 1e6).toFixed(4)}, ${rows[i].ms} ms)\n`);
+      const r = rows[i];
+      const layer = r.shown ? (r.shown.verifiedBy ? " verified" : r.verifyMs !== undefined ? " verifier-withheld" : " no-verifier") : "";
+      process.stdout.write(`  ${c.id}: ${r.shown?.status ?? r.error}${layer} ($${(r.costMicro / 1e6).toFixed(4)}, ${r.ms} ms)\n`);
     }
   }
   await Promise.all(Array.from({ length: concurrency }, worker));
@@ -122,6 +142,13 @@ function report(name: string, cases: Case[], rows: Row[]) {
   };
   const withheld = ran.filter(([, r]) => r.shown?.warnings.some((w) => /isn't shown/.test(w)));
   const withheldButRight = withheld.filter(([c, r]) => rawOk(c, r));
+  // which pass decided: the deterministic checks (verifier never called), or the verifier
+  const verifierCalled = (r: Row) => r.verifyMs !== undefined;
+  const byChecks = withheld.filter(([, r]) => !verifierCalled(r));
+  const byVerifier = withheld.filter(([, r]) => verifierCalled(r));
+  const approved = ran.filter(([, r]) => !!r.shown?.verifiedBy);
+  const vLat = ran.map(([, r]) => r.verifyMs ?? 0).filter(Boolean).sort((a, b) => a - b);
+  const vCost = ran.reduce((n, [, r]) => n + (r.verifyCostMicro ?? 0), 0);
   const traps = ran.filter(([c]) => c.gold.traps.length);
   const trapLeaks = traps.filter(([c, r]) => r.shown && c.gold.traps.some((t) => qn(`${r.shown!.answer} ${r.shown!.explanation ?? ""}`).includes(qn(t))));
   const lat = ran.map(([, r]) => r.ms).filter(Boolean).sort((a, b) => a - b);
@@ -134,6 +161,7 @@ function report(name: string, cases: Case[], rows: Row[]) {
   const summary = {
     suite: name,
     model: process.env.AI_MODEL || AI_MODEL_DEFAULT,
+    verifyModel: VERIFY_MODEL,
     cases: cases.length,
     ran: ran.length,
     errors: ran.filter(([, r]) => r.error).length,
@@ -147,6 +175,24 @@ function report(name: string, cases: Case[], rows: Row[]) {
     shownNeedsReview: ran.filter(([c, r]) => r.shown && !r.shown.warnings.some((w) => /isn't shown/.test(w)) && !shownOk(c, r)).map(([c]) => c.id),
     shownWithDistractor: ran.filter(([c, r]) => r.shown && r.shown.status !== "not_found" && mentionsDistractor(c, r.shown.answer)).map(([c]) => c.id),
     withheldButModelRight: withheldButRight.map(([c]) => c.id),
+    // the three layers, reported separately
+    generator: { correct: ran.filter(([c, r]) => rawOk(c, r)).length, of: ran.length, wrongIds: ran.filter(([c, r]) => r.raw && !rawOk(c, r)).map(([c]) => c.id) },
+    deterministic: { withheld: byChecks.length, falseRejections: byChecks.filter(([c, r]) => rawOk(c, r)).map(([c]) => c.id), caught: byChecks.filter(([c, r]) => !rawOk(c, r)).map(([c]) => c.id) },
+    verifier: {
+      model: VERIFY_MODEL,
+      calls: ran.filter(([, r]) => verifierCalled(r)).length,
+      approved: approved.length,
+      withheld: byVerifier.length,
+      // withheld although the generator's answer matched the gold facts (each reviewed by hand)
+      falseRejections: byVerifier.filter(([c, r]) => rawOk(c, r)).map(([c]) => c.id),
+      // the generator's answer didn't match the gold facts and the verifier withheld it
+      caught: byVerifier.filter(([c, r]) => !rawOk(c, r)).map(([c]) => c.id),
+      // the generator's answer didn't match and the verifier approved it: each reviewed by hand
+      approvedButModelWrong: approved.filter(([c, r]) => !rawOk(c, r)).map(([c]) => c.id),
+      errors: ran.filter(([, r]) => verifierCalled(r) && !r.verifyRaw).map(([c]) => c.id),
+      costUsd: +(vCost / 1e6).toFixed(4),
+      latencyMs: { p50: vLat[Math.floor(vLat.length / 2)] ?? 0, p95: vLat[Math.floor(vLat.length * 0.95)] ?? 0, max: vLat.at(-1) ?? 0 },
+    },
     trapLeaks: `${trapLeaks.length}/${traps.length}`,
     byCategory: byCat,
     q13: scored.overall,

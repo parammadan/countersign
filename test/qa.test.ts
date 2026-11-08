@@ -3,7 +3,7 @@ import { linesFromText } from "@/lib/understand/text";
 import type { ModelProvider, ModelRequest } from "@/lib/understand/model";
 import { passages, retrieve } from "@/lib/qa/retrieve";
 import { answerFromPassages, answerWithModel, cleanQuestion, QA_LIMITS } from "@/lib/qa/answer";
-import { anthropicProvider, configuredProvider, toProviderSchema, AI_MODEL_DEFAULT } from "@/lib/ai/anthropic";
+import { anthropicProvider, configuredProvider, configuredVerifier, toProviderSchema, AI_MODEL_DEFAULT } from "@/lib/ai/anthropic";
 
 // Synthetic agreement; every name, company and amount is invented.
 const PAGES = linesFromText([
@@ -322,5 +322,15 @@ describe("the same fact written differently still counts as supported", () => {
     // true answers the first version withheld
     expect(unsupportedFacts("Under clause 5, either party may end it on 30 days' notice.", ["5. Termination. Either party may terminate this Agreement on 30 days' written notice."])).toEqual([]);
     expect(unsupportedFacts("The fee is $4,800 monthly.", ["The Client will pay a fee of $4,800 per month."])).toEqual([]);
+  });
+});
+
+describe("the verifier's configuration", () => {
+  it("is on only when the answering model is, and its model can be set separately", () => {
+    expect(configuredVerifier({})).toBeNull();
+    expect(configuredVerifier({ ANTHROPIC_API_KEY: "test-not-a-key" })).toBeNull();
+    expect(configuredVerifier({ AI_PROVIDER: "anthropic" })).toBeNull();
+    expect(configuredVerifier({ AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "test-not-a-key" })!.model).toBe(AI_MODEL_DEFAULT);
+    expect(configuredVerifier({ AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "test-not-a-key", AI_VERIFY_MODEL: "claude-sonnet-5-5" })!.model).toBe("claude-sonnet-5-5");
   });
 });

@@ -347,7 +347,19 @@ function subjectRole(sentence: string, names: Map<string, string>): string | nul
  */
 export function roleSwaps(answer: string, support: string[], definitions: string): string[] {
   const names = partyRoles(definitions);
-  const segs = support.flatMap(segments).map((t) => ({ t, a: [...anchors(t)].filter((w) => !isRate(w)), role: PASSIVE.test(normalize(t)) ? null : subjectRole(t, names) }));
+  // each clause of the cited text has its own subject ("...the Licensee shall pay only the shortfall and the
+  // Licensor shall bear the costs of the audit"); a clause without one keeps the sentence's ("The Tenant shall keep
+  // the Property clean and promptly report any needed repairs")
+  const segs = support.flatMap(segments).flatMap((sentence) => {
+    let carried: string | null = null;
+    return clauses(sentence).map((t) => {
+      const passive = PASSIVE.test(normalize(t));
+      const own = passive ? null : subjectRole(t, names);
+      const role = passive ? null : (own ?? (ROLE_RE.test(normalize(t)) ? null : carried));
+      if (own) carried = own;
+      return { t, a: [...anchors(t)].filter((w) => !isRate(w)), role };
+    });
+  });
   const out: string[] = [];
   for (const c of clauses(answer)) {
     if (PASSIVE.test(normalize(c))) continue;
@@ -461,7 +473,20 @@ const CONSTANTS: [string, RegExp][] = [
 const OPERAND = /([$£€])?\s*(\d[\d,]*(?:\.\d+)?)\s*(%)?/g;
 /** The result: a number first, optionally with a currency sign, a percent sign and a short label after it. */
 const RESULT = /^\s*[$£€]?\s*(-?\d[\d,]*(?:\.\d+)?)\s*%?([\s\S]*)$/;
-export type CalcCheck = { verified: Set<string>; operands: Set<string>; fromAgreement: Set<string>; failed: string[]; qualified: string[] };
+export type CalcCheck = {
+  verified: Set<string>;
+  operands: Set<string>;
+  fromAgreement: Set<string>;
+  /** every calculation that didn't check out: `wrong` plus `unproven` */
+  failed: string[];
+  /** the arithmetic itself is wrong: the expression doesn't give the stated result */
+  wrong: string[];
+  /** the arithmetic can't be confirmed from the agreement (an input of unknown origin, an off-topic figure, an unparsed expression) */
+  unproven: string[];
+  /** figures of unproven calculations whose arithmetic is right (inputs and result), for a second check to judge */
+  unprovenFigures: Set<string>;
+  qualified: string[];
+};
 /**
  * Re-does each calculation. It's FAILED (the answer is withheld) when the arithmetic is wrong or an input is a figure
  * that isn't in the agreement, the question, an earlier result or a calendar constant for a period the answer talks
@@ -478,6 +503,9 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
   const operandsOk = new Set<string>();
   const agreementInputs = new Set<string>();
   const failed: string[] = [];
+  const wrong: string[] = [];
+  const unproven: string[] = [];
+  const unprovenFigures = new Set<string>();
   const qualified: string[] = [];
   const cited = supportSegments(support);
   const everywhere = supportSegments(agreement);
@@ -530,19 +558,37 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
     // "1.5% * 12 = 18%": the parser gives 0.18; a result written as a percentage is compared as one
     const pct = m ? /^\s*[$£€]?\s*-?\d[\d,]*(?:\.\d+)?\s*%/.test(c.result) : false;
     const target = value !== null && pct ? value * 100 : value;
-    const ok = value !== null && target !== null && operands.length > 0 && operands.every(known) && Number.isFinite(stated) && Math.abs(target - stated) <= 0.005 + Math.abs(target) * 1e-9;
-    if (!ok) {
-      failed.push(`${c.expression} = ${c.result}`);
+    const label = `${c.expression} = ${c.result}`;
+    const arithmeticOk = value !== null && target !== null && Number.isFinite(stated) && Math.abs(target - stated) <= 0.005 + Math.abs(target) * 1e-9;
+    if (value !== null && target !== null && Number.isFinite(stated) && !arithmeticOk) {
+      failed.push(label);
+      wrong.push(label);
+      continue;
+    }
+    const unprove = (why: string, figures: boolean) => {
+      failed.push(why);
+      unproven.push(why);
+      if (figures && arithmeticOk) {
+        for (const o of operands) unprovenFigures.add(o.n);
+        unprovenFigures.add(String(Number(stated)));
+      }
+    };
+    if (!arithmeticOk || operands.length === 0) {
+      unprove(label, false);
+      continue;
+    }
+    if (!operands.every(known)) {
+      unprove(label, true);
       continue;
     }
     // a figure taken from a clause that isn't about the question makes the result a material claim it doesn't support
     if (offTopic) {
-      failed.push(`${c.expression} = ${c.result} (uses a figure from an unrelated clause)`);
+      unprove(`${label} (uses a figure from an unrelated clause)`, true);
       continue;
     }
     // a label may restate known figures ("9500 (monthly cap; 3800 is below it)"), not add new ones ("48 plus a $900 fee")
     if (labelFigures.some((n) => !verified.has(n) && !fromQuestion.has(n) && !has(everywhere, n, null).length)) {
-      failed.push(`${c.expression} = ${c.result}`);
+      unprove(label, false);
       continue;
     }
     for (const o of operands) {
@@ -555,7 +601,7 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
     verified.add(String(Number(value!.toFixed(2))));
     verified.add(String(Math.round(value!)));
   }
-  return { verified, operands: operandsOk, fromAgreement: agreementInputs, failed, qualified };
+  return { verified, operands: operandsOk, fromAgreement: agreementInputs, failed, wrong, unproven, unprovenFigures, qualified };
 }
 
 // ---- quotations inside the answer ----
@@ -642,7 +688,9 @@ const PREMISE = /\b(?:since|given that|claims?|claimed|says?|said|told|emailed|c
 /** A sentence that disputes the user's claim, and doesn't also agree with it. */
 const REFUTE_SENTENCE = { test: (x: string) => REFUTE_SENTENCE_RAW.test(x) && !AFFIRMS.test(x) && /\b(?:not|n['’]t|no such|cannot|set aside|disregard\w*|ignor\w*|unsupported)\b/i.test(x) };
 export function negationCheck(answer: string, support: string[], question: string, absenceFree: (s: string) => string, o: { lenient?: boolean } = {}): { block: string[]; qualify: string[] } {
-  const segs = support.flatMap(segments).map((t) => ({ t, a: anchors(t) }));
+  // each clause of the cited text has its own subject ("...the Licensee shall pay only the shortfall and the
+  // Licensor shall bear the costs of the audit")
+  const segs = support.flatMap(segments).flatMap(clauses).map((t) => ({ t, a: anchors(t) }));
   const all = normalize(support.join(" \n "));
   const block: string[] = [];
   const qualify: string[] = [];

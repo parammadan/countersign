@@ -12,6 +12,7 @@ import { AnalysisError, callModel, type ModelProvider, type Usage } from "../und
 import type { Finding } from "../understand/schema";
 import type { PageLines } from "../understand/text";
 import { checkCalculations, figuresInTrueComparisons, impliedCalculations, negationCheck, periodConflicts, stripRefutations, stemWord, misquoted, roleSwaps, scenarioFigures, stripPageRefs, unboundValues, unsupportedNegations, unsupportedPlaces, withoutAbsence, type Calculation } from "./check";
+import { decide, isMaterial, verifyAnswer, VerifyError, type Verdict, type VerifiedClaim } from "./verify";
 import { GROUP_OF, passages, QA_INSTRUCTION_RE, retrieve, terms, type Passage, type Scored } from "./retrieve";
 
 export const QA_STATUSES = ["answered", "partial", "not_found"] as const;
@@ -46,6 +47,13 @@ export type QaResult = {
   model?: string;
   warnings: string[];
   usage?: Usage;
+  /** the second check, when it ran: the model that judged the answer, each claim's verdict, and what it cost */
+  verifiedBy?: string;
+  /** each claim the verifier judged; `passages` are the ones its evidence quoted, verbatim */
+  checks?: { claim: string; verdict: Verdict; material: boolean; passages?: string[] }[];
+  verifyUsage?: Usage;
+  /** the verifier was called but reported no cost (timeout, network failure): its worst case stays booked */
+  verifyCostUnknown?: true;
 };
 /** An earlier turn of the same conversation: what was asked and what was shown. Context, never evidence. */
 export type Turn = { question: string; answer: string };
@@ -109,7 +117,7 @@ function unitPairs(prepped: string): Set<string> {
 }
 const MONTH_RE = /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/g;
 const PERIOD: [RegExp, string][] = [[/\b(hours?|hourly)\b/, "hour"], [/\b(days?|daily)\b/, "day"], [/\b(weeks?|weekly)\b/, "week"], [/\b(months?|monthly)\b/, "month"], [/\b(quarters?|quarterly)\b/, "quarter"], [/\b(years?|yearly|annual|annually|annum)\b/, "year"]];
-const COMMON_CAPS = new Set(["usd", "eur", "gbp", "net", "vat", "gst", "ach", "eft", "client", "provider", "consultant", "firm", "company", "customer", "supplier", "contractor", "vendor", "agency", "licensor", "licensee", "landlord", "tenant", "buyer", "seller", "employer", "employee", "party", "parties", "about", "around", "approximately", "roughly", "nearly", "almost", "exactly", "total", "altogether", "combined", "together", "see", "check", "read", "refer", "look", "how", "why", "whether", "whose", "whom", "would", "could", "should", "does", "do", "did", "is", "are", "was", "were", "can", "may", "might", "must", "will", "shall", "has", "have", "had", "instead", "likewise", "overall", "generally", "typically", "usually", "though", "given", "assuming", "thus", "hence", "besides", "additionally", "furthermore", "moreover", "nevertheless", "still", "yet", "just", "even", "again", "first", "second", "third", "finally", "next", "last", "lastly", "out", "up", "over", "some", "most", "many", "much", "more", "less", "such", "every", "other", "another", "nor", "whatever", "whoever", "clause", "section", "page", "paragraph", "schedule", "appendix", "exhibit", "article", "because", "since", "although", "therefore", "so", "according", "based", "not", "nothing", "none", "neither", "note", "here", "then", "otherwise", "the", "this", "that", "these", "those", "it", "its", "if", "either", "each", "both", "there", "a", "an", "i", "under", "no", "yes", "only", "all", "any", "after", "before", "when", "within", "from", "for", "per", "they", "their", "however", "also", "but", "and", "or", "in", "on", "at", "by", "to", "with", "as", "unless", "until", "once", "while", "where", "which", "who", "what", "you", "your", "we"]);
+const COMMON_CAPS = new Set(["usd", "eur", "gbp", "net", "vat", "gst", "ach", "eft", "client", "provider", "consultant", "firm", "company", "customer", "supplier", "contractor", "vendor", "agency", "licensor", "licensee", "landlord", "tenant", "buyer", "seller", "employer", "employee", "party", "parties", "about", "around", "approximately", "roughly", "nearly", "almost", "exactly", "total", "altogether", "combined", "together", "see", "check", "read", "refer", "look", "how", "why", "whether", "whose", "whom", "would", "could", "should", "does", "do", "did", "is", "are", "was", "were", "can", "may", "might", "must", "will", "shall", "has", "have", "had", "instead", "likewise", "overall", "generally", "typically", "usually", "though", "given", "assuming", "thus", "hence", "besides", "additionally", "furthermore", "moreover", "nevertheless", "still", "yet", "just", "even", "again", "first", "second", "third", "finally", "next", "last", "lastly", "out", "up", "over", "some", "most", "many", "much", "more", "less", "such", "every", "other", "another", "nor", "whatever", "whoever", "clause", "section", "page", "paragraph", "schedule", "appendix", "exhibit", "article", "because", "since", "although", "therefore", "so", "according", "based", "not", "nothing", "none", "neither", "note", "here", "then", "otherwise", "the", "this", "that", "these", "those", "it", "its", "if", "either", "each", "both", "there", "a", "an", "i", "under", "no", "yes", "only", "all", "any", "after", "before", "when", "within", "from", "for", "per", "they", "their", "however", "also", "but", "and", "or", "in", "on", "at", "by", "to", "with", "as", "unless", "until", "once", "while", "where", "which", "who", "what", "you", "your", "we", "he", "she", "him", "her", "his", "hers", "them", "our", "us", "my", "me"]);
 
 /**
  * Facts in an answer that none of its quotes contain: numbers, months, periods, names, negations. Numbers in
@@ -141,6 +149,8 @@ export function unsupportedFacts(answer: string, quotes: string[], allowed: Set<
   // the agreement's own "may" is the verb too, unless it's a date or capitalised mid-sentence
   const rawSupport = quotes.join(" \n ");
   const months = new Set([...hay.matchAll(MONTH_RE)].map((m) => m[1].slice(0, 3)).filter((m) => m !== "may" || /\bMay\s+\d|\d(?:st|nd|rd|th)?\s+(?:of\s+)?May\b|[a-z,]\s+May\b/.test(rawSupport)));
+  // a month the user named ("in June") may be repeated
+  for (const m of normalize(question).matchAll(MONTH_RE)) if (m[1] !== "may" || /\bMay\b/.test(question)) months.add(m[1].slice(0, 3));
   // "may" is a month only in a date ("May 1", "1 May 2027"); otherwise it's the verb
   const raw = answer.slice(0, MAX_FACT_TEXT);
   for (const m of a.matchAll(MONTH_RE)) {
@@ -159,6 +169,15 @@ export function unsupportedFacts(answer: string, quotes: string[], allowed: Set<
   // names: every capitalised word must be in the agreement (a clause heading or a party named elsewhere is
   // fine; who does what is checked separately), unless it's a common word that starts sentences
   const nameWords = o.names ? new Set(normalize(o.names.join(" \n ")).split(/[^\p{L}\p{N}]+/u)) : words;
+  const nameHay = o.names ? normalize(o.names.join(" \n ")) : hay;
+  let initials: Set<string> | null = null;
+  const acronyms = () => {
+    if (initials) return initials;
+    const ws = nameHay.split(/[^\p{L}\p{N}]+/u).filter((x) => x && !/^(?:of|and|the|for|to|in|on|&)$/.test(x));
+    initials = new Set<string>();
+    for (let i = 0; i < ws.length; i++) for (let n = 2; n <= 6 && i + n <= ws.length; n++) initials.add(ws.slice(i, i + n).map((x) => x[0]).join(""));
+    return initials;
+  };
   const text = answer.normalize("NFKC").slice(0, MAX_FACT_TEXT);
   for (const m of o.checkNames === false ? [] : text.matchAll(/\b([A-Z][\p{L}'’-]+)/gu)) {
     const w = normalize(m[1]).replace(/'s$|'$/, "");
@@ -169,6 +188,13 @@ export function unsupportedFacts(answer: string, quotes: string[], allowed: Set<
     const opensSentence = at === 0 || /[.!?:;\n]\s*["“(]?$/.test(text.slice(Math.max(0, at - 3), at));
     if (opensSentence && !/^[\p{L}'’-]+\s+(?:[A-Z]|(?:is|are|was|will be)\s+(?:the|a|an)\b|(?:will|shall|must|may|can|pays?|owes?|agrees?|provides?|delivers?|keeps?|bears?|receives?|retains?|owns?|has to|is required)\b)/u.test(text.slice(at, at + 60))) continue;
     // spelled-out numbers ("One month late") are checked as numbers, above
+    // an acronym of words in the text ("FAQ" for "Frequently Asked Questions")
+    if (/^[A-Z]{2,6}s?$/.test(m[1]) && acronyms().has(w.replace(/s$/, ""))) continue;
+    // a hyphenated name ("E-Verify", "KX-40", "Transit-L") is looked up whole
+    if (/-/.test(w)) {
+      const whole = w.replace(/-+$/, "");
+      if (new RegExp(`(?:^|[^\\p{L}\\p{N}])${whole.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}])`, "u").test(nameHay)) continue;
+    }
     const singular = w.replace(/(?:es|s)$/, "");
     if (!COMMON_CAPS.has(w) && !words.has(w) && !nameWords.has(w) && !nameWords.has(singular) && !nameWords.has(`${w}s`) && !new RegExp(`^(?:${NUMWORD})$`).test(w)) out.push(m[1]);
   }
@@ -177,6 +203,26 @@ export function unsupportedFacts(answer: string, quotes: string[], allowed: Set<
     return !(n.length === 1 && allowed.has(n[0]) && !new RegExp(MONTH_RE.source).test(normalize(t)));
   });
   return [...new Set([...out, ...tokens])];
+}
+/**
+ * Whether a figure is one arithmetic step from known figures: a + b, a - b, a x b, a / b, or a known figure times or
+ * divided by a small count (2 to 12). Such a figure isn't invented; whether the step is right is checked separately.
+ */
+export function derivableFrom(known: Iterable<string>): (n: string) => boolean {
+  const pool = [...new Set([...known].map(Number).filter((x) => Number.isFinite(x) && x !== 0))].slice(0, 200);
+  const small = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+  const hit = (target: number, x: number) => Math.abs(x - target) < 0.006 || Math.round(x) === target;
+  return (n: string) => {
+    const t = Number(n);
+    // zero is never a step from real figures (a - a); an answer that says $0 must find it in the text
+    if (!Number.isFinite(t) || t === 0) return false;
+    if (pool.includes(t)) return true;
+    for (const a of pool) {
+      if (small.some((k) => hit(t, a * k) || hit(t, a / k))) return true;
+      for (const b of pool) if (hit(t, a + b) || hit(t, a - b) || hit(t, a * b) || hit(t, a / b)) return true;
+    }
+    return false;
+  };
 }
 /** A passage addresses the question only if it scores at least this and mentions half the question's concepts. */
 export const MIN_SCORE = 1.0;
@@ -322,13 +368,15 @@ export async function answerWithModel(
   question: string,
   pages: PageLines[],
   limits: QaLimits = QA_LIMITS,
-  ctx: { history?: Turn[]; title?: string } = {},
+  ctx: { history?: Turn[]; title?: string; /** the second, independent check; without it the deterministic checks decide alone, strictly */ verifier?: ModelProvider | null } = {},
 ): Promise<QaResult> {
+  const verifier = ctx.verifier ?? null;
   const history = (ctx.history ?? []).slice(-limits.maxHistoryTurns);
   const { shown, excluded, whole } = modelContext(question, pages, limits, history);
   const warnings = ignoredWarning(question, excluded);
   if (!shown.length) return { status: "not_found", answer: NOT_FOUND, citations: [], mode: "model", model: provider.model, warnings };
   let usage: Usage | undefined;
+  let verifyUsage: Usage | undefined;
   let raw: unknown;
   try {
     raw = await callModel(
@@ -374,7 +422,7 @@ export async function answerWithModel(
   if (nonBinding) warnings.push("Text the agreement labels as a draft, unofficial or not binding was cited and isn't used as evidence.");
   if (bad) warnings.push(`${bad} citation${bad === 1 ? " didn't" : "s didn't"} match the agreement's text and ${bad === 1 ? "was" : "were"} removed.`);
 
-  const result = (status: QaStatus, answer: string, extra: Partial<QaResult> = {}): QaResult => ({ status, answer, citations, mode: "model", model: usage?.model ?? provider.model, warnings, usage, ...extra });
+  const result = (status: QaStatus, answer: string, extra: Partial<QaResult> = {}): QaResult => ({ status, answer, citations, mode: "model", model: usage?.model ?? provider.model, warnings, usage, ...(verifyUsage ? { verifyUsage } : {}), ...extra });
   const withheld = (why: string) => {
     warnings.push(why);
     return result(citations.length ? "partial" : "not_found", citations.length ? WITHHELD : NOT_FOUND);
@@ -426,12 +474,25 @@ export async function answerWithModel(
   // instructions in the output
   if (QA_INSTRUCTION_RE.test(normalize(`${said}\n${notes}`)) || /\b(?:system prompt|my instructions|previous instructions)\b/i.test(`${said}\n${notes}`)) return withheld("The answer read like instructions rather than an answer about the agreement, so it isn't shown.");
 
-  // arithmetic, listed or in the prose
+  // Precise checks block on their own. Imprecise ones (a figure's term, negation scope, wording, facts outside the
+  // cited passages, calculation inputs of unproven origin) block on their own only when there's no second check;
+  // with the verifier they become points it must look at closely, and it decides.
+  const hints: string[] = [];
+  const soft = (why: string): QaResult | null => {
+    if (!verifier) return withheld(why);
+    hints.push(why.replace(/, so it isn['’]t shown\.$/, "."));
+    return null;
+  };
+  let blocked: QaResult | null = null;
+
+  // arithmetic, listed or in the prose: wrong arithmetic always blocks
   let support = citations.map((c) => c.context ?? c.quote);
   const calcs = checkCalculations([...out.calculations, ...impliedCalculations(`${out.answer}\n${out.explanation}`)], support, question, `${out.answer} ${out.explanation}`, agreementText);
-  if (calcs.failed.length) return withheld(`A calculation in the answer didn't check out (${calcs.failed.slice(0, 2).join("; ")}), so it isn't shown.`);
+  const calcWhy = (xs: string[]) => `A calculation in the answer didn't check out (${xs.slice(0, 2).join("; ")}), so it isn't shown.`;
+  if (calcs.wrong.length) return withheld(calcWhy(calcs.wrong));
+  if (calcs.unproven.length && (blocked = soft(calcWhy(calcs.unproven)))) return blocked;
   qualify.push(...calcs.qualified);
-  const allowed = new Set([...fromQuestion, ...calcs.verified, ...calcs.operands]);
+  const allowed = new Set([...fromQuestion, ...calcs.verified, ...calcs.operands, ...(verifier ? calcs.unprovenFigures : [])]);
 
   if (aboutUnofficial.length) {
     const bad = unsupportedFacts(aboutUnofficial.join("\n"), [...unofficialText, ...agreementText], allowed, question, { negations: false, periods: false, names: [...agreementText, ...unofficialText] });
@@ -439,17 +500,46 @@ export async function answerWithModel(
   }
   if (notes) {
     const bad = [...unsupportedFacts(notes, agreementText, allowed, question, { negations: false, checkNames: false, periods: false }), ...unsupportedPlaces(notes, agreementText, question)];
-    if (bad.length) return withheld(`The answer's notes mentioned ${bad.slice(0, 6).join(", ")}, which the agreement doesn't contain, so it isn't shown.`);
+    // notes say what the agreement doesn't cover; with the verifier, a count or figure in one is judged there
+    if (bad.length && (blocked = soft(`The answer's notes mentioned ${bad.slice(0, 6).join(", ")}, which the agreement doesn't contain, so it isn't shown.`))) return blocked;
   }
 
-  // facts: figures, dates, names, places, contact details. Each must be in the cited text; one that's elsewhere in
-  // the agreement brings the passage it's in along as a source; one that's nowhere in it is blocked
+  // facts: figures, dates, names, places, contact details, quotations. One that's nowhere in the binding agreement
+  // (or the question, or a checked calculation) always blocks. One that's in the agreement but not in the cited text
+  // brings the passage it's in along as a source.
   const facts = (sup: string[]) => [...unsupportedFacts(said, sup, allowed, question, { negations: false, periods: false, names: agreementText }), ...unsupportedPlaces(said, sup, question)];
   const quotesOff = (sup: string[]) => misquoted(said, sup);
+  // a figure with a unit ("45 days") whose number is in the agreement is a question of which term it belongs to
+  const unitPair = (x: string) => /^\d[\d.]*(?: [a-z]+|%)$/.test(x);
+  // what the user said (this turn and earlier ones) may be repeated; whether it's used correctly is the verifier's call
+  const userText = [question, ...history.map((t) => t.question)].join("\n");
+  const nowhere = [
+    ...unsupportedFacts(said, [...agreementText, userText], allowed, question, { negations: false, periods: false, names: [...agreementText, ...unofficialText, userText] }),
+    ...unsupportedPlaces(said, agreementText, userText),
+    ...quotesOff([...agreementText, ...unofficialText]),
+  ];
+  // a month reached by reasoning ("hours rolled into March from February") and a figure one arithmetic step from the
+  // agreement's or the user's figures (2 packs x £6,500 = £13,000) go to the verifier; anything else is invented
+  const derivable = derivableFrom([...numbersIn([...agreementText, userText].join("\n")), ...allowed]);
+  const reasoned = (x: string) => new RegExp(`^(?:${MONTH_RE.source})$`, "i").test(x.trim()) || (numbersIn(x).size > 0 && /^[\d\s$£€.,%-]+$/.test(x.trim()) && [...numbersIn(x)].every(derivable));
+  // a figure found only in text that was set aside (planted instructions, text labelled not binding) is never
+  // reasoning: it was taken from there
+  const asideOnly = (() => {
+    const inAside = numbersIn(excluded.map((p) => p.text).join("\n"));
+    const inTerms = numbersIn([...agreementText, userText].join("\n"));
+    return (x: string) => [...numbersIn(x)].some((n) => inAside.has(n) && !inTerms.has(n) && !allowed.has(n));
+  })();
+  const nowhereHard = verifier ? nowhere.filter((x) => asideOnly(x) || (!unitPair(x) && !reasoned(x))) : [];
+  if (nowhereHard.length) {
+    const onlyUnofficial = unofficialText.length && facts([...agreementText, ...unofficialText]).length < facts(agreementText).length;
+    return withheld(onlyUnofficial
+      ? `The answer used ${nowhereHard.slice(0, 4).join(", ")} from text the agreement labels as not binding, so it isn't shown.`
+      : `The answer mentioned ${nowhereHard.slice(0, 6).join(", ")}, which the agreement doesn't contain, so it isn't shown.`);
+  }
   // the answer's own figures, names and quotes must be in the passages it cites; only the explanation may draw on
   // other clauses (which are then attached)
   const answerFacts = [...unsupportedFacts(answerChecked, support, allowed, question, { negations: false, periods: false, names: agreementText }), ...unsupportedPlaces(answerChecked, support, question), ...misquoted(answerChecked, support)];
-  if (answerFacts.length) return withheld(`The answer mentioned ${answerFacts.slice(0, 6).join(", ")}, which the passages it cites don't contain, so it isn't shown.`);
+  if (answerFacts.length && (blocked = soft(`The answer mentioned ${answerFacts.slice(0, 6).join(", ")}, which the passages it cites don't contain, so it isn't shown.`))) return blocked;
   let missing = [...facts(support), ...quotesOff(support)];
   if (missing.length) {
     const cited = new Set(citations.map((c) => c.passage));
@@ -474,9 +564,10 @@ export async function answerWithModel(
   }
   if (missing.length) {
     const onlyUnofficial = unofficialText.length && facts([...support, ...unofficialText]).length < facts(support).length;
-    return withheld(onlyUnofficial
+    const why = onlyUnofficial
       ? `The answer used ${missing.slice(0, 4).join(", ")} from text the agreement labels as not binding, so it isn't shown.`
-      : `The answer mentioned ${missing.slice(0, 6).join(", ")}, which the agreement doesn't contain, so it isn't shown.`);
+      : `The answer mentioned ${missing.slice(0, 6).join(", ")}, which the agreement doesn't contain, so it isn't shown.`;
+    if ((blocked = soft(why))) return blocked;
   }
 
   // figures on the wrong term, parties swapped, negations that contradict the clause they're about
@@ -485,7 +576,8 @@ export async function answerWithModel(
   // attached one is held to the stricter test (its clause must be about the answer's term)
   const quoted = citations.filter((c) => !c.added).map((c) => c.quote);
   const unbound = unboundValues(withoutAbsence(stripRefutations(said, question)), support, question, new Set([...calcs.verified, ...calcs.fromAgreement]), fromQuestion, scenario, agreementText, quoted);
-  if (unbound.length) return withheld(`The answer gave ${unbound.slice(0, 4).join(", ")} for something the agreement gives a different figure for, so it isn't shown.`);
+  const unboundWhy = `The answer gave ${unbound.slice(0, 4).join(", ")} for something the agreement gives a different figure for, so it isn't shown.`;
+  if (unbound.length && (blocked = soft(unboundWhy))) return blocked;
   // a figure the question asserts about a term ("The monthly fee is $5,000 - what's that per year?") can't be used
   // when the agreement gives that term a different figure
   const asserted = unboundValues(question, agreementText, "", scenario, fromQuestion, scenario, agreementText);
@@ -493,7 +585,8 @@ export async function answerWithModel(
   // a figure from the question that the answer only compares, correctly, with the agreement's isn't relied on
   for (const n of figuresInTrueComparisons(said, agreementText)) restated.delete(n);
   const used = asserted.map((x) => x.replace(/%$/, "")).filter((n) => calcs.operands.has(n) || restated.has(n));
-  if (used.length) return withheld(`The answer relied on ${used.join(", ")} from the question, but the agreement gives a different figure, so it isn't shown.`);
+  const usedWhy = `The answer relied on ${used.join(", ")} from the question, but the agreement gives a different figure, so it isn't shown.`;
+  if (used.length && (blocked = soft(usedWhy))) return blocked;
   const wrongPeriod = periodConflicts(said, support);
   if (wrongPeriod.length) return withheld(`The answer gave ${wrongPeriod.join(", ")}, but the agreement states that figure for a different period, so it isn't shown.`);
   const swapped = roleSwaps(said, support, shown.map((p) => p.text).join("\n"));
@@ -504,11 +597,14 @@ export async function answerWithModel(
     const neg = negationCheck(answerChecked, support, question, withoutAbsence);
     const negExpl = negationCheck(explanationChecked, support, question, withoutAbsence, { lenient: true });
     neg.block.push(...negExpl.block);
-    if (neg.block.length) return withheld(`The answer says ${neg.block.join(", ")} where the agreement's text doesn't, so it isn't shown.`);
+    const negWhy = `The answer says ${neg.block.join(", ")} where the agreement's text doesn't, so it isn't shown.`;
+    if (neg.block.length && (blocked = soft(negWhy))) return blocked;
     if (neg.qualify.length) qualify.push(`the answer's ${neg.qualify.join(", ")} isn't stated in so many words in the quoted text`);
   }
   // rate words ("per week", "quarterly") the agreement doesn't use
-  const nameless = said.replace(/(?<=[A-Za-z]\s)(?:Quarterly|Annual|Monthly|Weekly|Daily)\b/g, (w) => (agreementText.some((t) => t.includes(w)) ? " " : w));
+  // "at any time of day or night" isn't a rate
+  const idioms = (t: string) => t.replace(/\b(?:times? of (?:the )?day|day or night|night or day|day and night|night and day|day-to-day|any day)\b/gi, " ");
+  const nameless = idioms(said).replace(/(?<=[A-Za-z]\s)(?:Quarterly|Annual|Monthly|Weekly|Daily)\b/g, (w) => (agreementText.some((t) => t.includes(w)) ? " " : w));
   // a rate word must be one the agreement uses; a figure given for the wrong period is caught by periodConflicts
   const periods = unsupportedFacts(nameless, [...agreementText, question], allowed, question, { negations: false, checkNames: false }).filter((x) => x.startsWith("per "));
   // how often something is paid or happens is a term, not a detail
@@ -529,7 +625,8 @@ export async function answerWithModel(
   };
   // the answer itself must be mostly in the words of the text it cites (sources attached above count)
   // (the question's own words don't count: "unlimited liability" isn't supported because the user asked about liability)
-  if (!absent && words.length >= 2 && share(support) > LOOSE_WORDING) return withheld("Most of the answer's wording isn't in the text it cites, so it isn't shown.");
+  const loose = "Most of the answer's wording isn't in the text it cites, so it isn't shown.";
+  if (!absent && words.length >= 2 && share(support) > LOOSE_WORDING && (blocked = soft(loose))) return blocked;
   if (!absent && share(support) > 0.5) qualify.push("much of the answer is worded differently from the quoted text");
 
   const extra: Partial<QaResult> = {
@@ -539,7 +636,60 @@ export async function answerWithModel(
     verification: qualify.length ? "qualified" : "checked",
     unverified: qualify.length ? [...new Set(qualify)] : undefined,
   };
-  return result(out.status, out.answer, extra);
+  if (!verifier) return result(out.status, out.answer, extra);
+
+  // the second pass: an independent call judges every claim against the whole agreement
+  let verdicts: VerifiedClaim[];
+  try {
+    const v = await verifyAnswer(verifier, shown, ctx.title ?? "Agreement", {
+      question: question.slice(0, limits.maxQuestionChars),
+      history: history.map((t) => ({ question: t.question.slice(0, limits.maxQuestionChars), answer: t.answer.slice(0, 800) })),
+      answer: out.answer,
+      explanation: out.explanation,
+      calculations: out.calculations,
+      notStated: out.not_stated,
+      hints: [...new Set([...hints, ...qualify.map((q) => `${q[0].toUpperCase()}${q.slice(1)}.`)])],
+    });
+    verifyUsage = v.usage;
+    verdicts = v.claims;
+  } catch (e) {
+    if (!(e instanceof AnalysisError)) throw e;
+    verifyUsage = e instanceof VerifyError ? e.usage : undefined;
+    const r = withheld("The answer couldn't be verified just now, so it isn't shown.");
+    if (!verifyUsage) r.verifyCostUnknown = true;
+    return r;
+  }
+  const checks = verdicts.map((c) => ({ claim: c.claim, verdict: c.verdict, material: isMaterial(c), passages: c.evidenceChecked ? [...new Set(c.evidence.map((e) => e.passage))] : [] }));
+  const bindingIds = new Set(binding.filter((p) => !QA_INSTRUCTION_RE.test(normalize(p.text))).map((p) => p.id));
+  const decision = decide(verdicts, bindingIds);
+  // every figure the answer states must have been judged in some claim; one the verifier skipped isn't verified
+  const judged = numbersIn(stripPageRefs(verdicts.map((c) => c.claim).join("\n")));
+  const skipped = [...numbersIn(stripPageRefs([said, notes, ...out.calculations.map((c) => `${c.expression} ${c.result}`)].join("\n")))].filter((n) => !judged.has(n));
+  if (skipped.length) {
+    decision.reasons.push(`figures ${skipped.slice(0, 4).join(", ")} weren't checked`);
+    decision.failed.push("a figure wasn't checked");
+  }
+  if (decision.reasons.length || decision.show === "withheld") {
+    // what failed is described by kind and count; a claim that failed is never shown, even with a warning
+    const tally = [...new Set(decision.failed)].map((k) => `${decision.failed.filter((x) => x === k).length} ${k}`).join(", ");
+    return withheld(`The second check couldn't verify the answer against the agreement (${tally}), so it isn't shown.`);
+  }
+  // the clauses the verifier relied on are sources too, so the reader can check them
+  for (const c of verdicts) {
+    if (c.verdict !== "supported" || !c.evidenceChecked) continue;
+    for (const e of c.evidence) {
+      const p = byId.get(e.passage);
+      if (!p || !bindingIds.has(p.id) || citations.some((x) => x.passage === p.id)) continue;
+      citations.push({ page: p.page, passage: p.id, quote: e.quote.replace(/‹/g, "<").replace(/›/g, ">").trim(), context: p.text, added: true });
+    }
+  }
+  return result(out.status, out.answer, {
+    ...extra,
+    verification: decision.show === "qualified" ? "qualified" : "checked",
+    unverified: decision.qualifications.length ? decision.qualifications : undefined,
+    verifiedBy: verifyUsage?.model ?? verifier.model,
+    checks,
+  });
 }
 
 /** Everyday words an answer adds around the agreement's terms; they don't count as unsupported wording. */

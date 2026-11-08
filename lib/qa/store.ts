@@ -12,9 +12,10 @@ import { id, now, sha256 } from "../util";
 import { pageLines } from "../understand/text";
 import { latestAnalysis, MAX_PAGES } from "../understand/store";
 import { AnalysisError, type ModelProvider, type Usage } from "../understand/model";
-import { configuredProvider } from "../ai/anthropic";
+import { configuredProvider, configuredVerifier } from "../ai/anthropic";
 import { costMicroUsd, worstCaseMicroUsd } from "../ai/pricing";
 import { answerFromPassages, answerWithModel, cleanQuestion, QA_LIMITS, QaModelError, type QaResult, type Turn } from "./answer";
+import { VERIFY_LIMITS } from "./verify";
 
 export const QA_PER_USER_PER_MINUTE = 6;
 /** Questions per workspace per 24 hours: tight when a paid model answers, generous for passages only. */
@@ -47,6 +48,7 @@ export async function askQuestion(
   rawQuestion: string,
   provider: ModelProvider | null = configuredProvider(),
   threadId: string | null = null,
+  verifier: ModelProvider | null = provider ? configuredVerifier() : null,
 ): Promise<string> {
   const { template, version } = getTemplateVersion(wsId, versionId);
   const question = cleanQuestion(rawQuestion);
@@ -60,7 +62,9 @@ export async function askQuestion(
   // a model call is paid for before anyone knows its cost: the worst case (the longest agreement written to the
   // cache, every output token) is booked when the question is accepted, inside the same transaction as the budget
   // checks, and replaced by the real cost once the API reports it. A call that times out keeps the worst case.
-  const reserve = provider ? worstCaseMicroUsd(provider.model, Math.ceil(QA_LIMITS.maxDocumentChars / 3) + 4000, QA_LIMITS.maxOutputTokens) : 0;
+  // With the verifier, both calls are booked: it reads the agreement plus the answer.
+  const docTokens = Math.ceil(QA_LIMITS.maxDocumentChars / 3) + 4000;
+  const reserve = provider ? worstCaseMicroUsd(provider.model, docTokens, QA_LIMITS.maxOutputTokens) + (verifier ? worstCaseMicroUsd(verifier.model, docTokens + 4000, VERIFY_LIMITS.maxOutputTokens) : 0) : 0;
   const qid = id("qa_");
   const useModel = tx(() => {
     const since = new Date(Date.now() - 86400_000).toISOString();
@@ -84,10 +88,13 @@ export async function askQuestion(
     run("INSERT INTO qa_answers (id, workspace_id, template_version_id, question, result_json, mode, asked_by, created_at, thread_id, cost_microusd) VALUES (?,?,?,?,?,?,?,?,?,?)", qid, wsId, version.id, question, "{}", "pending", user.email, now(), threadId ?? qid, model ? reserve : 0);
     return model;
   });
-  if (!useModel) provider = null;
+  if (!useModel) {
+    provider = null;
+    verifier = null;
+  }
   const state = { called: false };
   try {
-    return await answerAndStore(qid, wsId, template.name, version, user, question, provider, threadId ? history(wsId, threadId, qid) : [], notes, reserve, state);
+    return await answerAndStore(qid, wsId, template.name, version, user, question, provider, verifier, threadId ? history(wsId, threadId, qid) : [], notes, reserve, state);
   } catch (e) {
     // no model call was made: nothing was spent, so the reservation is released
     run("UPDATE qa_answers SET mode = 'failed', cost_microusd = CASE WHEN ? THEN cost_microusd ELSE 0 END WHERE id = ?", state.called ? 1 : 0, qid);
@@ -119,6 +126,7 @@ async function answerAndStore(
   user: { id: string; email: string },
   question: string,
   provider: ModelProvider | null,
+  verifier: ModelProvider | null,
   turns: Turn[],
   notes: string[],
   reserve: number,
@@ -141,12 +149,14 @@ async function answerAndStore(
   let result: QaResult;
   let mode = "passages";
   let billed: Usage | undefined;
+  let verifyBilled: Usage | undefined;
   if (provider) {
     state.called = true;
     try {
-      result = await answerWithModel(provider, question, pages, QA_LIMITS, { history: turns, title: templateName });
+      result = await answerWithModel(provider, question, pages, QA_LIMITS, { history: turns, title: templateName, verifier });
       mode = "model";
       billed = result.usage;
+      verifyBilled = result.verifyUsage;
     } catch (e) {
       if (!(e instanceof AnalysisError)) throw e;
       // the assistant failed (timeout, refusal, bad output): show the relevant passages instead, and keep what
@@ -161,15 +171,20 @@ async function answerAndStore(
 
   // the real cost when the API reported it; otherwise (timeout, network failure) the call may still have been
   // billed, so the worst case stays booked
-  const cost = provider ? (billed ? costMicroUsd(provider.model, billed) : reserve) : 0;
+  // both calls: the verifier's real cost when reported; a verifier call that failed without a report (timeout,
+  // network) keeps its worst case booked, like the first
+  const verifyWorst = verifier ? worstCaseMicroUsd(verifier.model, Math.ceil(QA_LIMITS.maxDocumentChars / 3) + 8000, VERIFY_LIMITS.maxOutputTokens) : 0;
+  const verifyCost = verifier && verifyBilled ? costMicroUsd(verifier.model, verifyBilled) : verifier && result.verifyCostUnknown ? verifyWorst : 0;
+  const cost = provider ? (billed ? costMicroUsd(provider.model, billed) + verifyCost : reserve) : 0;
+  const tokens = (k: keyof Usage) => (Number(billed?.[k]) || 0) + (Number(verifyBilled?.[k]) || 0);
   run(
     "UPDATE qa_answers SET result_json = ?, mode = ?, input_tokens = ?, output_tokens = ?, cache_write_tokens = ?, cache_read_tokens = ?, cost_microusd = ? WHERE id = ? AND workspace_id = ?",
     JSON.stringify(result),
     mode,
-    billed?.inputTokens ?? 0,
-    billed?.outputTokens ?? 0,
-    billed?.cacheWriteTokens ?? 0,
-    billed?.cacheReadTokens ?? 0,
+    tokens("inputTokens"),
+    tokens("outputTokens"),
+    tokens("cacheWriteTokens"),
+    tokens("cacheReadTokens"),
     cost,
     qid,
     wsId,
@@ -180,9 +195,10 @@ async function answerAndStore(
     mode,
     status: result.status,
     follow_up: turns.length > 0,
-    input_tokens: billed?.inputTokens ?? 0,
-    output_tokens: billed?.outputTokens ?? 0,
-    cache_read_tokens: billed?.cacheReadTokens ?? 0,
+    verified: !!result.checks,
+    input_tokens: tokens("inputTokens"),
+    output_tokens: tokens("outputTokens"),
+    cache_read_tokens: tokens("cacheReadTokens"),
     cost_usd: cost / 1e6,
   });
   return qid;

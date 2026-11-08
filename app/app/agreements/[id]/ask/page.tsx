@@ -46,17 +46,21 @@ function locate(context: string, quote: string): { at: number; len: number } | n
   return m ? { at: m.index, len: m[0].length } : null;
 }
 
+type Group = { context?: string; quotes: string[]; page: number; added: boolean; passages: string[] };
+const FIGURE = "scroll-mt-24 rounded-r target:bg-brand-soft/40 target:ring-2 target:ring-brand/40";
+const Num = ({ n }: { n: number }) => <span className="mr-1 font-mono text-[11px] text-muted">[{n}]</span>;
+
 /** One passage with every quote taken from it highlighted, so a fragment can't hide its context. */
-function Source({ context, quotes, page, added }: { context?: string; quotes: string[]; page: number; added?: boolean }) {
-  if (added && context) return (
-    <figure className="border-l-2 border-dashed border-line-strong pl-3 text-[13px] leading-relaxed text-ink-2">
-      <blockquote className="break-words">“{context}”</blockquote>
+function Source({ id, n, context, quotes, page, added }: Group & { id: string; n: number }) {
+  if (added && context && !quotes.length) return (
+    <figure id={id} className={`${FIGURE} border-l-2 border-dashed border-line-strong pl-3 text-[13px] leading-relaxed text-ink-2`}>
+      <blockquote className="break-words"><Num n={n} />“{context}”</blockquote>
       <figcaption className="mt-0.5 text-xs text-muted">Page {page} · added by AgreementOS: the answer also relies on this passage</figcaption>
     </figure>
   );
   if (!context) return (
-    <figure className="border-l-2 border-brand/40 pl-3 text-[13px] leading-relaxed text-ink-2">
-      <blockquote className="break-words">{quotes.map((q, i) => <span key={i}>“<mark className="rounded bg-brand-soft px-0.5 text-ink">{q}</mark>” </span>)}</blockquote>
+    <figure id={id} className={`${FIGURE} border-l-2 border-brand/40 pl-3 text-[13px] leading-relaxed text-ink-2`}>
+      <blockquote className="break-words"><Num n={n} />{quotes.map((q, i) => <span key={i}>“<mark className="rounded bg-brand-soft px-0.5 text-ink">{q}</mark>” </span>)}</blockquote>
       <figcaption className="mt-0.5 text-xs text-muted">Page {page}</figcaption>
     </figure>
   );
@@ -73,32 +77,38 @@ function Source({ context, quotes, page, added }: { context?: string; quotes: st
   parts.push({ text: context.slice(pos), mark: false });
   const missing = quotes.filter((q) => locate(context, q) === null);
   return (
-    <figure className="border-l-2 border-brand/40 pl-3 text-[13px] leading-relaxed text-ink-2">
+    <figure id={id} className={`${FIGURE} border-l-2 ${added ? "border-dashed border-line-strong" : "border-brand/40"} pl-3 text-[13px] leading-relaxed text-ink-2`}>
       <blockquote className="break-words">
-        “{parts.map((p, i) => (p.mark ? <mark key={i} className="rounded bg-brand-soft px-0.5 text-ink">{p.text}</mark> : <span key={i}>{p.text}</span>))}”
+        <Num n={n} />“{parts.map((p, i) => (p.mark ? <mark key={i} className="rounded bg-brand-soft px-0.5 text-ink">{p.text}</mark> : <span key={i}>{p.text}</span>))}”
         {missing.map((q, i) => <span key={i} className="mt-1 block">Quoted: “{q}”</span>)}
       </blockquote>
-      <figcaption className="mt-0.5 text-xs text-muted">Page {page}</figcaption>
+      <figcaption className="mt-0.5 text-xs text-muted">Page {page}{added ? " · added by AgreementOS: the answer also relies on this passage" : ""}</figcaption>
     </figure>
   );
 }
 
-function sources(cs: Citation[]) {
-  const by = new Map<string, { context?: string; quotes: string[]; page: number; added: boolean }>();
+function sources(cs: Citation[]): Group[] {
+  const by = new Map<string, Group>();
   cs.forEach((c, i) => {
     const key = c.context ? `${c.page}:${c.context}` : `q${i}`;
-    const g = by.get(key) ?? { context: c.context, quotes: [], page: c.page, added: !!c.added };
-    // an attached passage is shown whole, without highlighting all of it
-    if (!c.added) g.quotes.push(c.quote);
+    const g = by.get(key) ?? { context: c.context, quotes: [], page: c.page, added: !!c.added, passages: [] };
+    // an attached passage is shown whole, highlighting only a quote the verifier relied on
+    if (!c.added || (c.context && c.quote !== c.context)) g.quotes.push(c.quote);
+    if (c.passage && !g.passages.includes(c.passage)) g.passages.push(c.passage);
     g.added = g.added && !!c.added;
     by.set(key, g);
   });
   return [...by.values()];
 }
 
+const VERDICT_LABEL = { supported: "Supported", contradicted: "Contradicted", unsupported: "Not in the agreement", uncertain: "Uncertain" } as const;
+
 function Turn({ h }: { h: QaEntry }) {
   const r = h.result;
   const ai = r.mode === "model";
+  const groups = sources(r.citations);
+  const sourceOf = (passage: string) => groups.findIndex((g) => g.passages.includes(passage));
+  const how = !ai ? "Quoted passages, no AI" : r.verifiedBy ? `Claude (${r.model}) · ${r.verification === "qualified" ? "partly verified" : "verified claim by claim"} by a second check (${r.verifiedBy})` : `Claude (${r.model}) · ${r.verification === "qualified" ? "partly verified against the agreement" : "checked against the agreement"}`;
   return (
     <li id={h.id} className="scroll-mt-20">
       <div className="mb-2 flex justify-end">
@@ -111,7 +121,7 @@ function Turn({ h }: { h: QaEntry }) {
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
           <Badge tone={TONE[r.status]}>{QA_STATUS_LABEL[r.status]}</Badge>
           {ai && r.verification === "qualified" && <Badge tone="warn">Partly verified</Badge>}
-          <span>{ai ? `Claude (${r.model}) · ${r.verification === "qualified" ? "partly verified against the agreement" : "checked against the agreement"}` : "Quoted passages, no AI"}</span>
+          <span>{how}</span>
         </div>
         {ai && r.verification === "qualified" && r.unverified && r.unverified.length > 0 && (
           <div className="mt-2" role="note" aria-label="Verification notice">
@@ -152,10 +162,28 @@ function Turn({ h }: { h: QaEntry }) {
             {r.warnings.map((w, i) => <li key={i} className="flex gap-1.5"><Icon name="alert" size={14} className="mt-[1px] shrink-0" aria-hidden />{w}</li>)}
           </ul>
         )}
-        {r.citations.length > 0 && (
+        {ai && r.checks && r.checks.length > 0 && (
+          <details className="mt-3 text-sm">
+            <summary className="cursor-pointer text-xs font-semibold tracking-wide text-muted uppercase">What was checked ({r.checks.length} {r.checks.length === 1 ? "claim" : "claims"})</summary>
+            <ul className="mt-1.5 space-y-1" aria-label="Claims checked against the agreement">
+              {r.checks.map((c, i) => (
+                <li key={i} className="flex gap-1.5 text-ink-2">
+                  <Icon name={c.verdict === "supported" ? "check" : "alert"} size={14} className={`mt-[3px] shrink-0 ${c.verdict === "supported" ? "text-ok" : "text-warn"}`} aria-hidden />
+                  <span className="break-words">
+                    {c.claim} <span className="text-xs text-muted">({VERDICT_LABEL[c.verdict]}{c.material ? "" : ", minor"})</span>
+                    {(c.passages ?? []).map((p) => sourceOf(p)).filter((n, j, all) => n >= 0 && all.indexOf(n) === j).map((n) => (
+                      <a key={n} href={`#${h.id}-s${n + 1}`} className="ml-1 font-mono text-[11px] text-brand underline underline-offset-2" aria-label={`Source ${n + 1}, page ${groups[n].page}`}>[{n + 1}]</a>
+                    ))}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+        {groups.length > 0 && (
           <section className="mt-3 border-t border-line pt-3" aria-label="Sources">
             <h3 className="mb-1.5 text-xs font-semibold tracking-wide text-muted uppercase">Sources in the agreement</h3>
-            <div className="space-y-2">{sources(r.citations).map((g, i) => <Source key={i} {...g} />)}</div>
+            <div className="space-y-2">{groups.map((g, i) => <Source key={i} id={`${h.id}-s${i + 1}`} n={i + 1} {...g} />)}</div>
           </section>
         )}
       </article>
@@ -190,7 +218,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
       <h1 className="text-2xl font-semibold tracking-tight">Ask about this agreement</h1>
       <p className="mt-1 mb-4 max-w-3xl text-sm text-muted">
         {ai ? (
-          <>Claude reads <span className="text-ink-2">{version.source_name}</span> and answers in plain English, quoting the passages it relies on. Before you see an answer, AgreementOS checks it against the agreement: quotes must be exact, every figure, date and name must come from the quoted text and belong to the term it&apos;s attached to, and any arithmetic is re-done. Answers that fail are withheld. Still read the sources; this isn&apos;t legal advice.</>
+          <>Claude reads <span className="text-ink-2">{version.source_name}</span> and answers in plain English, quoting the passages it relies on. Before you see an answer, it&apos;s checked twice. AgreementOS checks it against the agreement: quotes must be exact, figures, dates and names must be in it, parties must do what the agreement gives them, and arithmetic is re-done. Then a second, independent Claude check judges every claim against the whole agreement, with quoted evidence. Answers with a claim that isn&apos;t supported are withheld, and the passages are shown instead. Still read the sources; this isn&apos;t legal advice.</>
         ) : (
           <>Answers come only from <span className="text-ink-2">{version.source_name}</span> and quote the passages they rely on, with page numbers. AI answers are off on this server: you&apos;ll see the most relevant passages, quoted as written. Not legal advice.</>
         )}{" "}

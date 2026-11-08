@@ -18,6 +18,16 @@ export function configuredProvider(env: Record<string, string | undefined> = pro
 }
 
 /**
+ * The second, independent check of every answer (lib/qa/verify.ts). Same switch and key as the answering model;
+ * its model and effort can be set separately (AI_VERIFY_MODEL, AI_VERIFY_EFFORT). Never on without the first.
+ */
+export function configuredVerifier(env: Record<string, string | undefined> = process.env): ModelProvider | null {
+  if (!configuredProvider(env)) return null;
+  const effort = (["low", "medium", "high"] as const).find((e) => e === env.AI_VERIFY_EFFORT) ?? "medium";
+  return anthropicProvider({ apiKey: env.ANTHROPIC_API_KEY, model: env.AI_VERIFY_MODEL || AI_MODEL_DEFAULT, effort, baseURL: testEndpoint(env) });
+}
+
+/**
  * Browser tests run the app against a local stand-in for the API (scripted answers, no cost). Only a loopback
  * http address is accepted, only with AI_TEST_ENDPOINT set explicitly, and only with the test key.
  */

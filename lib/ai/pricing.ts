@@ -8,6 +8,8 @@ const PRICES: Record<string, Price> = {
   "claude-opus-5-5": { input: 4, output: 20, cacheWrite: 5, cacheRead: 0.2 },
   // a server-side fallback can answer on Opus 5 ($5 / $25)
   "claude-opus-5": { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
+  // possible verifier models (AI_VERIFY_MODEL); Haiku's price is for prompts up to 100K tokens
+  "claude-sonnet-5-5": { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.2 },
 };
 /** Unknown models are costed at the most expensive configured price, so a budget is never undercounted. */
 const FALLBACK: Price = Object.values(PRICES).reduce((a, p) => ({ input: Math.max(a.input, p.input), output: Math.max(a.output, p.output), cacheWrite: Math.max(a.cacheWrite, p.cacheWrite), cacheRead: Math.max(a.cacheRead, p.cacheRead) }));

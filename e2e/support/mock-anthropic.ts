@@ -4,27 +4,36 @@
 import http from "node:http";
 
 export const MOCK_PORT = 2527;
-export type Seen = { apiKey: string | undefined; beta: string | undefined; cached: boolean; question: string; earlierTurns: boolean };
+export type Seen = { apiKey: string | undefined; beta: string | undefined; cached: boolean; question: string; earlierTurns: boolean; /** the second call, which judges an answer */ verifier: boolean };
 
 type Passage = { id: string; text: string };
 export type Script = (q: string, ps: Passage[], seen: Seen) => { status?: number; answer?: Record<string, unknown> };
+/** The verifier's verdicts for one answer (its text, as the app sent it); by default every sentence is supported. */
+export type VerifyScript = (answer: string, ps: Passage[], q: string) => { status?: number; answer?: Record<string, unknown> };
+const approve: VerifyScript = (answer, ps) => {
+  const p = ps.find((x) => !/binding="false"/.test(x.text)) ?? ps[0];
+  return { answer: { claims: answer.split(/(?<=[.!?])\s+/).filter((c) => c.trim().length > 2).map((claim) => ({ claim, kind: "term", material: true, verdict: "supported", evidence: [{ passage: p.id, quote: p.text.slice(0, 40) }], reason: "" })) } };
+};
 
-export function startMockAnthropic(script: Script): Promise<{ close: () => Promise<void>; seen: Seen[] }> {
+export function startMockAnthropic(script: Script, verify: VerifyScript = approve): Promise<{ close: () => Promise<void>; seen: Seen[] }> {
   const seen: Seen[] = [];
   const server = http.createServer((req, res) => {
     let body = "";
     req.on("data", (c) => (body += c));
     req.on("end", () => {
-      const b = JSON.parse(body || "{}") as { messages?: { content: string | { type: string; text: string; cache_control?: unknown }[] }[] };
+      const b = JSON.parse(body || "{}") as { system?: string; messages?: { content: string | { type: string; text: string; cache_control?: unknown }[] }[] };
+      const isVerifier = /independently verify/.test(String(b.system ?? ""));
       const content = b.messages?.[0]?.content;
       const blocks = typeof content === "string" ? [{ type: "text", text: content }] : content ?? [];
       const text = blocks.map((x) => x.text).join("\n");
       const ps = [...text.matchAll(/<passage id="([^"]+)" page="\d+">([\s\S]*?)<\/passage>/g)].map((m) => ({ id: m[1], text: m[2] }));
       // the new question is the last one; earlier turns carry their own <question> tags
       const question = [...text.matchAll(/<question>([\s\S]*?)<\/question>/g)].at(-1)?.[1] ?? "";
-      const s: Seen = { apiKey: (req.headers["x-api-key"] as string | undefined) ?? (req.headers.authorization?.replace(/^Bearer\s+/i, "") || undefined), beta: req.headers["anthropic-beta"] as string | undefined, cached: blocks.some((x) => typeof x === "object" && "cache_control" in x && !!x.cache_control), question, earlierTurns: text.includes("<earlier_turns>") };
+      const s: Seen = { apiKey: (req.headers["x-api-key"] as string | undefined) ?? (req.headers.authorization?.replace(/^Bearer\s+/i, "") || undefined), beta: req.headers["anthropic-beta"] as string | undefined, cached: blocks.some((x) => typeof x === "object" && "cache_control" in x && !!x.cache_control), question, earlierTurns: text.includes("<earlier_turns>"), verifier: isVerifier };
       seen.push(s);
-      const out = script(question, ps, s);
+      // the answer under review: its text, explanation, calculations and notes (the app writes ‹ › for < >)
+      const reviewed = (/<answer>([\s\S]*)<\/answer>/.exec(text)?.[1] ?? "").replace(/<\/?(?:text|explanation|calculation|note)>/g, " ").replace(/\s+/g, " ").trim();
+      const out = isVerifier ? verify(reviewed, ps, question) : script(question, ps, s);
       if (out.status && out.status !== 200) {
         res.writeHead(out.status, { "content-type": "application/json" });
         res.end(JSON.stringify({ type: "error", error: { type: "api_error", message: "mock failure" } }));
