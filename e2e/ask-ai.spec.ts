@@ -56,6 +56,8 @@ const script: Script = (q, ps, seen) => {
 const verify: VerifyScript = (text, ps) => {
   const ev = (s: string) => { const p = find(ps, s); return [{ passage: p.id, quote: s }]; };
   const claims = text.split(/(?<=[.!?])\s+/).filter((c) => c.trim().length > 2).map((claim) => {
+    // a note ("How invoices are to be sent.") is judged as what the agreement doesn't say, as the real verifier does
+    if (/^(?:How|Any|Whether|What|When)\b/.test(claim) && claim.length < 60) return { span: claim, claim: `The agreement does not say ${claim.charAt(0).toLowerCase()}${claim.slice(1)}`, kind: "absence", material: true, verdict: "supported", evidence: [], reason: "" };
     if (/\$1 per month/.test(claim)) return { span: claim, claim, kind: "term", material: true, verdict: "contradicted", evidence: ev("fee of $4,800 per month"), reason: "Clause 1 sets $4,800." };
     if (/without written notice/.test(claim)) return { span: claim, claim, kind: "term", material: true, verdict: "contradicted", evidence: ev("on 30 days' written notice"), reason: "Clause 3 requires 30 days' written notice." };
     // a careful verifier quotes every clause whose figures the claim states
