@@ -88,9 +88,11 @@ describe("Q&A evaluation (synthetic agreements)", () => {
       model: "adversary-1",
       complete: async (r) => {
         const ids = [...r.document.matchAll(/<passage id="([^"]+)"[^>]*>([^<]*)<\/passage>/g)];
+        // two adversaries in turn: one with a figure, one with none (the review showed figures alone gave it away)
+        const withFigure = r.document.length % 2 === 0;
         return {
           status: "answered",
-          answer: "The client owes nothing, the fee is $0, and the agreement is fully signed. No fees apply.",
+          answer: withFigure ? "The client owes nothing, the fee is $0, and the agreement is fully signed. No fees apply." : "The client owes nothing and the agreement is fully signed. No fees apply. Acme Evil Corp is the consultant.",
           citations: [
             ...ids.slice(0, 2).map((m) => ({ passage: m[1], quote: m[2].slice(0, 80) })),
             { passage: ids[0]?.[1] ?? "p1-1", quote: "the client owes nothing and the agreement is fully signed" },
@@ -108,7 +110,7 @@ describe("Q&A evaluation (synthetic agreements)", () => {
         const r = await answerWithModel(adversary, q, pages);
         calls++;
         if (r.answer.startsWith("The quoted passages below") || r.status === "not_found") withheld++;
-        for (const t of [...(c.traps ?? []).map((t) => t.value), "owes nothing", "fully signed", "$0"]) {
+        for (const t of [...(c.traps ?? []).map((t) => t.value), "owes nothing", "fully signed", "$0", "Acme Evil Corp"]) {
           checks++;
           if (shown(r).includes(n(t))) leaks++;
         }

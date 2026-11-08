@@ -5,7 +5,7 @@
 //     against those passages, amounts and dates in the answer must appear in its citations, and an answer with
 //     no valid citation is withheld. The agreement and the question are data; nothing in them reaches a tool.
 import { z } from "zod";
-import { MIN_QUOTE, normalize, unsupportedTokens } from "../understand/evidence";
+import { INSTRUCTION_RE, MIN_QUOTE, normalize, unsupportedTokens, unsupportedWords } from "../understand/evidence";
 import { AnalysisError, callModel, type ModelProvider } from "../understand/model";
 import type { Finding } from "../understand/schema";
 import type { PageLines } from "../understand/text";
@@ -21,7 +21,8 @@ export const QaOutputSchema = z.object({
   citations: z.array(z.object({ passage: z.string().regex(/^p\d{1,4}-\d{1,4}$/), quote: z.string().trim().min(3).max(300) })).max(6),
 });
 
-export type Citation = { page: number; passage: string; quote: string };
+/** `context` is the whole passage the quote comes from, shown with the quote highlighted, so a fragment can't hide what surrounds it. */
+export type Citation = { page: number; passage: string; quote: string; context?: string };
 export type QaResult = {
   status: QaStatus;
   answer: string;
@@ -32,7 +33,74 @@ export type QaResult = {
   usage?: { inputTokens: number; outputTokens: number };
 };
 
-export const QA_LIMITS = { maxQuestionChars: 500, k: 6, maxContextChars: 6000, maxOutputTokens: 8000, timeoutMs: 45_000 };
+// output: an answer of up to 1,200 characters and six 300-character quotes, plus room for thinking
+export const QA_LIMITS = { maxQuestionChars: 500, k: 6, maxContextChars: 6000, maxOutputTokens: 4000, timeoutMs: 45_000 };
+
+/** A model call that failed after it was billed: carries the token counts so they can be recorded. */
+export class QaModelError extends AnalysisError {
+  constructor(message: string, readonly usage?: { inputTokens: number; outputTokens: number }) {
+    super(message);
+  }
+}
+
+// ---- what an answer may state: only facts its quotes contain ----
+const ONES = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"];
+const TENS = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
+const SCALE: Record<string, number> = { hundred: 100, thousand: 1000, million: 1_000_000 };
+const NUMWORD = [...ONES, ...TENS.filter(Boolean), ...Object.keys(SCALE)].join("|");
+const NUMWORD_RUN = new RegExp(`\\b(?:${NUMWORD})(?:[\\s-]+(?:and[\\s-]+)?(?:${NUMWORD}))*\\b`, "g");
+/** Spelled-out numbers as digits ("two thousand five hundred" -> "2500"), on normalized text. */
+function digitize(s: string): string {
+  return s.replace(NUMWORD_RUN, (run) => {
+    let cur = 0, total = 0;
+    for (const w of run.split(/[\s-]+/)) {
+      if (ONES.includes(w)) cur += ONES.indexOf(w);
+      else if (TENS.includes(w)) cur += TENS.indexOf(w) * 10;
+      else if (w === "hundred") cur = (cur || 1) * 100;
+      else if (SCALE[w]) { total += (cur || 1) * SCALE[w]; cur = 0; }
+    }
+    return String(total + cur);
+  });
+}
+// clause numbers ("2. Term.", "4.1 Fees") aren't facts: "within 2 days" can't lean on clause 2
+const stripClauses = (raw: string) => raw.replace(/(^|\s)\d{1,3}(?:\.\d{1,3})*\.?(?=\s+[A-Z(“"])/g, "$1");
+const prep = (raw: string) => digitize(normalize(stripClauses(raw)));
+/** Every number in a text, digits or words ("thirty (30)", "two thousand five hundred", "3rd"), as canonical strings. */
+export function numbersIn(text: string): Set<string> {
+  return new Set([...prep(text).matchAll(/\d[\d,]*(?:\.\d+)?/g)].map((m) => String(Number(m[0].replace(/,/g, "")))));
+}
+const UNIT = /(\d[\d,]*(?:\.\d+)?)\s*\)?\s*(?:\(\s*\d[\d,]*\s*\)\s*)?(?:(?:business|calendar|working)\s+)?(hours?|days?|weeks?|months?|years?|%|percent|per\s?cent)/g;
+/** Number-with-unit pairs ("20 days", "thirty (30) days", "5%"), so "2 days" can't lean on "February 2". */
+function unitPairs(text: string): Set<string> {
+  return new Set([...prep(text).matchAll(UNIT)].map((m) => `${Number(m[1].replace(/,/g, ""))}:${m[2].startsWith("p") || m[2] === "%" ? "%" : m[2].replace(/s$/, "")}`));
+}
+const MONTH_RE = /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/g;
+const PERIOD: [RegExp, string][] = [[/\b(hours?|hourly)\b/, "hour"], [/\b(days?|daily)\b/, "day"], [/\b(weeks?|weekly)\b/, "week"], [/\b(months?|monthly)\b/, "month"], [/\b(quarters?|quarterly)\b/, "quarter"], [/\b(years?|yearly|annual|annually|annum)\b/, "year"]];
+const NEGATION = /\b(no|not|nothing|never|none|neither|nor|without|waived?|free|zero)\b/g;
+const COMMON_CAPS = new Set(["the", "this", "that", "these", "it", "if", "either", "each", "both", "there", "a", "an", "i", "under", "no", "yes"]);
+
+/** Facts in an answer that none of its quotes contain: numbers, months, periods, names, negations. */
+export function unsupportedFacts(answer: string, quotes: string[]): string[] {
+  const hay = normalize(quotes.join(" \n "));
+  const out: string[] = [];
+  const support = quotes.join(" \n ");
+  const have = numbersIn(support);
+  for (const n of numbersIn(answer)) if (!have.has(n)) out.push(n);
+  const pairs = unitPairs(support);
+  for (const pr of unitPairs(answer)) if (!pairs.has(pr)) out.push(pr.replace(":", " ").replace(" %", "%"));
+  const a = normalize(answer);
+  const months = new Set([...hay.matchAll(MONTH_RE)].map((m) => m[1].slice(0, 3)));
+  for (const m of a.matchAll(MONTH_RE)) if (!months.has(m[1].slice(0, 3))) out.push(m[1]);
+  for (const [re, name] of PERIOD) if (re.test(a) && !re.test(hay)) out.push(`per ${name}`);
+  const words = new Set(hay.split(/[^\p{L}\p{N}]+/u));
+  for (const m of a.matchAll(NEGATION)) if (!words.has(m[1])) out.push(`"${m[1]}"`);
+  // names: capitalised words that don't start a sentence must be in the quotes
+  for (const m of answer.normalize("NFKC").matchAll(/(?<![.!?:]\s|^)\b([A-Z][\p{L}'’-]+)/gu)) {
+    const w = normalize(m[1]);
+    if (!COMMON_CAPS.has(w) && !words.has(w)) out.push(m[1]);
+  }
+  return [...new Set([...out, ...unsupportedTokens(answer, quotes.map(prep))])];
+}
 /** A passage addresses the question only if it scores at least this and mentions half the question's concepts. */
 export const MIN_SCORE = 1.0;
 export const MIN_COVERAGE = 0.5;
@@ -101,7 +169,7 @@ export function answerFromPassages(question: string, pages: PageLines[], o: { fi
     lines.push(`${f.label}: ${f.value ?? "stated"} (page ${f.evidence[0].page})`);
     citations.push({ page: f.evidence[0].page, passage: "", quote: f.evidence[0].quote });
   }
-  for (const p of top) if (!citations.some((c) => c.page === p.page && normalize(p.text).includes(normalize(c.quote)))) citations.push({ page: p.page, passage: p.id, quote: p.text.slice(0, 300) });
+  for (const p of top) if (!citations.some((c) => c.page === p.page && normalize(p.text).includes(normalize(c.quote)))) citations.push({ page: p.page, passage: p.id, quote: p.text.slice(0, 300), context: p.text });
   const answer = lines.length
     ? `From the agreement:\n${lines.join("\n")}\nThe quoted passages below are what it says; read them to confirm.`
     : "These passages look most relevant. They're quoted as written; read them to answer your question.";
@@ -122,24 +190,39 @@ export async function answerWithModel(provider: ModelProvider, question: string,
     "</passages>",
   ].join("\n");
   let usage: QaResult["usage"];
-  const raw = await callModel(provider, { system: QA_SYSTEM, document, schema: QA_JSON_SCHEMA, maxOutputTokens: limits.maxOutputTokens, onUsage: (u) => (usage = u) }, limits.timeoutMs);
+  let raw: unknown;
+  try {
+    raw = await callModel(provider, { system: QA_SYSTEM, document, schema: QA_JSON_SCHEMA, maxOutputTokens: limits.maxOutputTokens, onUsage: (u) => (usage = u) }, limits.timeoutMs);
+  } catch (e) {
+    if (e instanceof AnalysisError) throw new QaModelError(e.message, usage);
+    throw e;
+  }
   const parsed = QaOutputSchema.safeParse(raw);
-  if (!parsed.success) throw new AnalysisError("The answer came back in an unexpected format and was discarded.");
+  if (!parsed.success) throw new QaModelError("The answer came back in an unexpected format and was discarded.", usage);
   const out = parsed.data;
 
   // every citation must quote a passage we actually gave it, verbatim (after normalising spacing and quotes)
   const byId = new Map(top.map((p) => [p.id, p]));
   const citations: Citation[] = [];
   let bad = 0;
+  let planted = 0;
   for (const c of out.citations) {
     const p = byId.get(c.passage);
-    const q = normalize(c.quote);
+    // the model saw ‹ › where the agreement has < >; match against the agreement's own characters
+    const quote = c.quote.replace(/‹/g, "<").replace(/›/g, ">").trim();
+    const q = normalize(quote);
     if (!p || q.length < MIN_QUOTE || !normalize(p.text).includes(q)) {
       bad++;
       continue;
     }
-    if (!citations.some((x) => x.passage === p.id && normalize(x.quote) === q)) citations.push({ page: p.page, passage: p.id, quote: c.quote.trim() });
+    // the whole passage is judged, not just the fragment quoted from it
+    if (INSTRUCTION_RE.test(normalize(p.text))) {
+      planted++;
+      continue;
+    }
+    if (!citations.some((x) => x.passage === p.id && normalize(x.quote) === q)) citations.push({ page: p.page, passage: p.id, quote, context: p.text });
   }
+  if (planted) warnings.push("A passage that reads like an instruction to software was cited and has been removed.");
   if (bad) warnings.push(`${bad} citation${bad === 1 ? " didn't" : "s didn't"} match the agreement's text and ${bad === 1 ? "was" : "were"} removed.`);
 
   const result = (status: QaStatus, answer: string): QaResult => ({ status, answer, citations, mode: "model", model: provider.model, warnings, usage });
@@ -148,10 +231,19 @@ export async function answerWithModel(provider: ModelProvider, question: string,
     warnings.push("The answer couldn't be tied to the agreement's text, so it isn't shown.");
     return result("not_found", NOT_FOUND);
   }
-  const unsupported = unsupportedTokens(out.answer, citations.map((c) => c.quote));
+  // facts must come from the cited passages (whole passages, which the user sees too)
+  const support = citations.map((c) => c.context ?? c.quote);
+  const unsupported = unsupportedFacts(out.answer, support);
   if (unsupported.length) {
-    warnings.push(`The answer mentioned ${unsupported.join(", ")}, which the quoted text doesn't contain, so it isn't shown.`);
+    warnings.push(`The answer mentioned ${unsupported.slice(0, 6).join(", ")}, which the quoted text doesn't contain, so it isn't shown.`);
     return result("partial", "The quoted passages below are what the agreement says about this. Read them to answer your question.");
+  }
+  // wording beyond the passages isn't a fact, but say so
+  const words = normalize(out.answer).split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 2);
+  const extra = unsupportedWords(out.answer, support);
+  if (words.length && extra.length / words.length > 0.5) {
+    warnings.push("Much of this answer isn't worded as in the quoted text. Check it against the quotes.");
+    return result("partial", out.answer);
   }
   return result(out.status, out.answer);
 }
