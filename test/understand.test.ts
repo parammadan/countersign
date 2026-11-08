@@ -335,4 +335,12 @@ describe("independent review probes", () => {
     ] }) }, pages);
     expect(r.findings.map((f) => f.status)).toEqual(["inferred", "inferred", "stated"]);
   });
+
+  it("b: on a signature page AgreementOS added, 'Client signs' says so instead of claiming the document supports it", () => {
+    const pages = linesFromText(["Agreement text with no signature line."]);
+    const fields = [{ id: "f1", type: "signature" as const, role: "client" as const, page: 1, x: 0, y: 0, w: 100, h: 20, label: "Client signature", required: true }];
+    const f = byLabel(run(pages, { fields, addedSignaturePage: true }).findings, "Client signs")[0];
+    expect(f.status).toBe("inferred");
+    expect(f.note).toMatch(/signature page AgreementOS added/);
+  });
 });

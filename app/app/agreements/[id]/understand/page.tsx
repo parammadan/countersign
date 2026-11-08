@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/auth";
 import { AppError } from "@/lib/files";
 import { getTemplateVersion } from "@/lib/templates";
-import { latestAnalysis } from "@/lib/understand/store";
+import { latestAnalysis, MAX_PAGES, RUNS_PER_HOUR } from "@/lib/understand/store";
 import { CATEGORIES, CATEGORY_LABEL, STATUS_LABEL, type Finding, type Status } from "@/lib/understand/schema";
 import { analyzeAgreementAction, reviewFindingAction } from "@/app/understand-actions";
 import { Badge, Button, Card, EmptyState, Notice, timeAgo } from "@/components/ui";
@@ -12,11 +12,11 @@ import { fmtDay } from "@/lib/time";
 export const metadata = { title: "What this agreement says" };
 
 const ERRORS: Record<string, string> = {
-  limit: "This workspace has read 20 agreements in the last hour, the current limit. Try again later.",
+  limit: `This workspace has read ${RUNS_PER_HOUR} agreements in the last hour, the current limit. Try again later.`,
   notfound: "That suggestion no longer exists. The agreement may have been read again.",
   changed: "The stored agreement doesn't match its fingerprint, so it wasn't read.",
   stale: "This agreement was read again since you opened the page. Review the new results.",
-  toolong: "This agreement has more than 200 pages, more than we read.",
+  toolong: `This agreement has more than ${MAX_PAGES} pages, more than we read.`,
   unreadable: "We couldn't read the text in this agreement.",
   failed: "Something went wrong. Try again.",
 };

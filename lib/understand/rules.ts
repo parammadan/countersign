@@ -242,7 +242,10 @@ export function analyzeWithRules(input: RulesInput): AnalyzerOutput {
   };
   const cs = sigs("client");
   const fs = sigs("firm");
-  if (cs.length) add("signatures", "Client signs", "stated", describe(cs), caption(cs), "From the signature fields found in the document. Check them in the field editor.");
+  if (cs.length && input.addedSignaturePage)
+    // the client signs on the page AgreementOS added, which isn't part of the agreement text that was read
+    add("signatures", "Client signs", "inferred", describe(cs), [], "On the signature page AgreementOS added at the end: the uploaded agreement has no place for the client to sign.");
+  else if (cs.length) add("signatures", "Client signs", "stated", describe(cs), caption(cs), "From the signature fields found in the document. Check them in the field editor.");
   else add("signatures", "Client signs", "missing", null, [], "No place for the client to sign was found.");
   if (fs.length) add("signatures", "Your firm signs", "stated", describe(fs), caption(fs));
   else add("signatures", "Your firm signs", "missing", null, [], "No signature line for your firm was found.");
