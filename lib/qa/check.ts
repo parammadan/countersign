@@ -19,12 +19,16 @@ const ABSENCE: RegExp[] = [
   /\b(?:is|are|was|were|isn't|aren't)?\s*not\s+(?:specified|stated|defined|set out|given|mentioned|addressed|explained|identified|quantified)\b/g,
   /\b(?:not|never)\s+(?:say|state|specify|mention)\b/g,
   /\bnothing\s+(?:in\s+(?:the|this|it)\s*(?:agreement|contract|document)?\s*)?(?:requires|says|states|specifies|mentions|addresses|prevents|covers)\b/g,
+  // the subject left implicit: "...but doesn't define 'promptly'", "it doesn't give a day count"
+  /\b(?:does|do|did)\s*(?:n['’]?t|not)\s+(?:\w+\s+)?(?:specify|state|say|mention|set|set out|give|define|address|include|provide|cover|explain|indicate|identify|list|name|contain|quantify|explain)\b/g,
+  /\b(?:isn['’]?t|is not|aren['’]?t|are not)\s+(?:specified|stated|defined|set out|given|mentioned|addressed|explained|identified|quantified|covered)\b/g,
+  /\bno\s+(?:clause|section|provision|term|mention|reference|definition)\b/g,
 ];
 /** The answer with statements about what the document doesn't say removed (for the negation check only). */
 export function withoutAbsence(answer: string): string {
   let a = normalize(answer.slice(0, MAX_TEXT));
   // the phrase and what it says is missing ("doesn't state a number of days"), up to the next punctuation
-  for (const re of ABSENCE) a = a.replace(new RegExp(`${re.source}(?:\\s+[a-z'-]+){0,5}`, "g"), " ");
+  for (const re of ABSENCE) a = a.replace(new RegExp(`${re.source}(?:(?!\\s+but\\b)[^.;!?\\n])*`, "g"), " ");
   return a;
 }
 

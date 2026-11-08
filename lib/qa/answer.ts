@@ -65,7 +65,9 @@ const NUMWORD = [...ONES, ...TENS.filter(Boolean), ...Object.keys(SCALE)].join("
 const NUMWORD_RUN = new RegExp(`\\b(?:${NUMWORD})(?:[\\s-]+(?:and[\\s-]+)?(?:${NUMWORD}))*\\b`, "g");
 /** Spelled-out numbers as digits ("two thousand five hundred" -> "2500"), on normalized text. */
 function digitize(s: string): string {
-  return s.replace(NUMWORD_RUN, (run) => {
+  return s.replace(NUMWORD_RUN, (run, at: number) => {
+    // "one" alone is usually a pronoun ("the one who", "no one"); it's the number 1 only before a unit
+    if (run === "one" && !/^\s*(?:\(1\)\s*)?(?:hour|day|week|month|year|percent|dollar|business|calendar|working|invoice|time|instal)/.test(s.slice(at + 3, at + 30))) return run;
     let cur = 0, total = 0;
     for (const w of run.split(/[\s-]+/)) {
       if (ONES.includes(w)) cur += ONES.indexOf(w);
@@ -109,7 +111,7 @@ const COMMON_CAPS = new Set(["client", "provider", "consultant", "firm", "compan
  * what the document doesn't say ("doesn't specify a deadline") don't count as negations, and page references are
  * the app's own metadata.
  */
-export function unsupportedFacts(answer: string, quotes: string[], allowed: Set<string> = new Set(), question = "", o: { negations?: boolean; names?: string[] } = {}): string[] {
+export function unsupportedFacts(answer: string, quotes: string[], allowed: Set<string> = new Set(), question = "", o: { negations?: boolean; names?: string[]; checkNames?: boolean; periods?: boolean } = {}): string[] {
   answer = stripPageRefs(answer);
   const hay = normalize(quotes.join(" \n "));
   const out: string[] = [];
@@ -123,7 +125,7 @@ export function unsupportedFacts(answer: string, quotes: string[], allowed: Set<
   for (const m of a.matchAll(MONTH_RE)) if (!months.has(m[1].slice(0, 3))) out.push(m[1]);
   const asserted = withoutAbsence(answer);
   const asked = normalize(question);
-  for (const [re, name] of PERIOD) if (re.test(asserted) && !re.test(hay) && !re.test(asked)) out.push(`per ${name}`);
+  if (o.periods !== false) for (const [re, name] of PERIOD) if (re.test(asserted) && !re.test(hay) && !re.test(asked)) out.push(`per ${name}`);
   const words = new Set(hay.split(/[^\p{L}\p{N}]+/u));
   // contact details and links must be copied too
   for (const m of a.matchAll(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+|\b(?:https?:\/\/|www\.)\S+/g)) if (!hay.includes(m[0].replace(/[.,;:)]+$/, ""))) out.push(m[0]);
@@ -132,8 +134,15 @@ export function unsupportedFacts(answer: string, quotes: string[], allowed: Set<
   // names: every capitalised word must be in the agreement (a clause heading or a party named elsewhere is
   // fine; who does what is checked separately), unless it's a common word that starts sentences
   const nameWords = o.names ? new Set(normalize(o.names.join(" \n ")).split(/[^\p{L}\p{N}]+/u)) : words;
-  for (const m of answer.normalize("NFKC").slice(0, MAX_FACT_TEXT).matchAll(/\b([A-Z][\p{L}'’-]+)/gu)) {
+  const text = answer.normalize("NFKC").slice(0, MAX_FACT_TEXT);
+  for (const m of o.checkNames === false ? [] : text.matchAll(/\b([A-Z][\p{L}'’-]+)/gu)) {
     const w = normalize(m[1]).replace(/'s$/, "");
+    // a capitalised word opening a sentence is an ordinary word ("Separately,", "Insurance coverage") unless it
+    // reads as a name: followed by another capitalised word, or as the subject of "is the/a ..." ("Zenith is the
+    // consultant")
+    const at = m.index ?? 0;
+    const opensSentence = at === 0 || /[.!?:;\n]\s*["“(]?$/.test(text.slice(Math.max(0, at - 3), at));
+    if (opensSentence && !/^[\p{L}'’-]+\s+(?:[A-Z]|(?:is|are|was|will be)\s+(?:the|a|an)\b)/u.test(text.slice(at, at + 60))) continue;
     // spelled-out numbers ("One month late") are checked as numbers, above
     if (!COMMON_CAPS.has(w) && !words.has(w) && !nameWords.has(w) && !new RegExp(`^(?:${NUMWORD})$`).test(w)) out.push(m[1]);
   }
@@ -365,16 +374,29 @@ export async function answerWithModel(
   // so they may name terms from anywhere in it, but nothing that isn't in it. A "not found" answer is itself a
   // statement of absence, so its negations ("no arbitration clause") aren't matched against the cited text.
   const absent = out.status === "not_found";
-  const said = [out.answer, out.explanation].filter(Boolean).join("\n");
   const agreementText = shown.filter((p) => p.binding !== false).map((p) => p.text);
+  const unofficialText = shown.filter((p) => p.binding === false).map((p) => p.text);
+  // sentences of the explanation that discuss text the agreement labels as not binding ("The $450 figure is from
+  // a marketing summary labeled not binding") are checked against that text, then shown as they are
+  const NB_WORDS = /\b(?:not binding|non-binding|nonbinding|unofficial|superseded|draft|marketing|faq)\b/i;
+  const explSentences = out.explanation.split(/(?<=[.!?])\s+/);
+  const aboutUnofficial = unofficialText.length ? explSentences.filter((t) => NB_WORDS.test(t)) : [];
+  if (aboutUnofficial.length) {
+    const bad = unsupportedFacts(aboutUnofficial.join("\n"), [...unofficialText, ...support], allowed, question, { negations: false, names: [...agreementText, ...unofficialText] });
+    if (bad.length) return withheld(`The answer mentioned ${bad.slice(0, 6).join(", ")}, which the agreement doesn't contain, so it isn't shown.`);
+  }
+  const explanationChecked = explSentences.filter((t) => !aboutUnofficial.includes(t)).join(" ");
+  const said = [out.answer, explanationChecked].filter(Boolean).join("\n");
   const notes = out.not_stated.join("\n");
-  const unsupportedNotes = notes ? [...unsupportedFacts(notes, agreementText, allowed, question, { negations: false }), ...unsupportedPlaces(notes, agreementText, question)] : [];
+  const unsupportedNotes = notes ? [...unsupportedFacts(notes, agreementText, allowed, question, { negations: false, checkNames: false, periods: false }), ...unsupportedPlaces(notes, agreementText, question)] : [];
   if (unsupportedNotes.length) return withheld(`The answer's notes mentioned ${unsupportedNotes.slice(0, 6).join(", ")}, which the agreement doesn't contain, so it isn't shown.`);
   // an answer that itself reads like instructions or talks about prompts isn't an answer about the agreement
   if (QA_INSTRUCTION_RE.test(normalize(`${said}\n${notes}`)) || /\b(?:system prompt|my instructions|previous instructions)\b/i.test(`${said}\n${notes}`)) return withheld("The answer read like instructions rather than an answer about the agreement, so it isn't shown.");
   const wrongQuotes = misquoted(said, support);
   if (wrongQuotes.length) return withheld(`The answer quoted ${wrongQuotes.slice(0, 2).join(", ")}, which isn't what the agreement says, so it isn't shown.`);
-  const unsupported = unsupportedFacts(said, support, allowed, question, { negations: !absent, names: agreementText });
+  // facts in the answer and explanation; negations are judged in the answer itself, where a flipped term would be
+  // stated (an explanation contrasts and qualifies: "governs how often invoices are sent, not the time to pay")
+  const unsupported = [...unsupportedFacts(said, support, allowed, question, { negations: false, names: agreementText }), ...(absent ? [] : unsupportedNegations(out.answer, support, withoutAbsence))];
   if (unsupported.length) return withheld(`The answer mentioned ${unsupported.slice(0, 6).join(", ")}, which the quoted text doesn't contain, so it isn't shown.`);
   const unbound = unboundValues(said, support, question, verified, fromQuestion, scenarioFigures(question));
   if (unbound.length) return withheld(`The answer gave ${unbound.slice(0, 4).join(", ")} for something the quoted text gives a different figure for, so it isn't shown.`);
