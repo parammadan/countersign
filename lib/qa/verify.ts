@@ -226,7 +226,28 @@ function unitOf(text: string, n: string): string | null {
  * The user's figure is used as a fact of their situation, not as a term: no phrase it's in (between commas) states a
  * term ("At 99.3% monthly uptime, …", "with £2,000 still owing" — not "must give 15 days' notice", "pays $5,000").
  */
-const TERM_STATED = /\b(?:pays?|paid|payable|owes?|owed|must|shall|is due|are due|falls? due|will pay|charges?|is required|are required|is entitled|are entitled|is liable|are liable|gives?|give)\b|\b(?:fees?|rates?|prices?|rent|costs?|charges?|amounts?|deposits?|caps?|period|notice|term|totals?|retainer)\b[^,;]{0,30}\b(?:is|are|was|will be|of|at|equals?)\s*(?:just\s+|only\s+)?[$£€]?\d/i;
+const TERM_STATED = /\b(?:pays?|payable|owes?|owed|must|shall|is due|are due|falls? due|will pay|charges?|is required|are required|is entitled|are entitled|is liable|are liable|gives?|give)\b|\b(?:fees?|rates?|prices?|rent|costs?|charges?|amounts?|deposits?|caps?|period|notice|term|totals?|retainer)\b[^,;]{0,30}\b(?:is|are|was|will be|of|at|equals?)\s*(?:just\s+|only\s+)?[$£€]?\d/i;
+/** A claim that says it restates the user's situation ("You said the invoice is 10 days late"). */
+const isScenarioClaim = (c: Pick<VerifiedClaim, "kind" | "claim">) => c.kind === "scenario" && USER_ATTRIB.test(c.claim);
+/**
+ * What the user's figure counts, where it's written: a term ("15 days' written notice", "a $5,000 fee", "$5,000 per
+ * month" with nothing to say it's a bill) or a fact of their situation ("99.3% monthly uptime", "700 hours", "a 4%
+ * underpayment", "a 24-hour turnaround", "£2,000 of Rent still owing").
+ */
+const TERM_NOUN = /^(?:[\s'’-]*(?:\(\s*\d+\s*\)\s*)?(?:(?:business|calendar|working|clear|full)\s+)?(?:hours?|days?|weeks?|months?|years?|%|percent)?['’]?)\s*(?:[a-z-]+\s+){0,2}?(?:notice|fees?|rates?|rent|prices?|deposits?|caps?|limits?|charges?|terms?|retainers?|salary|wages?|commissions?|premiums?|discounts?|penalt(?:y|ies)|allowances?|minimums?)\b/i;
+const SITUATION_MONEY = /\b(?:bill|bills|billed|invoice of|invoiced|owing|owed|owe|owes|outstanding|arrears|unpaid|spent|spend|spending|order|purchase|claim|loss|losses|damage|sale|sales|revenue|value|budget|balance|paid|underpa\w+|overpa\w+|cost us|costs us)\b/i;
+function countsATerm(claim: string, n: string): boolean {
+  const t = normalize(claim);
+  return [...t.matchAll(new RegExp(digitsOf(n), "g"))].some((m) => {
+    if (TERM_NOUN.test(t.slice(m.index! + m[0].length, m.index! + m[0].length + 60))) return true;
+    const money = /[$£€]\s*$/.test(t.slice(Math.max(0, m.index! - 2), m.index));
+    if (!money) return false;
+    // money: a term unless its phrase says it's a bill, a balance or the like
+    const from = Math.max(t.lastIndexOf(",", m.index), t.lastIndexOf(";", m.index), t.lastIndexOf(".", m.index! - 1), -1) + 1;
+    const ends = [",", ";", "."].map((ch) => t.indexOf(ch, m.index! + m[0].length)).filter((x) => x >= 0);
+    return !SITUATION_MONEY.test(t.slice(from, ends.length ? Math.min(...ends) : t.length));
+  });
+}
 function usedAsScenario(claim: string, n: string): boolean {
   const t = normalize(claim);
   const re = new RegExp(digitsOf(n), "g");
@@ -276,6 +297,9 @@ function backsFigure(claim: string, quote: string, n: string, ctx: JudgeContext,
     const groups = new Set(ws.map((w) => GROUP_OF.get(w)).filter((g) => g !== undefined));
     return near.some((w) => stems.has(stemWord(w)) || (GROUP_OF.has(w) && groups.has(GROUP_OF.get(w)!)));
   };
+  // a clause that gives this unit a different figure and matches the claim's phrase better than the quote does is
+  // where the claim's term is: "terminate on 45 days' written notice" beats "dispute an invoice by written notice
+  // within 10 days" for "terminate on 10 days' written notice"
   return nears.every((near) => {
     if (!near.length) return !strict;
     if (about(quote, near)) return true;
@@ -452,18 +476,21 @@ export function judge(claims: VerifiedClaim[], ctx: JudgeContext): Judgement {
     const inNote = (ctx.notes ?? []).some((x) => within(trim(x), span) || within(span, trim(x)));
     const disclaiming = DISCLAIM.test(c.claim) && !TERM_VERB.test(c.claim) && !partiesIn(c.claim, ctx.names).size;
     const paired = !inNote && !disclaiming && !c.evidence.some((e) => ctx.unofficialIds.has(e.passage));
-    const backed = [...claimNums].every((n) =>
-      // a figure the deterministic term check doubted: only a quote about the same term, or a re-done calculation
-      paired && ctx.flaggedNums?.has(n)
-        ? c.evidence.some((e) => backsFigure(c.claim, e.quote, n, ctx, true)) || calcNums.has(n) || (userNums.has(n) && !ctx.premiseNums?.has(n) && usedAsScenario(c.claim, n))
-        :
+    const figureBacked = (n: string): boolean => {
+      // a figure the deterministic term check doubted: only a quote about the same term, a re-done calculation, or
+      // the user's own figure where the claim is about their situation
+      if (paired && ctx.flaggedNums?.has(n))
+        return c.evidence.some((e) => backsFigure(c.claim, e.quote, n, ctx, true)) || calcNums.has(n) || (userNums.has(n) && !ctx.premiseNums?.has(n) && (isScenarioClaim(c) || (usedAsScenario(c.claim, n) && !countsATerm(c.claim, n))));
+      return (
         c.evidence.some((e) => (paired ? backsFigure(c.claim, e.quote, n, ctx) : nums(e.quote).has(n))) ||
         calcNums.has(n) ||
         isCount(c.claim, n, evidenceText) ||
         (/^(?:19|20)\d\d$/.test(n) && !!ctx.docNums?.has(n)) ||
         // the user's own facts may be used; a figure they assert about a term only where the claim disowns it
-        (userNums.has(n) && (!ctx.premiseNums?.has(n) || userFigureDisowned(c.claim, n))),
-    );
+        (userNums.has(n) && (!ctx.premiseNums?.has(n) || userFigureDisowned(c.claim, n)))
+      );
+    };
+    const backed = [...claimNums].every(figureBacked);
     const absence = c.kind === "absence" && !c.evidence.length && ABSENCE_MARK.test(c.claim) && claimNums.size === 0;
     const scenario = c.kind === "scenario" && !c.evidence.length && USER_ATTRIB.test(c.claim) && subset(claimNums, userNums) && !OBLIGATION.test(c.claim) && !partiesIn(c.claim, ctx.names).size;
     const disclaimer =

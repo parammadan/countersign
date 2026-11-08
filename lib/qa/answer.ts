@@ -734,7 +734,8 @@ export async function answerWithModel(
     // "I was told the fee is $5,000", "Since our licence covers 50 users"); a scenario fact ("uptime was 99.3%") isn't one
     flaggedNums: new Set(unbound.flatMap((x) => [...numbersIn(x)])),
     premiseNums,
-    bindingSentences: agreementText.flatMap((t) => t.split(/(?<=[.!?;])\s+|\n+/)).filter((x) => x.length > 8),
+    // whole sentences (a list's items stay with their heading: "Base Rent: $5,550 for Years 1 and 2; $5,790 for…")
+    bindingSentences: agreementText.flatMap((t) => t.replace(/\s*\n\s*/g, " ").split(/(?<=[.!?])\s+(?=[A-Z0-9("“])/)).filter((x) => x.length > 8),
     docNums: numbersIn(shown.map((p) => p.text).join("\n")),
   });
   if (judgement.show === "withheld") {
