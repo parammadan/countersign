@@ -25,7 +25,7 @@ type Case = {
 // ---- budget ledger (outside the repo), with a reservation for each call in flight ----
 const ledgerPath = process.env.AI_LEDGER ?? "";
 const capMicro = Math.min(Number(process.env.AI_TEST_BUDGET_USD ?? 0), HARD_CAP_USD) * 1e6;
-const readLedger = (): { spentMicro: number; calls: number; holdoutRun?: string } => (fs.existsSync(ledgerPath) ? JSON.parse(fs.readFileSync(ledgerPath, "utf8")) : { spentMicro: 0, calls: 0 });
+const readLedger = (): { spentMicro: number; calls: number; holdoutRun?: string; holdoutRuns?: Record<string, string> } => (fs.existsSync(ledgerPath) ? JSON.parse(fs.readFileSync(ledgerPath, "utf8")) : { spentMicro: 0, calls: 0 });
 const writeLedger = (l: ReturnType<typeof readLedger>) => {
   fs.writeFileSync(ledgerPath + ".tmp", JSON.stringify(l, null, 2));
   fs.renameSync(ledgerPath + ".tmp", ledgerPath);
@@ -188,9 +188,9 @@ describe.skipIf(!ON)("real model (paid)", () => {
     else if (suite === "security") cases = SECURITY;
     else if (suite === "holdout") {
       // each sealed set runs once: the ledger records every set file that has been run
-      const l = readLedger() as ReturnType<typeof readLedger> & { holdoutRuns?: Record<string, string> };
+      const l = readLedger();
       const file = path.resolve(process.env.HOLDOUT_FILE ?? "");
-      const runs = { ...(l.holdoutRuns ?? {}), ...(l.holdoutRun && !l.holdoutRuns ? { "sealed-1": l.holdoutRun } : {}) };
+      const runs: Record<string, string> = { ...(l.holdoutRuns ?? {}), ...(l.holdoutRun && !l.holdoutRuns ? { "sealed-1": l.holdoutRun } : {}) };
       if (runs[file]) throw new Error(`this sealed set was already run (${runs[file]})`);
       cases = JSON.parse(fs.readFileSync(file, "utf8"));
       writeLedger({ ...l, holdoutRuns: { ...runs, [file]: new Date().toISOString() } });
