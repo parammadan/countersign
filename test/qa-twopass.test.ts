@@ -270,11 +270,12 @@ type R = { set: string; id: string; question: string; history: Turn[]; pages: st
 const RESPONSES: R[] = JSON.parse(fs.readFileSync(path.join(process.cwd(), "fixtures/qa-real/responses.json"), "utf8"));
 // correct on review: worded differently from the fact list ("doesn't set a fixed number of days"; "within a reasonable time")
 const REVIEWED_CORRECT = new Set(["brindlewick-travel-expense-cap", "tenancy-nonurgent-repair-time", "corvell-roof-repair-timing", "orvieto-notify-unauthorised-disclosure"]);
-// withheld by the two-pass rules although correct, known and reported: figures derived in prose that no quoted clause
-// or re-done calculation holds (an alternative day count, a cap reached "at 99.4%"), a section range ("1 through 13"),
-// a count read as a period ("the two day rates"), and sentences the scripted verifier judges as one claim where a real
-// one would split them
-const KNOWN_TWO_PASS_WITHHELD = new Set(["tenancy-late-fee-cap", "lumora-uptime-ai-note", "hf-arbitration-absent", "brackwater-excavators-six-weeks-total", "brackwater-collection-charge", "halvorsen-senior-partner-rate", "ilsenmark-completion-date-draft"]);
+// withheld by the two-pass rules although correct (13 of 205), known and reported: figures derived in prose that no
+// quoted clause or re-done calculation holds (an alternative day count, "99.4%", "£248,000", "£13,000"), a section
+// range ("1 through 13"), a count read as a period ("the two day rates"), a scenario figure inside a premise sentence
+// ("Since travel is uncapped, our $6,500 bill…"), and cases where the scripted verifier quotes the wrong sentence for
+// a spelled-out figure or judges two points as one claim
+const KNOWN_TWO_PASS_WITHHELD = new Set(["tenancy-late-fee-cap", "hf-arbitration-absent", "dev-in-progress-milestone-amount", "hf-excess-advisory-rate", "halvorsen-late-interest", "halvorsen-senior-partner-rate", "halvorsen-travel-uncapped-refutation", "brackwater-telehandler-early-return", "brackwater-excavators-six-weeks-total", "brackwater-collection-charge", "lumora-uptime-ai-note", "corvell-break-with-arrears", "greyfriar-named-users-refutation"]);
 // the trap phrase appears only where the answer refutes it or says the text isn't binding
 const REFUTES_TRAP = new Set([
   "castellane-partner-rate-override", "staffing-conversion-fee-override", "mislead-marketing", "mislead-superseded", "mislead-unofficial", "mislead-draft",

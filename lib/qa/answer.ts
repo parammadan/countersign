@@ -12,7 +12,7 @@ import { AnalysisError, callModel, type ModelProvider, type Usage } from "../und
 import type { Finding } from "../understand/schema";
 import type { PageLines } from "../understand/text";
 import { checkCalculations, clauses, figuresInTrueComparisons, partyRoles, ROLES, impliedCalculations, negationCheck, periodConflicts, stripRefutations, stemWord, misquoted, roleSwaps, scenarioFigures, stripPageRefs, unboundValues, unsupportedNegations, unsupportedPlaces, withoutAbsence, type Calculation } from "./check";
-import { answerParts, judge, verifyAnswer, VerifyError, type Verdict, type VerifiedClaim } from "./verify";
+import { answerParts, judge, userFigureDisowned, verifyAnswer, VerifyError, type Verdict, type VerifiedClaim } from "./verify";
 import { GROUP_OF, passages, QA_INSTRUCTION_RE, retrieve, terms, type Passage, type Scored } from "./retrieve";
 
 export const QA_STATUSES = ["answered", "partial", "not_found"] as const;
@@ -537,17 +537,22 @@ export async function answerWithModel(
   // cited passages, calculation inputs of unproven origin) block on their own only when there's no second check;
   // with the verifier they become points it must look at closely (`hint`, never shown), and it decides. What's
   // shown when an answer is withheld names the kind of problem, never the figure or claim that failed.
+  // A doubt the verifier can't clear withholds the answer even when it approves (`recheck` returns true while it
+  // stands). Figures the term check flags must be backed, in the verifier, by a quote about the same term.
   const hints: string[] = [];
-  const soft = (shownWhy: string, hint: string): QaResult | null => {
+  const rechecks: { shownWhy: string; recheck: (extra: string[]) => boolean }[] = [];
+  const soft = (shownWhy: string, hint: string, recheck?: (extra: string[]) => boolean): QaResult | null => {
     if (!verifier) return withheld(shownWhy);
     hints.push(hint);
+    if (recheck) rechecks.push({ shownWhy, recheck });
     return null;
   };
   let blocked: QaResult | null = null;
 
   // arithmetic, listed or in the prose: wrong or unparseable arithmetic always blocks
   let support = citations.map((c) => c.context ?? c.quote);
-  const calcs = checkCalculations([...out.calculations, ...impliedCalculations(`${out.answer}\n${out.explanation}`)], support, question, `${out.answer} ${out.explanation}`, agreementText);
+  const allCalcs = [...out.calculations, ...impliedCalculations(`${out.answer}\n${out.explanation}`)];
+  const calcs = checkCalculations(allCalcs, support, question, `${out.answer} ${out.explanation}`, agreementText);
   const CALC = "A calculation in the answer didn't check out, so it isn't shown.";
   if (calcs.wrong.length) return withheld(CALC);
   if (calcs.unproven.length && (blocked = soft(CALC, `A calculation uses ${[...numbersIn(calcs.unproven.join(" "))].slice(0, 6).join(", ")}; check where each input comes from and that it belongs to the term used.`))) return blocked;
@@ -639,7 +644,13 @@ export async function answerWithModel(
   // a figure from the question that the answer only compares, correctly, with the agreement's isn't relied on
   for (const n of figuresInTrueComparisons(said, agreementText)) restated.delete(n);
   const used = asserted.map((x) => x.replace(/%$/, "")).filter((n) => calcs.operands.has(n) || restated.has(n));
-  if (used.length && (blocked = soft("The answer relied on a figure from the question that the agreement doesn't give, so it isn't shown.", `The answer uses ${used.join(", ")} from the question; the agreement may give that term a different figure.`))) return blocked;
+  // a figure the question asserts about a term can't be cleared by evidence (the agreement gives that term another):
+  // only an answer that refutes it, plainly, may restate it
+  const refutes = (n: string) => sentencesOf(`${out.answer}\n${out.explanation}`).some((x) => numbersIn(x).has(n) && userFigureDisowned(x, n));
+  // a premise: a figure the question asserts about a term, in a sentence phrased as one ("Is the notice period 15
+  // days?", "I was told the fee is $5,000", "Since our licence covers 50 users"); a scenario fact isn't
+  const premiseNums = new Set(asserted.map((x) => x.replace(/%$/, "")).filter((n) => question.split(/(?<=[.!?])\s+/).some((x) => numbersIn(x).has(n) && PREMISE_FORM.test(x.trim()))));
+  if (used.length && (blocked = soft("The answer relied on a figure from the question that the agreement doesn't give, so it isn't shown.", `The answer uses ${used.join(", ")} from the question; the agreement may give that term a different figure.`, () => used.some((n) => premiseNums.has(n) && !refutes(n))))) return blocked;
   const wrongPeriod = periodConflicts(said, support);
   if (wrongPeriod.length) return withheld("The answer gave a figure for a different period than the agreement does, so it isn't shown.");
   const swapped = roleSwaps(said, support, shown.map((p) => p.text).join("\n"));
@@ -721,7 +732,8 @@ export async function answerWithModel(
     notes: out.not_stated,
     // a figure the question asserts about a term, in a sentence phrased as a premise ("Is the notice period 15 days?",
     // "I was told the fee is $5,000", "Since our licence covers 50 users"); a scenario fact ("uptime was 99.3%") isn't one
-    premiseNums: new Set(asserted.map((x) => x.replace(/%$/, "")).filter((n) => question.split(/(?<=[.!?])\s+/).some((s) => numbersIn(s).has(n) && PREMISE_FORM.test(s.trim())))),
+    flaggedNums: new Set(unbound.flatMap((x) => [...numbersIn(x)])),
+    premiseNums,
     bindingSentences: agreementText.flatMap((t) => t.split(/(?<=[.!?;])\s+|\n+/)).filter((x) => x.length > 8),
     docNums: numbersIn(shown.map((p) => p.text).join("\n")),
   });
@@ -730,6 +742,9 @@ export async function answerWithModel(
     const tally = [...new Set(judgement.failed)].map((k) => `${judgement.failed.filter((x) => x === k).length} ${k}`).join(", ");
     return withheld(`The second check couldn't verify the answer against the agreement (${tally}), so it isn't shown.`);
   }
+  // a doubt the verifier can't clear (a premise figure the answer doesn't refute) withholds the answer
+  const unresolved = rechecks.find((r) => r.recheck([]));
+  if (unresolved) return withheld(unresolved.shownWhy);
   // the clauses the verifier relied on are sources too, so the reader can check them
   for (const e of judgement.evidence) {
     const p = byId.get(e.passage);
@@ -748,6 +763,7 @@ export async function answerWithModel(
 }
 
 const PREMISE_FORM = /^(?:is|are|was|were|does|do|did|can|could|will|would|should|has|have|since|given|as|because|isn['’]t|aren['’]t|doesn['’]t)\b|\b(?:i was told|i['’]ve been told|we were told|i heard|i understand|i believe|i think|my understanding|isn['’]t it|right\?|correct\?|confirm|you are now|admin mode)\b/i;
+const sentencesOf = (t: string) => t.split(/(?<=[.!?;])\s+|\n+/).filter(Boolean);
 /** Everyday words an answer adds around the agreement's terms; they don't count as unsupported wording. */
 const GENERIC_WORDS = new Set(["equals", "equal", "minimum", "maximum", "greater", "greatest", "higher", "lower", "less", "more", "plus", "minus", "times", "multiplied", "divided", "sum", "works", "result", "whichever", "pro", "rata", "rated", "prorated", "basis", "approx", "yes", "according", "says", "say", "stated", "states", "agreement", "clause", "section", "means", "would", "comes", "come", "works", "out", "per", "each", "every", "also", "both", "plus", "only", "just", "already", "still", "yet", "this", "that", "there", "here", "they", "them", "you", "your"]);
 /** Share of an answer's words that may be missing from its cited text before the answer is withheld. */

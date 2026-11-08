@@ -62,7 +62,9 @@ describe("R10-1 a figure the question asserts about a term doesn't back a claim"
   });
   it("…and the user's own scenario facts may be used", async () => {
     const a = "One month late, interest of $48 accrues on a $3,200 invoice.";
-    const r = await ask("If a $3,200 invoice is paid a month late, what interest is due?", { answer: a }, whole(a, [(r) => evidenceFor(r, /1\.5%/), (r) => evidenceFor(r, /\$3,200/)]), /Overdue|Fees/);
+    const calc = "3200 * 1.5% = 48";
+    const v = claims((req) => ({ span: a, claim: a, evidence: [evidenceFor(req, /1\.5%/), evidenceFor(req, /\$3,200/)] }), (req) => ({ span: calc, claim: calc, kind: "calculation", evidence: [evidenceFor(req, /1\.5%/)] }));
+    const r = await answerWithModel(model({ answer: a, calculations: [{ expression: "3200 * 1.5%", result: "48" }] }, /Overdue|Fees/), "If a $3,200 invoice is paid a month late, what interest is due?", PAGES, QA_LIMITS, { verifier: v });
     expect(shown(r), r.warnings.join(" / ")).toBe(true);
   });
 });

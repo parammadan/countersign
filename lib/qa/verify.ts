@@ -222,13 +222,22 @@ function unitOf(text: string, n: string): string | null {
   if (m[2]) return /%|percent/.test(m[2]) ? "%" : m[2].replace(/^(?:business|calendar|working)\s+/, "").replace(/s$/, "");
   return null;
 }
-/** Whether n is a x b, a / b or a x b% of known figures (amounts of money only: never periods). */
-function productOf(n: string, known: string[]): boolean {
-  const t = Number(n);
-  const pool = [...new Set(known.map(Number).filter((x) => Number.isFinite(x) && x !== 0))].slice(0, 60);
-  const hit = (x: number) => Math.abs(x - t) < 0.006;
-  for (const a of pool) for (const b of pool) if (hit(a * b) || hit(a / b) || hit((a * b) / 100)) return true;
-  return false;
+/**
+ * The user's figure is used as a fact of their situation, not as a term: no phrase it's in (between commas) states a
+ * term ("At 99.3% monthly uptime, …", "with £2,000 still owing" — not "must give 15 days' notice", "pays $5,000").
+ */
+const TERM_STATED = /\b(?:pays?|paid|payable|owes?|owed|must|shall|is due|are due|falls? due|will pay|charges?|is required|are required|is entitled|are entitled|is liable|are liable|gives?|give)\b|\b(?:fees?|rates?|prices?|rent|costs?|charges?|amounts?|deposits?|caps?|period|notice|term|totals?|retainer)\b[^,;]{0,30}\b(?:is|are|was|will be|of|at|equals?)\s*(?:just\s+|only\s+)?[$£€]?\d/i;
+function usedAsScenario(claim: string, n: string): boolean {
+  const t = normalize(claim);
+  const re = new RegExp(digitsOf(n), "g");
+  const at = [...t.matchAll(re)];
+  if (!at.length) return false;
+  return at.every((m) => {
+    const start = Math.max(t.lastIndexOf(",", m.index), t.lastIndexOf(";", m.index), t.lastIndexOf(".", m.index - 1), -1) + 1;
+    const ends = [",", ";", "."].map((ch) => t.indexOf(ch, m.index! + m[0].length)).filter((x) => x >= 0);
+    const end = ends.length ? Math.min(...ends) : t.length;
+    return !TERM_STATED.test(t.slice(start, end));
+  });
 }
 /** Figures of a unit in a sentence ("45 days' notice" -> 45 for "day"). */
 function figuresOfUnit(sentence: string, unit: string): Set<string> {
@@ -245,30 +254,44 @@ function figuresOfUnit(sentence: string, unit: string): Set<string> {
  * isn't about it ("15 days' written notice to terminate" isn't backed by "payable within 15 days of invoice" when the
  * agreement says "terminate on 45 days' written notice").
  */
-function backsFigure(claim: string, quote: string, n: string, ctx: JudgeContext): boolean {
+function backsFigure(claim: string, quote: string, n: string, ctx: JudgeContext, strict = false): boolean {
   if (!nums(quote).has(n)) return false;
   const unit = unitOf(claim, n);
-  if (!unit) return true;
-  const near = (() => {
-    const t = normalize(claim);
-    const m = new RegExp(digitsOf(n)).exec(t);
-    if (!m) return [];
-    return termWords(`${t.slice(Math.max(0, m.index - 60), m.index)} ${t.slice(m.index + m[0].length, m.index + m[0].length + 60)}`, ctx.names);
-  })();
-  if (!near.length) return true;
-  const stems = (ws: string[]) => new Set(ws.map(stemWord));
-  const nearStems = stems(near);
-  const about = (sentence: string) => termWords(sentence, ctx.names).some((w) => nearStems.has(stemWord(w)));
-  if (about(quote)) return true;
-  return !(ctx.bindingSentences ?? []).some((s) => about(s) && !figuresOfUnit(s, unit).has(n) && figuresOfUnit(s, unit).size > 0);
+  if (!unit && !strict) return true;
+  const t = normalize(claim);
+  // the words around each place the figure is written
+  // the phrase it's in: from the last comma, semicolon or "and" before it to the next one after
+  const phrase = (at: number, len: number) => {
+    const before = t.slice(Math.max(0, at - 80), at);
+    const cut = Math.max(before.lastIndexOf(","), before.lastIndexOf(";"), before.lastIndexOf(" and "), before.lastIndexOf(" but "));
+    const after = t.slice(at + len, at + len + 80);
+    const stops = [after.indexOf(","), after.indexOf(";"), after.indexOf(" and "), after.indexOf(" but "), after.indexOf(".")].filter((x) => x >= 0);
+    return `${before.slice(cut + 1)} ${after.slice(0, stops.length ? Math.min(...stops) : after.length)}`;
+  };
+  const nears = [...t.matchAll(new RegExp(digitsOf(n), "g"))].map((m) => termWords(phrase(m.index!, m[0].length), ctx.names));
+  if (!nears.length) return !strict;
+  const about = (sentence: string, near: string[]) => {
+    const ws = termWords(sentence, ctx.names);
+    const stems = new Set(ws.map(stemWord));
+    const groups = new Set(ws.map((w) => GROUP_OF.get(w)).filter((g) => g !== undefined));
+    return near.some((w) => stems.has(stemWord(w)) || (GROUP_OF.has(w) && groups.has(GROUP_OF.get(w)!)));
+  };
+  return nears.every((near) => {
+    if (!near.length) return !strict;
+    if (about(quote, near)) return true;
+    // a doubted figure needs the quote to be about the same term; otherwise it's enough that no binding sentence
+    // about that term gives the unit a different figure
+    if (strict || !unit) return false;
+    return !(ctx.bindingSentences ?? []).some((s) => about(s, near) && !figuresOfUnit(s, unit).has(n) && figuresOfUnit(s, unit).size > 0);
+  });
 }
 /**
  * A figure of the user's that the claim attributes to them and refutes ("The question's claim that the partner rate
  * is now $250 does not come from the agreement"; "On your 50-user figure… that figure does not match the agreement").
  */
-const ATTRIBUTED = /\b(?:question|request|you|your|you['’](?:ve|re)|premise|asked|assum\w*|suggest\w*)\b/i;
-const REFUTED = /\b(?:does not come from|doesn['’]t come from|does not match|doesn['’]t match|not in the agreement|isn['’]t in the agreement|is not in the agreement|does not appear|doesn['’]t appear|is incorrect|is wrong|is mistaken|isn['’]t correct|is not correct|not supported|isn['’]t supported|rather than|instead of|set aside|disregarded|was ignored|is not what|isn['’]t what)\b/i;
-function userFigureDisowned(claim: string, n: string): boolean {
+const ATTRIBUTED = /\b(?:the question|your question|the request|your request|the premise|your premise|you (?:said|mentioned|asked|suggested|stated|quoted|gave|were told)|you['’]ve (?:said|mentioned)|(?:on|with|by|under) your|your (?:figure|number|assumption|suggestion|estimate))\b|question['’]s/i;
+const REFUTED = /\b(?:does not come from|doesn['’]t come from|does not match|doesn['’]t match|not in the agreement|isn['’]t in the agreement|is not in the agreement|does not appear|doesn['’]t appear|is incorrect|is wrong|is mistaken|isn['’]t correct|is not correct|not supported|isn['’]t supported|set aside|disregarded|was ignored|is not what|isn['’]t what)\b/i;
+export function userFigureDisowned(claim: string, n: string): boolean {
   if (!nums(claim).has(n)) return false;
   // "$610, not $250": the agreement's figure is stated and the user's directly negated
   if (new RegExp(`\\b(?:not|rather than|instead of)\\s+(?:the\\s+)?[$£€]?\\s*${digitsOf(n)}`).test(normalize(claim))) return true;
@@ -318,6 +341,8 @@ export type JudgeContext = {
   calcNums?: Set<string>;
   /** figures the question asserts about a term that the agreement gives differently (a false premise) */
   premiseNums?: Set<string>;
+  /** figures the deterministic term check doubted: they need a quote about the same term */
+  flaggedNums?: Set<string>;
   /** the binding agreement's sentences, to tell whose figure a figure is */
   bindingSentences?: string[];
   /** the answer's notes (what the agreement doesn't say) */
@@ -427,16 +452,17 @@ export function judge(claims: VerifiedClaim[], ctx: JudgeContext): Judgement {
     const inNote = (ctx.notes ?? []).some((x) => within(trim(x), span) || within(span, trim(x)));
     const disclaiming = DISCLAIM.test(c.claim) && !TERM_VERB.test(c.claim) && !partiesIn(c.claim, ctx.names).size;
     const paired = !inNote && !disclaiming && !c.evidence.some((e) => ctx.unofficialIds.has(e.passage));
-    const backed = [...claimNums].every(
-      (n) =>
+    const backed = [...claimNums].every((n) =>
+      // a figure the deterministic term check doubted: only a quote about the same term, or a re-done calculation
+      paired && ctx.flaggedNums?.has(n)
+        ? c.evidence.some((e) => backsFigure(c.claim, e.quote, n, ctx, true)) || calcNums.has(n) || (userNums.has(n) && !ctx.premiseNums?.has(n) && usedAsScenario(c.claim, n))
+        :
         c.evidence.some((e) => (paired ? backsFigure(c.claim, e.quote, n, ctx) : nums(e.quote).has(n))) ||
         calcNums.has(n) ||
         isCount(c.claim, n, evidenceText) ||
         (/^(?:19|20)\d\d$/.test(n) && !!ctx.docNums?.has(n)) ||
         // the user's own facts may be used; a figure they assert about a term only where the claim disowns it
-        (userNums.has(n) && (!ctx.premiseNums?.has(n) || userFigureDisowned(c.claim, n))) ||
-        // an amount of money worked out from the claim's own evidence (10% of €2,480,000 is €248,000)
-        (unitOf(c.claim, n) === "money" && productOf(n, [...nums(evidenceText), ...[...userNums].filter((x) => !ctx.premiseNums?.has(x)), ...calcNums])),
+        (userNums.has(n) && (!ctx.premiseNums?.has(n) || userFigureDisowned(c.claim, n))),
     );
     const absence = c.kind === "absence" && !c.evidence.length && ABSENCE_MARK.test(c.claim) && claimNums.size === 0;
     const scenario = c.kind === "scenario" && !c.evidence.length && USER_ATTRIB.test(c.claim) && subset(claimNums, userNums) && !OBLIGATION.test(c.claim) && !partiesIn(c.claim, ctx.names).size;
