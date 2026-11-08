@@ -177,10 +177,59 @@ const OBLIGATION = /\b(?:pays?|paid|payable|owes?|owed|must|shall|may|can|cannot
 const TERM_VERB = /\b(?:pays?|paid|payable|owes?|owed|must|shall|is due|are due|falls? due|will pay|charges?|is required|are required|is entitled|are entitled|is liable|are liable)\b/i;
 // a scenario claim restates the user's own facts, and says so
 const USER_ATTRIB = /\b(?:you|your|you['’](?:ve|re|d)|if|assuming|suppose|supposing|hypothetical\w*)\b/i;
-const ABSENCE_VERB = "restrict|restricts|prohibit|prohibits|prevent|prevents|bar|bars|limit|limits|oblige|obliges|say|says|state|states|specify|specifies|mention|mentions|address|addresses|set|sets|provide|provides|define|defines|include|includes|cover|covers|list|lists|name|names|contain|contains|identify|identifies|give|gives|require|requires|impose|imposes|grant|grants|establish|establishes|stated|specified|addressed|mentioned|defined|covered|listed|named|contained|identified|given|required|imposed|granted|established";
-const ABSENCE_MARK = new RegExp(`\\b(?:does not|doesn['’]t|do not|don['’]t|did not|is not|isn['’]t|are not|aren['’]t|nothing in|none of|no (?:other )?(?:clause|provision|term|passage|section|part)|never)\\b[^.;]{0,60}\\b(?:${ABSENCE_VERB})\\b|\\b(?:${ABSENCE_VERB})\\s+no\\b|\\b(?:is|are) silent\\b|\\bnot (?:stated|specified|addressed|mentioned|defined)\\b`, "i");
+// an absence claim is about the text: its subject is the agreement (or its clauses, or "nothing in it") and its verb is
+// one of saying, not of doing ("does not say", "sets no", "no clause mentions"); "is not required to", "does not
+// restrict" state a term
+const TEXT_VERB = "say|says|state|states|specify|specifies|address|addresses|mention|mentions|define|defines|cover|covers|list|lists|name|names|contain|contains|include|includes|set out|sets out|set|sets|provide for|provides for|provide|provides|give|gives|identify|identifies|stated|specified|addressed|mentioned|defined|covered|listed|named|contained|included|provided|given|identified|set out";
+const TEXT_SUBJECT = "(?:the|this) (?:[a-z&'’-]+ ){0,4}(?:agreement|contract|lease|document|letter|clause|section|provision|terms|appendix|schedule)|the clauses|the passages|its terms|section [\\w.()]+|clause [\\w.()]+|it";
+const TEXT_VERB_RE = new RegExp(`\\b(?:${TEXT_VERB})\\b`, "i");
+const NEG = "does not|doesn['’]t|do not|don['’]t|did not|is not|isn['’]t|are not|aren['’]t";
+const ABSENCE_MARK = new RegExp(
+  [
+    `^(?:${TEXT_SUBJECT})\\b[^.;]{0,40}?\\b(?:${NEG})\\s+(?:\\w+\\s+)?(?:${TEXT_VERB})\\b`,
+    `^(?:nothing in (?:the|this|it)\\b[^.;]{0,30}|none of (?:the |its )?(?:[a-z'’]+ ){0,2}(?:clauses|terms|passages|provisions|sections)|no (?:other )?(?:clause|provision|term|passage|section|part)(?: of the agreement)?)\\s+(?:\\w+\\s+)?(?:${TEXT_VERB})\\b`,
+    `^(?:${TEXT_SUBJECT})\\b[^.;]{0,40}?\\b(?:${TEXT_VERB})\\s+no\\b`,
+    `^(?:${TEXT_SUBJECT})\\s+(?:is|are)\\s+silent\\b`,
+    `^(?:${NEG})\\s+(?:\\w+\\s+)?(?:${TEXT_VERB})\\b`,
+    `\\b(?:is|are) not (?:stated|specified|addressed|mentioned|defined|covered|set out) (?:in|by) (?:the|this) (?:agreement|contract|lease|letter)\\b`,
+  ].join("|"),
+  "i",
+);
+// a clause that only continues a list ("…arbitration, dispute resolution procedures, or a venue"): no verb of its own
+const HAS_VERB = /\b(?:is|are|was|were|be|been|must|shall|may|will|can|could|would|should|pays?|owes?|has|have|had|applies|apply|requires?|gets?|receives?|accepts?|bears?|keeps?|gives?)\b/i;
+const opener = (t: string) =>
+  t
+    .replace(/^(?:no|yes)[,.:;!—–-]\s*/i, "")
+    .replace(/^(?:but|and|so|also|however|therefore|thus|while)\b[,\s]*/i, "")
+    .replace(/^(?:beyond|apart from|other than|except for|besides|aside from|in short|overall)\b[^,]{0,40},\s*/i, "");
+/** The claim's clauses, a verbless fragment joined to the clause after it ("The Fees" + "payment clause does not say…"). */
+function units(claim: string): string[] {
+  const out: string[] = [];
+  let carry = "";
+  const cs = clauses(claim);
+  cs.forEach((x, i) => {
+    if (!HAS_VERB.test(x) && !TEXT_VERB_RE.test(x) && i < cs.length - 1) carry = `${carry}${x} and `;
+    else {
+      out.push(opener(normalize(`${carry}${x}`)));
+      carry = "";
+    }
+  });
+  return out;
+}
+/** Every clause of the claim is an absence (or continues one): a term anywhere in it isn't exempt. */
+function allAbsence(claim: string): boolean {
+  const cs = units(claim);
+  if (!cs.length || !ABSENCE_MARK.test(cs[0])) return false;
+  return cs.every((x) => ABSENCE_MARK.test(x) || !HAS_VERB.test(x));
+}
+// a disclaimer clause: says the text isn't binding or doesn't change the terms, or reports what it says
+const DISCLAIM_CLAUSE = /\b(?:not binding|non-binding|nonbinding|not legally binding|not part of|isn['’]?t part of|does not form part|doesn['’]t form part|forms? no part|no contractual effect|no legal effect|has no effect|superseded|withdrawn|for information only|not one of (?:the |its )?(?:agreement['’]s )?terms|not a term|does not change|doesn['’]t change|does not alter|doesn['’]t alter|does not override|doesn['’]t override|does not affect|doesn['’]t affect|does not apply|doesn['’]t apply|not used|is labell?ed|is marked)\b/i;
+/** Every clause of a disclaimer disclaims the text, reports what it says, or continues a list. */
+function allDisclaimer(claim: string): boolean {
+  return units(claim).every((x) => DISCLAIM_CLAUSE.test(x) || REPORTED.test(x) || !HAS_VERB.test(x));
+}
 const DISCLAIM = /\b(?:not binding|non-binding|nonbinding|not legally binding|not part of|isn['’]?t part of|does not form part|doesn['’]t form part|forms? no part|no contractual effect|no legal effect|has no effect|superseded|withdrawn|for information only)\b/i;
-const REPORTED = /\b(?:faq|draft|marketing|summary|brochure|pitch|deck|extract|appendix|annex|schedule|exhibit|rate card|note)\b[^.;,]{0,60}\b(?:says?|said|saying|states?|stated|stating|claims?|claimed|claiming|lists?|listed|listing|shows?|showing|suggests?|mentions?|advertis\w*|quotes?|offers?)\b/;
+const REPORTED = /\b(?:faq|draft|marketing|summary|brochure|pitch|deck|extract|appendix|annex|schedule|exhibit|rate card|note)\b[^.;,]{0,60}\b(?:says?|said|saying|states?|stated|stating|claims?|claimed|claiming|lists?|listed|listing|shows?|showing|suggests?|mentions?|advertis\w*|quotes?|offers?|gives?|gave|giving)\b/;
 const STOP = new Set(["that", "this", "with", "from", "into", "which", "under", "agreement", "clause", "section", "will", "would", "shall", "must", "each", "every", "also", "only", "their", "there", "these", "those", "than", "then", "when", "where", "after", "before", "within", "about", "have", "been", "being", "does", "doesn", "says", "states"]);
 
 const content = (s: string) => normalize(s).split(/[^\p{L}]+/u).filter((w) => w.length >= 4 && !STOP.has(w));
@@ -486,13 +535,13 @@ export function judge(claims: VerifiedClaim[], ctx: JudgeContext): Judgement {
     // not say whether the $1,000 retainer is credited against the $6,800 fee"; not "…whether the 15 days' notice to
     // terminate…" when 15 days is the invoice period)
     const absence =
-      ABSENCE_MARK.test(c.claim) && (!c.evidence.length || c.evidenceChecked) && !saidAfterAll(c.claim, ctx) &&
+      allAbsence(c.claim) && (!c.evidence.length || c.evidenceChecked) && !saidAfterAll(c.claim, ctx) &&
       [...claimNums].every((n) => !ctx.flaggedNums?.has(n) && (ctx.bindingSentences ?? []).some((x) => backsFigure(c.claim, x, n, ctx)));
     const scenario = c.kind === "scenario" && !c.evidence.length && USER_ATTRIB.test(c.claim) && subset(claimNums, userNums) && !OBLIGATION.test(c.claim) && !partiesIn(c.claim, ctx.names).size;
     // a disclaimer of text labelled not binding states no term itself, or only reports what that text says ("An
     // unofficial FAQ in the Appendix says the Firm accepts unlimited liability, but that text is not binding")
     const disclaimer =
-      DISCLAIM.test(c.claim) && ((!TERM_VERB.test(c.claim) && !partiesIn(c.claim, ctx.names).size) || REPORTED.test(normalize(c.claim))) && c.evidenceChecked && c.evidence.some((e) => ctx.unofficialIds.has(e.passage)) &&
+      DISCLAIM.test(c.claim) && allDisclaimer(c.claim) && ((!TERM_VERB.test(c.claim) && !partiesIn(c.claim, ctx.names).size) || REPORTED.test(normalize(c.claim))) && c.evidenceChecked && c.evidence.some((e) => ctx.unofficialIds.has(e.passage)) &&
       c.evidence.every((e) => ctx.bindingIds.has(e.passage) || ctx.unofficialIds.has(e.passage)) &&
       // its figures are the quoted text's, or binding figures it says that text doesn't change ("…the $700 fee")
       [...claimNums].every((n) => nums(evidenceText).has(n) || (!!ctx.bindingNums?.has(n) && !ctx.flaggedNums?.has(n)));

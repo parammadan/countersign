@@ -15,8 +15,9 @@ type Case = { id: string; question: string; history?: { question: string; answer
 const ROWS: Row[] = JSON.parse(fs.readFileSync(path.join(process.cwd(), "fixtures/qa-real/verified-dev.json"), "utf8"));
 const CASES = new Map((loadCases() as Case[]).map((c) => [c.id, c]));
 // withheld although correct: a claim the verifier itself contradicted, a negative claim ("none of the retainers is a
-// referral fee") it gave no evidence for, and one sentence no judged claim covered
-const KNOWN = new Set(["abstain-arbitration-seat", "abstain-referral-fee", "ambiguous-termination-material"]);
+// referral fee") it gave no evidence for, one sentence no judged claim covered, and "the agreement doesn't restrict
+// either party from competing" (a negated restriction is judged as a term, which needs evidence)
+const KNOWN = new Set(["abstain-arbitration-seat", "abstain-referral-fee", "ambiguous-termination-material", "abstain-non-compete"]);
 
 const replay = (x: unknown): ModelProvider => ({ name: "replay", model: "claude-opus-5-5", complete: async () => JSON.parse(JSON.stringify(x)) });
 
