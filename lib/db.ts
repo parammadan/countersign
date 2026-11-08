@@ -215,6 +215,30 @@ const MIGRATIONS: string[] = [
     created_at TEXT NOT NULL
   );
   `,
+  // M2.1 document understanding: suggestions about an agreement version (never edited once written), and a
+  // person's decision on each one. Confirmed findings are the verified facts; everything else stays a suggestion.
+  `
+  CREATE TABLE document_analyses (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+    template_version_id TEXT NOT NULL REFERENCES template_versions(id),
+    source_sha256 TEXT NOT NULL,
+    analyzer TEXT NOT NULL,
+    result_json TEXT NOT NULL,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX document_analyses_version ON document_analyses(workspace_id, template_version_id, created_at);
+  CREATE TABLE finding_reviews (
+    analysis_id TEXT NOT NULL REFERENCES document_analyses(id),
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+    finding_id TEXT NOT NULL,
+    decision TEXT NOT NULL CHECK (decision IN ('confirmed', 'dismissed')),
+    reviewed_by TEXT NOT NULL,
+    reviewed_at TEXT NOT NULL,
+    PRIMARY KEY (analysis_id, finding_id)
+  );
+  `,
 ];
 
 function open(): DatabaseSync {
