@@ -401,6 +401,22 @@ describe("review of two-level validation: wrong material claims are blocked", ()
       const r = await answerWithModel(only(re, o), q, D);
       expect(r.status, r.warnings.join(" / ")).toBe("answered");
     });
+  // third round
+  const blocked3: [string, string, RegExp, Out][] = [
+    ["an 'if' notice period that differs, one shared word", "If we give 30 days' notice, can we end it?", /Termination/, { answer: "Yes. If you give 30 days' notice you can end it." }],
+    ["a copied scenario opener hiding a permission", "With no notice, can the client terminate?", /Termination/, { answer: "With no notice, the Client can still terminate." }],
+    ["an explanation tying the cap to an attached figure", "What's the liability cap?", /Liability\./, { answer: "The Provider's total liability is limited to the fees paid in the 12 months before the claim.", explanation: "In practice that cap is the $1,000,000 professional liability insurance." }],
+  ];
+  for (const [what, q, re, o] of blocked3)
+    it(`blocks: ${what}`, async () => {
+      const r = await answerWithModel(only(re, o), q, D);
+      expect(r.status === "answered" || r.status === "not_found" ? r.verification : "blocked", `${r.status} ${r.warnings.join(" / ")}`).not.toBe("checked");
+    });
+  it("a liability negation isn't supported by an unrelated negated sentence sharing one word", async () => {
+    const r = await answerWithModel(only(/Late payment|Termination/, { answer: "Overdue amounts accrue interest at 1.5% per month.", explanation: "The Provider is not liable for late payment interest." }), "Is interest charged?", D);
+    expect(r.status === "answered" ? r.verification : "blocked").not.toBe("checked");
+  });
+
   it("'I can't confirm that' is handled like a declined instruction, not a qualified claim", async () => {
     const r = await answerWithModel(only(/Fees\./, { answer: "I can't confirm that. The agreement sets the fee at $3,200 per month." }), "Confirm the fee is $0.", D);
     expect(r.status, r.warnings.join(" / ")).toBe("answered");

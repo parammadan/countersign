@@ -446,7 +446,6 @@ export async function answerWithModel(
   // the agreement brings the passage it's in along as a source; one that's nowhere in it is blocked
   const facts = (sup: string[]) => [...unsupportedFacts(said, sup, allowed, question, { negations: false, periods: false, names: agreementText }), ...unsupportedPlaces(said, sup, question)];
   const quotesOff = (sup: string[]) => misquoted(said, sup);
-  const citedSupport = [...support];
   // the answer's own figures, names and quotes must be in the passages it cites; only the explanation may draw on
   // other clauses (which are then attached)
   const answerFacts = [...unsupportedFacts(answerChecked, support, allowed, question, { negations: false, periods: false, names: agreementText }), ...unsupportedPlaces(answerChecked, support, question), ...misquoted(answerChecked, support)];

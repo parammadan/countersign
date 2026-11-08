@@ -194,7 +194,10 @@ export function unboundValues(answer: string, support: string[], question = "", 
         // "if you give 30 days' written notice, either party may terminate" against "may terminate on 45 days'
         // written notice": a figure the user supposes for a term the agreement fixes differently is still checked
         const own = [...anchors(c)].filter((w) => !isRate(w));
-        const strong = segs.some((sg) => own.filter((w) => sg.a.has(w)).length >= 2 && sg.v.some((x) => x.kind === v.kind && x.kind !== "plain" && x.n !== v.n && !statedHere.has(x.n)));
+        // a supposed period or rate attached to the same thing the agreement's own figure is ("30 days' notice"
+        // against "45 days' written notice"), or sharing two words with that clause
+        const after = headsAfter(c, v.n);
+        const strong = segs.some((sg) => sg.v.some((x) => x.kind === v.kind && x.kind !== "plain" && x.n !== v.n && !statedHere.has(x.n) && (own.filter((w) => sg.a.has(w)).length >= 2 || (v.kind !== "money" && [...headsAfter(sg.t, x.n)].some((w) => after.has(w))))));
         if (!strong) continue;
         out.push(`${v.n}${v.kind === "percent" ? "%" : ""}`);
         continue;
@@ -219,7 +222,13 @@ export function unboundValues(answer: string, support: string[], question = "", 
         // a word they share ("liability")
         const citedWords = new Set(citedSegs.flatMap((s) => [...s.a]));
         const distinctive = bound.some((s) => [...s.a].some((w) => !isRate(w) && !citedWords.has(w) && pa.has(w)));
-        if (bestBound >= bestCited && distinctive) continue;
+        // "In practice that cap is the $1,000,000 insurance": tying a cited clause's term to a figure from another
+        // clause, without saying they're separate ("separately", "only", "not"), equates them
+        const separate = /\b(?:separately|also|additionally|in addition|distinct|unlike|whereas|only|not|rather than|instead|by contrast|apart from|besides|independently|another|other)\b/i.test(c);
+        // (a sentence that also states the cited clause's own figure, "$610 per hour, with time recorded in
+        // 0.1-hour increments", is about both)
+        const statesCited = citedSegs.some((sg) => sg.v.some((x) => x.kind !== "plain" && x.n !== v.n && statedHere.has(x.n)));
+        if (bestBound >= bestCited && distinctive && (bestCited === 0 || separate || statesCited)) continue;
         out.push(`${v.n}${v.kind === "percent" ? "%" : ""}`);
         continue;
       }
@@ -264,7 +273,9 @@ export function unsupportedNegations(answer: string, support: string[], absenceF
     const overlap = (s: { a: Set<string> }) => a.filter((w) => s.a.has(w)).length;
     const best = Math.max(0, ...segs.map(overlap));
     // the cited sentences about the same thing: the best match, and any other that shares at least two words
-    const near = best ? segs.filter((s) => overlap(s) === best || overlap(s) >= 2) : [];
+    // (one shared generic word, like "pay" between "late payment interest" and "fees paid are not refundable", isn't
+    // support; without a sentence sharing two words, a negation is unsupported)
+    const near = best >= 2 ? segs.filter((s) => overlap(s) >= 2) : [];
     for (const w of words) {
       const special = /^(?:waived?|free|zero)$/.test(w);
       const has = (t: string) => (special ? new RegExp(`\\b${w.replace(/d$/, "")}`).test(normalize(t)) : NEG.test(normalize(t)) || BOUNDS.test(normalize(t)));
@@ -617,8 +628,6 @@ const REFUTE_SENTENCE = { test: (x: string) => REFUTE_SENTENCE_RAW.test(x) && !A
 export function negationCheck(answer: string, support: string[], question: string, absenceFree: (s: string) => string, o: { lenient?: boolean } = {}): { block: string[]; qualify: string[] } {
   const segs = support.flatMap(segments).map((t) => ({ t, a: anchors(t) }));
   const all = normalize(support.join(" \n "));
-  const qAnchors = anchors(question);
-  const qNums = new Set(valuesIn(question).map((v) => v.n));
   const block: string[] = [];
   const qualify: string[] = [];
   for (const raw of clauses(answer.replace(REPLY, "$1"))) {
@@ -627,11 +636,23 @@ export function negationCheck(answer: string, support: string[], question: strin
     if (REFUTE_SENTENCE.test(raw)) continue;
     // "With no overtime, the overtime rate does not apply": a consequence of the user's own stated scenario
     const qn = normalize(question);
-    const lead = /^\s*(?:if|with|since|given|because|as|when|assuming)\b([^,]{3,60}),/i.exec(raw);
-    if (lead && qn.includes(normalize(lead[1]).replace(/^(?:the|a|an)\s+/, "").trim())) continue;
+    // ...but only when the cited text doesn't address that thing ("With no notice, the Client can still terminate"
+    // when the cited clause requires notice is a claim to check)
+    const citedWords = new Set(segs.flatMap((sg) => [...sg.a]));
+    const unaddressed = (phrase: string) => [...anchors(phrase)].filter((w) => !isRate(w)).every((w) => !citedWords.has(w));
+    const lead = /^\s*(?:if|with|since|given|because|as|when|assuming)\b([^,]{3,60}),(.*)$/i.exec(raw);
+    if (lead && qn.includes(normalize(lead[1]).replace(/^(?:the|a|an)\s+/, "").trim())) {
+      // the user's scenario. If the agreement doesn't address it, it's theirs; if it does, only a consequence that
+      // something doesn't apply follows from it ("With no overtime, the overtime rate does not apply"), not a
+      // permission the agreement doesn't give ("With no notice, the Client can still terminate")
+      if (unaddressed(lead[1])) continue;
+      if (/\b(?:not|n['’]t|no longer|never)\b/i.test(lead[2])) continue;
+      block.push(`"${normalize(lead[1]).trim()}"`);
+      continue;
+    }
     let c = absenceFree(raw).replace(BOUNDS, " ");
     // "with no overtime" repeated from the user's own question is their scenario, not a term
-    c = c.replace(/\b(?:no|not|without)\s+[a-z]+(?:\s+[a-z]+)?/g, (m) => (qn.includes(m) ? " " : m));
+    c = c.replace(/\b(?:no|not|without)\s+[a-z]+(?:\s+[a-z]+)?/g, (m) => (qn.includes(m) && unaddressed(m) ? " " : m));
     // the user asserted something ("Since the fee is now $0", "the emailed claim that the waiver is free"): an
     // answer that says "not $0" / "not free" is correcting the premise, not stating a negated term
     c = stripRefutations(c, question);
@@ -642,11 +663,13 @@ export function negationCheck(answer: string, support: string[], question: strin
     const overlap = (s: { a: Set<string> }) => a.filter((w) => s.a.has(w)).length;
     const best = Math.max(0, ...segs.map(overlap));
     // the cited sentences about the same thing: the best match, and any other that shares at least two words
-    const near = best ? segs.filter((s) => overlap(s) === best || overlap(s) >= 2) : [];
+    // (one shared generic word, like "pay" between "late payment interest" and "fees paid are not refundable", isn't
+    // support; without a sentence sharing two words, a negation is unsupported)
+    const near = best >= 2 ? segs.filter((s) => overlap(s) >= 2) : [];
     for (const w of words) {
       const special = /^(?:waived?|free|zero)$/.test(w);
       const has = (t: string) => (special ? new RegExp(`\\b${w.replace(/d$/, "")}`).test(normalize(t)) : NEG.test(normalize(t)) || BOUNDS.test(normalize(t)));
-      if (near.length ? near.some((s) => has(s.t)) : has(all)) continue;
+      if (near.some((s) => has(s.t)) || (best === 0 && has(all) && !special)) continue;
       // saying money isn't owed ("owes nothing", "no fees apply", "the fee is waived") is material however weak the match
       // payment (0), termination (1), liability (6), late payment and interest (9), refunds (11): material terms
       const money = special || w === "nothing" || normalize(c).split(/[^\p{L}]+/u).some((x) => [0, 1, 6, 9, 11].includes(GROUP_OF.get(x) ?? -1));
@@ -705,4 +728,14 @@ export function stripRefutations(text: string, question: string): string {
     const ta = [...anchors(tail)].filter((w) => !isRate(w));
     return (tv.length > 0 && tv.every((n) => qNums.has(n))) || (PREMISE.test(question) && ta.length > 0 && ta.every((w) => qAnchors.has(w))) ? " " : m;
   });
+}
+
+/** The content words right after a figure and its unit: what the figure is of ("30 days' notice" -> notice). */
+function headsAfter(text: string, n: string): Set<string> {
+  const t = normalize(text);
+  const out = new Set<string>();
+  const num = n.replace(/\./g, "\\.");
+  const re = new RegExp(`(?:^|[^\\d.])(?:[$£€]\\s?)?${num}(?:[\\d,]*)\\s*(?:\\(\\s*\\d+\\s*\\)\\s*)?(?:%|percent|(?:business|calendar|working)\\s+)?(?:hours?|days?|weeks?|months?|years?)?['’]?s?\\s+((?:[a-z'’-]+\\s+){0,2}[a-z'’-]+)`, "g");
+  for (const m of t.matchAll(re)) for (const w of anchors(m[1])) if (!isRate(w)) out.add(w);
+  return out;
 }
