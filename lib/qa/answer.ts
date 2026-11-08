@@ -737,6 +737,7 @@ export async function answerWithModel(
     // whole sentences (a list's items stay with their heading: "Base Rent: $5,550 for Years 1 and 2; $5,790 for…")
     bindingSentences: agreementText.flatMap((t) => t.replace(/\s*\n\s*/g, " ").split(/(?<=[.!?])\s+(?=[A-Z0-9("“])/)).filter((x) => x.length > 8),
     docNums: numbersIn(shown.map((p) => p.text).join("\n")),
+    bindingNums: numbersIn(agreementText.join("\n")),
   });
   if (judgement.show === "withheld") {
     // what failed is described by kind and count; a claim that failed is never shown, even with a warning

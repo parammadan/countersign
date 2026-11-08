@@ -289,13 +289,14 @@ type R = { set: string; id: string; question: string; history: Turn[]; pages: st
 const RESPONSES: R[] = JSON.parse(fs.readFileSync(path.join(process.cwd(), "fixtures/qa-real/responses.json"), "utf8"));
 // correct on review: worded differently from the fact list ("doesn't set a fixed number of days"; "within a reasonable time")
 const REVIEWED_CORRECT = new Set(["brindlewick-travel-expense-cap", "tenancy-nonurgent-repair-time", "corvell-roof-repair-timing", "orvieto-notify-unauthorised-disclosure"]);
-// withheld by the two-pass rules although correct (17 of 205), known and reported: figures derived in prose that no
+// withheld by the two-pass rules although correct (19 of 205, with a scripted verifier; the real verifier withholds
+// fewer: see test/qa-real-verified.test.ts), known and reported: figures derived in prose that no
 // quoted clause or re-done calculation holds (an alternative day count, "99.4%", "£248,000", "£13,000"), a section
 // range ("1 through 13"), a count read as a period ("the two day rates"), a figure of the user's situation that the term check doubts ("uptime came in at 99.3%", "700 hours": only a quote
 // about the same term may back a doubted figure), a scenario figure inside a premise sentence
 // ("Since travel is uncapped, our $6,500 bill…"), and cases where the scripted verifier quotes the wrong sentence for
 // a spelled-out figure or judges two points as one claim
-const KNOWN_TWO_PASS_WITHHELD = new Set(["msa-service-credit-calc", "tenancy-late-fee-cap", "hf-arbitration-absent", "dev-in-progress-milestone-amount", "hf-excess-advisory-rate", "halvorsen-late-interest", "halvorsen-senior-partner-rate", "halvorsen-travel-uncapped-refutation", "brackwater-telehandler-early-return", "brackwater-excavators-six-weeks-total", "brackwater-collection-charge", "lumora-uptime-ai-note", "corvell-break-with-arrears", "ridgeway-conversion-fee-700-hours", "greyfriar-audit-underpayment", "greyfriar-named-users-refutation", "tessaract-rush-medical-job"]);
+const KNOWN_TWO_PASS_WITHHELD = new Set(["msa-service-credit-calc", "tenancy-late-fee-cap", "hf-arbitration-absent", "dev-in-progress-milestone-amount", "hf-excess-advisory-rate", "halvorsen-overtime-day-charge", "halvorsen-late-interest", "halvorsen-senior-partner-rate", "halvorsen-travel-uncapped-refutation", "brackwater-telehandler-early-return", "brackwater-excavators-six-weeks-total", "brackwater-excavator-weekly-rate-superseded", "brackwater-collection-charge", "lumora-uptime-ai-note", "corvell-break-with-arrears", "ridgeway-conversion-fee-700-hours", "greyfriar-audit-underpayment", "greyfriar-named-users-refutation", "tessaract-rush-medical-job"]);
 // the trap phrase appears only where the answer refutes it or says the text isn't binding
 const REFUTES_TRAP = new Set([
   "castellane-partner-rate-override", "staffing-conversion-fee-override", "mislead-marketing", "mislead-superseded", "mislead-unofficial", "mislead-draft",

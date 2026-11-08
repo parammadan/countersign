@@ -170,20 +170,23 @@ export async function verifyAnswer(provider: ModelProvider, shown: Passage[], ti
 }
 
 // ---- the rules ----
-const NEGATION = /\b(?:not|no|never|neither|nor|none|nothing|without|cannot|non-refundable|nonrefundable)\b|n['’]t\b/i;
+const NEGATION = /\b(?:not|no|never|neither|nor|none|nothing|without|cannot|non-refundable|nonrefundable|rather than|instead of)\b|n['’]t\b/i;
 // words of terms: obligations, rights, money and periods
 const OBLIGATION = /\b(?:pays?|paid|payable|owes?|owed|must|shall|may|can|cannot|entitled|required|requires?|liable|liability|responsible|terminat\w*|due|charges?|fees?|refund\w*|notice|bears?|indemnif\w*|renew\w*|penalt\w*|interest|deposit|capped|caps?|limit\w*|deadline|within|rates?|costs?|prices?|rent|periods?|amounts?|totals?|discounts?|credits?|minimum|maximum|surcharges?|premiums?|commissions?|salary|wages?|bonus\w*|royalt\w*|retainer|expenses?|reimburs\w*|warrant\w*|guarantee\w*|insur\w*)\b/i;
 // what states a term outright: a verb of obligation or payment
 const TERM_VERB = /\b(?:pays?|paid|payable|owes?|owed|must|shall|is due|are due|falls? due|will pay|charges?|is required|are required|is entitled|are entitled|is liable|are liable)\b/i;
 // a scenario claim restates the user's own facts, and says so
 const USER_ATTRIB = /\b(?:you|your|you['’](?:ve|re|d)|if|assuming|suppose|supposing|hypothetical\w*)\b/i;
-const ABSENCE_MARK = /\b(?:does not|doesn['’]t|do not|don['’]t|is not|isn['’]t|are not|aren['’]t|nothing in|no clause|no provision|never)\b[^.;]{0,60}\b(?:say|says|state|states|specify|specifies|mention|mentions|address|addresses|set|sets|provide|provides|define|defines|include|includes|cover|covers|stated|specified|addressed|mentioned|defined|covered)\b|\b(?:is|are) silent\b|\bnot (?:stated|specified|addressed|mentioned|defined)\b/i;
+const ABSENCE_VERB = "restrict|restricts|prohibit|prohibits|prevent|prevents|bar|bars|limit|limits|oblige|obliges|say|says|state|states|specify|specifies|mention|mentions|address|addresses|set|sets|provide|provides|define|defines|include|includes|cover|covers|list|lists|name|names|contain|contains|identify|identifies|give|gives|require|requires|impose|imposes|grant|grants|establish|establishes|stated|specified|addressed|mentioned|defined|covered|listed|named|contained|identified|given|required|imposed|granted|established";
+const ABSENCE_MARK = new RegExp(`\\b(?:does not|doesn['’]t|do not|don['’]t|did not|is not|isn['’]t|are not|aren['’]t|nothing in|none of|no (?:other )?(?:clause|provision|term|passage|section|part)|never)\\b[^.;]{0,60}\\b(?:${ABSENCE_VERB})\\b|\\b(?:${ABSENCE_VERB})\\s+no\\b|\\b(?:is|are) silent\\b|\\bnot (?:stated|specified|addressed|mentioned|defined)\\b`, "i");
 const DISCLAIM = /\b(?:not binding|non-binding|nonbinding|not legally binding|not part of|isn['’]?t part of|does not form part|doesn['’]t form part|forms? no part|no contractual effect|no legal effect|has no effect|superseded|withdrawn|for information only)\b/i;
+const REPORTED = /\b(?:faq|draft|marketing|summary|brochure|pitch|deck|extract|appendix|annex|schedule|exhibit|rate card|note)\b[^.;,]{0,60}\b(?:says?|said|saying|states?|stated|stating|claims?|claimed|claiming|lists?|listed|listing|shows?|showing|suggests?|mentions?|advertis\w*|quotes?|offers?)\b/;
 const STOP = new Set(["that", "this", "with", "from", "into", "which", "under", "agreement", "clause", "section", "will", "would", "shall", "must", "each", "every", "also", "only", "their", "there", "these", "those", "than", "then", "when", "where", "after", "before", "within", "about", "have", "been", "being", "does", "doesn", "says", "states"]);
 
 const content = (s: string) => normalize(s).split(/[^\p{L}]+/u).filter((w) => w.length >= 4 && !STOP.has(w));
 // a "Yes" or "No" that answers the question ("No.", "Yes, …"), not "No clause mentions…"
-const YESNO = /^(?:yes|no)(?:[.,!:;]|\s*$)/i;
+// "yes" is never a determiner; "no" is one when a word follows it directly ("No clause…")
+const YESNO = /^yes\b|^no(?:\s*[.,!:;—–-]|\s*$)/i;
 // a small count in words ("two packs", "one month's interest", "three items") isn't a figure of the agreement's;
 // one with a unit of time, money or rate ("nine months", "three percent") is
 const COUNT_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
@@ -222,6 +225,21 @@ function unitOf(text: string, n: string): string | null {
   if (m[1]) return "money";
   if (m[2]) return /%|percent/.test(m[2]) ? "%" : m[2].replace(/^(?:business|calendar|working)\s+/, "").replace(/s$/, "");
   return null;
+}
+const ABSENCE_WORDS = new Set(["state", "states", "stated", "specify", "specifies", "specified", "mention", "mentions", "mentioned", "address", "addresses", "addressed", "provide", "provides", "provided", "define", "defines", "defined", "include", "includes", "included", "cover", "covers", "covered", "whether", "silent", "nothing", "none", "agreement", "contract", "clause", "term", "terms", "says", "say"]);
+/**
+ * A binding sentence that has all of an absence claim's own words, parties included (at least two): "does not state
+ * whether fees already paid are refundable" against "Fees already paid are not refundable". A claim that a word isn't
+ * defined is about its definition, so the word itself being used doesn't count.
+ */
+function saidAfterAll(claim: string, ctx: JudgeContext): boolean {
+  if (/\b(?:does not|doesn['’]t|do not|don['’]t|is not|isn['’]t)\s+(?:define|defined)\b/i.test(claim)) return false;
+  const ws = [...new Set(content(claim).filter((w) => !ABSENCE_WORDS.has(w)).map(stemWord))];
+  if (ws.length < 2) return false;
+  return (ctx.bindingSentences ?? []).some((x) => {
+    const have = new Set(content(x).map(stemWord));
+    return ws.every((w) => have.has(w));
+  });
 }
 /** Figures of a unit in a sentence ("45 days' notice" -> 45 for "day"). */
 function figuresOfUnit(sentence: string, unit: string): Set<string> {
@@ -285,13 +303,16 @@ export function userFigureDisowned(claim: string, n: string): boolean {
   return ATTRIBUTED.test(claim) && REFUTED.test(claim);
 }
 /** `claim` keeps `span`'s wording: at least `share` of span's content words are in claim (by stem or synonym group). */
+// verbs that say the same thing about an agreement ("include" a clause, "contain" one)
+const SAME: string[][] = [["define", "defines", "defined", "definition", "definitions"], ["include", "includes", "contain", "contains", "have", "has", "provide", "provides", "set", "sets"], ["allow", "allows", "permit", "permits", "let", "lets"], ["state", "states", "say", "says", "specify", "specifies", "mention", "mentions"]];
+const canon = (w: string) => SAME.find((g) => g.includes(w))?.[0] ?? stemWord(w);
 function sameWords(span: string, claim: string, share = 0.5): boolean {
   const ws = content(span);
   if (!ws.length) return true;
   const cs = content(claim);
-  const stems = new Set(cs.map(stemWord));
+  const stems = new Set([...cs.map(stemWord), ...cs.map(canon)]);
   const groups = new Set(cs.map((w) => GROUP_OF.get(w)).filter((g) => g !== undefined));
-  return ws.filter((w) => stems.has(stemWord(w)) || (GROUP_OF.has(w) && groups.has(GROUP_OF.get(w)!))).length / ws.length >= share;
+  return ws.filter((w) => stems.has(stemWord(w)) || stems.has(canon(w)) || (GROUP_OF.has(w) && groups.has(GROUP_OF.get(w)!))).length / ws.length >= share;
 }
 /** At least one word of substance in common (by stem or synonym group), when `a` has any. */
 function sharesWord(a: string, b: string): boolean {
@@ -330,6 +351,8 @@ export type JudgeContext = {
   premiseNums?: Set<string>;
   /** figures the deterministic term check doubted: they need a quote about the same term */
   flaggedNums?: Set<string>;
+  /** every figure in the binding text */
+  bindingNums?: Set<string>;
   /** the binding agreement's sentences, to tell whose figure a figure is */
   bindingSentences?: string[];
   /** the answer's notes (what the agreement doesn't say) */
@@ -457,11 +480,22 @@ export function judge(claims: VerifiedClaim[], ctx: JudgeContext): Judgement {
       );
     };
     const backed = [...claimNums].every(figureBacked);
-    const absence = c.kind === "absence" && !c.evidence.length && ABSENCE_MARK.test(c.claim) && claimNums.size === 0;
+    // an absence claim needs no evidence, unless the binding text does say it: a sentence with most of its words
+    // ("does not state whether fees already paid are refundable" vs "Fees already paid are not refundable")
+    // its figures only name terms the binding text has, each where the binding text gives it to the same term ("does
+    // not say whether the $1,000 retainer is credited against the $6,800 fee"; not "…whether the 15 days' notice to
+    // terminate…" when 15 days is the invoice period)
+    const absence =
+      ABSENCE_MARK.test(c.claim) && (!c.evidence.length || c.evidenceChecked) && !saidAfterAll(c.claim, ctx) &&
+      [...claimNums].every((n) => !ctx.flaggedNums?.has(n) && (ctx.bindingSentences ?? []).some((x) => backsFigure(c.claim, x, n, ctx)));
     const scenario = c.kind === "scenario" && !c.evidence.length && USER_ATTRIB.test(c.claim) && subset(claimNums, userNums) && !OBLIGATION.test(c.claim) && !partiesIn(c.claim, ctx.names).size;
+    // a disclaimer of text labelled not binding states no term itself, or only reports what that text says ("An
+    // unofficial FAQ in the Appendix says the Firm accepts unlimited liability, but that text is not binding")
     const disclaimer =
-      c.kind === "context" && DISCLAIM.test(c.claim) && !TERM_VERB.test(c.claim) && !partiesIn(c.claim, ctx.names).size && c.evidenceChecked && c.evidence.some((e) => ctx.unofficialIds.has(e.passage)) &&
-      c.evidence.every((e) => ctx.bindingIds.has(e.passage) || ctx.unofficialIds.has(e.passage)) && backed;
+      DISCLAIM.test(c.claim) && ((!TERM_VERB.test(c.claim) && !partiesIn(c.claim, ctx.names).size) || REPORTED.test(normalize(c.claim))) && c.evidenceChecked && c.evidence.some((e) => ctx.unofficialIds.has(e.passage)) &&
+      c.evidence.every((e) => ctx.bindingIds.has(e.passage) || ctx.unofficialIds.has(e.passage)) &&
+      // its figures are the quoted text's, or binding figures it says that text doesn't change ("…the $700 fee")
+      [...claimNums].every((n) => nums(evidenceText).has(n) || (!!ctx.bindingNums?.has(n) && !ctx.flaggedNums?.has(n)));
     const grounded = c.verdict === "supported" && ((fromBinding && backed) || absence || scenario || disclaimer);
     if (material && !grounded) fail(c.verdict === "supported" ? "supported without evidence that checks out" : c.verdict, c);
     else if (!material && c.verdict !== "supported") qualifications.push(`${c.span.slice(0, 160)} (${c.verdict})`);
