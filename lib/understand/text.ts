@@ -3,9 +3,10 @@ import type { Extracted } from "../pdf/extract";
 
 export type PageLines = { page: number; lines: string[]; textLayer?: boolean };
 
-// soft hyphens, zero-width and bidi controls: invisible on the page, but they change what the text "says"
+// format and default-ignorable characters (soft hyphens, zero-width, bidi controls and isolates, tag characters,
+// variation selectors): invisible on the page, but they change what the text "says"
 // ("$5<zero-width space>00" reads as $5). Removed once here, so analyzers and the evidence check see the same text.
-export const INVISIBLE = /[\u00AD\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF]/g;
+export const INVISIBLE = /[\p{Cf}\p{Default_Ignorable_Code_Point}]/gu;
 const clean = (s: string) => s.normalize("NFKC").replace(INVISIBLE, "");
 
 /** Group text items into lines (same baseline, left to right), top to bottom. Page numbers start at 1. */

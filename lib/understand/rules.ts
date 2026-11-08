@@ -54,7 +54,14 @@ export function analyzeWithRules(input: RulesInput): AnalyzerOutput {
   const pages = input.pages;
   // sentences addressed to software are reported (gaps, below) and never used as a source for anything else
   const raw = sentences(pages);
-  const all = raw.filter((s) => !INSTRUCTION_RE.test(normalize(s.text)));
+  // a short "Note to the AI." heading taints the sentence that follows it too
+  const tainted = new Set<number>();
+  raw.forEach((s, i) => {
+    if (!INSTRUCTION_RE.test(normalize(s.text))) return;
+    tainted.add(i);
+    if (s.text.length < 80 && raw[i + 1]?.page === s.page) tainted.add(i + 1);
+  });
+  const all = raw.filter((_, i) => !tainted.has(i));
   const early = all.filter((s) => s.page <= 2);
 
   // ---- parties ----

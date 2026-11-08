@@ -123,7 +123,7 @@ export async function analyzeWithModel(provider: ModelProvider, pages: PageLines
     if (e instanceof z.ZodError) throw new AnalysisError("The analysis came back in an unexpected format and was discarded.");
     throw e;
   }
-  const grounded = groundFindings(out.findings, pages.slice(0, doc.pages));
+  const grounded = groundFindings(out.findings, pages.slice(0, doc.pages), { strict: true });
   if (doc.truncated) grounded.warnings.push(`Only the first ${doc.pages} page${doc.pages === 1 ? " was" : "s were"} analyzed; the rest was over the size limit.`);
   return { ...grounded, truncated: doc.truncated };
 }

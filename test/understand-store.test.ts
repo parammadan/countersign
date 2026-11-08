@@ -105,4 +105,20 @@ describe("document analyses", () => {
       db.run("INSERT INTO document_analyses (id, workspace_id, template_version_id, source_sha256, analyzer, result_json, created_by, created_at) VALUES (?,?,?,?,?,?,?,?)", `an_fill${i}`, "ws_a", vid, "x", "rules", row.result_json, "t", new Date().toISOString());
     await expect(S.analyzeVersion("ws_a", vid, "avery@example.com")).rejects.toThrow(/limit/);
   });
+
+  it("failed attempts count against the limit too, before any work is done", async () => {
+    workspace("ws_c");
+    db.run("INSERT INTO templates (id, workspace_id, name, created_at) VALUES ('tpl_c', 'ws_c', 'C', ?)", new Date().toISOString());
+    const add = (id: string, pages: number) =>
+      db.run(
+        "INSERT INTO template_versions (id, template_id, workspace_id, version, source_name, source_path, pdf_path, sha256, pages_json, fields_json, detection_json, status, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        id, "tpl_c", "ws_c", 1, "a.pdf", "missing", "missing/agreement.pdf", "0", JSON.stringify(Array.from({ length: pages }, () => ({ width: 612, height: 792 }))), "[]", "{}", "draft", new Date().toISOString(),
+      );
+    add("tv_big", S.MAX_PAGES + 1);
+    // refused from the stored page count, without reading or extracting the file (it doesn't even exist)
+    await expect(S.analyzeVersion("ws_c", "tv_big", "c@example.com")).rejects.toThrow(/more than 200 pages/);
+    for (let i = 1; i < S.RUNS_PER_HOUR; i++) await expect(S.analyzeVersion("ws_c", "tv_big", "c@example.com")).rejects.toThrow(/pages/);
+    await expect(S.analyzeVersion("ws_c", "tv_big", "c@example.com")).rejects.toThrow(/limit/);
+    expect(db.one<{ n: number }>("SELECT COUNT(*) n FROM document_analyses WHERE workspace_id = 'ws_c'")!.n).toBe(0);
+  });
 });

@@ -8,6 +8,7 @@ import { extractPdf } from "../pdf/extract";
 import { documentTitle } from "../pdf/title";
 import { AppError, getWorkspace } from "../files";
 import { audit } from "../audit";
+import { limited } from "../ratelimit";
 import { FieldSchema } from "../fields";
 import { id, now, sha256 } from "../util";
 import { AnalyzerOutputSchema, type StoredAnalysis } from "./schema";
@@ -33,6 +34,11 @@ type Row = { id: string; workspace_id: string; template_version_id: string; sour
 
 export async function analyzeVersion(wsId: string, versionId: string, actor: string): Promise<string> {
   const { template, version } = getTemplateVersion(wsId, versionId);
+  // every attempt counts, before any work, including ones that fail (stored runs are counted below as well,
+  // so the limit survives a restart)
+  if (limited(`understand:${wsId}`, RUNS_PER_HOUR, 3600_000)) throw new AppError(`This workspace has read ${RUNS_PER_HOUR} agreements in the last hour, the current limit. Try again later.`, 429);
+  const pageCount = (JSON.parse(version.pages_json) as unknown[]).length;
+  if (pageCount > MAX_PAGES) throw new AppError(`This agreement has more than ${MAX_PAGES} pages, more than we read.`, 422);
   const since = new Date(Date.now() - 3600_000).toISOString();
   const recent = one<{ n: number }>("SELECT COUNT(*) n FROM document_analyses WHERE workspace_id = ? AND created_at > ?", wsId, since)?.n ?? 0;
   if (recent >= RUNS_PER_HOUR) throw new AppError(`This workspace has read ${RUNS_PER_HOUR} agreements in the last hour, the current limit. Try again later.`, 429);
@@ -47,9 +53,10 @@ export async function analyzeVersion(wsId: string, versionId: string, actor: str
     throw new AppError("We couldn't read the text in this agreement.", 422);
   }
   if (ex.pages.length > MAX_PAGES) throw new AppError(`This agreement has more than ${MAX_PAGES} pages, more than we read.`, 422);
-  const pages = pageLines(ex);
-  const fields = FieldSchema.array().catch([]).parse(JSON.parse(version.fields_json));
   const detection = JSON.parse(version.detection_json) as { addedSignaturePage?: boolean };
+  // the signature page AgreementOS appended isn't part of what the agreement says
+  const pages = pageLines(ex).slice(0, detection.addedSignaturePage && ex.pages.length > 1 ? -1 : undefined);
+  const fields = FieldSchema.array().catch([]).parse(JSON.parse(version.fields_json));
   const out = AnalyzerOutputSchema.parse(
     analyzeWithRules({ pages, title: documentTitle(ex), fields, addedSignaturePage: !!detection.addedSignaturePage, firmName: getWorkspace(wsId).legal_name }),
   );
@@ -108,6 +115,6 @@ export function reviewFinding(wsId: string, analysisId: string, findingId: strin
       actor,
       now(),
     );
-  audit(wsId, null, "agreement.finding_reviewed", actor, {}, { category: f.category, label: f.label, decision });
+  audit(wsId, null, "agreement.finding_reviewed", actor, {}, { category: f.category, finding: f.id, decision }); // no labels: a model's could quote the document
   return { versionId: row.template_version_id };
 }
