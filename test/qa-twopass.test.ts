@@ -227,6 +227,25 @@ describe("decision rules", () => {
   });
 });
 
+describe("found by the first real verifier run", () => {
+  it("a note restated as what the agreement doesn't say matches its span", () => {
+    const note = "When the fixed fee is payable";
+    const r = judge(
+      [{ span: note, claim: "The agreement does not state when the fixed fee is payable.", kind: "absence", material: true, verdict: "supported", evidence: [], evidenceChecked: false, reason: "" }],
+      { parts: [note], notes: [note], bindingIds: new Set(), unofficialIds: new Set(), userText: "", names: new Map() },
+    );
+    expect(r.show, r.reasons.join(" / ")).toBe("verified");
+  });
+  it("'No clause mentions…' isn't a Yes/No answer", () => {
+    const a = "No clause mentions arbitration, dispute resolution procedures, or a venue.";
+    const r = judge(
+      [{ span: a, claim: "No clause of the agreement mentions arbitration, dispute resolution procedures, or a venue.", kind: "absence", material: true, verdict: "supported", evidence: [], evidenceChecked: false, reason: "" }],
+      { parts: [a], bindingIds: new Set(), unofficialIds: new Set(), userText: "Where would arbitration be held?", question: "Where would arbitration be held?", names: new Map() },
+    );
+    expect(r.show, r.reasons.join(" / ")).toBe("verified");
+  });
+});
+
 describe("injection and untrusted data", () => {
   it("planted text reaches neither model; text labelled not binding is marked for both", async () => {
     const calls: ModelRequest[] = [];

@@ -182,7 +182,8 @@ const DISCLAIM = /\b(?:not binding|non-binding|nonbinding|not legally binding|no
 const STOP = new Set(["that", "this", "with", "from", "into", "which", "under", "agreement", "clause", "section", "will", "would", "shall", "must", "each", "every", "also", "only", "their", "there", "these", "those", "than", "then", "when", "where", "after", "before", "within", "about", "have", "been", "being", "does", "doesn", "says", "states"]);
 
 const content = (s: string) => normalize(s).split(/[^\p{L}]+/u).filter((w) => w.length >= 4 && !STOP.has(w));
-const YESNO = /^(?:yes|no)\b/i;
+// a "Yes" or "No" that answers the question ("No.", "Yes, …"), not "No clause mentions…"
+const YESNO = /^(?:yes|no)(?:[.,!:;]|\s*$)/i;
 // a small count in words ("two packs", "one month's interest", "three items") isn't a figure of the agreement's;
 // one with a unit of time, money or rate ("nine months", "three percent") is
 const COUNT_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
@@ -405,7 +406,10 @@ export function judge(claims: VerifiedClaim[], ctx: JudgeContext): Judgement {
       if (c.verdict !== "supported") fail("a judgement about words the answer doesn't contain", c);
       continue;
     }
-    if (!subset(nums(c.span), nums(c.claim)) || neg(c.span) !== neg(c.claim) || !subset(partiesIn(c.span, ctx.names), partiesIn(c.claim, ctx.names)) || !sameWords(c.span, c.claim)) {
+    // a note is what the agreement doesn't say: "When the fee is payable" reads as "the agreement doesn't say when…"
+    const noted = (ctx.notes ?? []).some((x) => within(trim(x), span));
+    const spanNeg = noted || neg(c.span);
+    if (!subset(nums(c.span), nums(c.claim)) || spanNeg !== neg(c.claim) || !subset(partiesIn(c.span, ctx.names), partiesIn(c.claim, ctx.names)) || !sameWords(c.span, c.claim)) {
       fail("a claim that didn't match the answer's words", c);
       continue;
     }

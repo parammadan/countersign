@@ -73,7 +73,15 @@ export const approveAll = (calls: ModelRequest[] = []): ModelProvider => ({
     calls.push(req);
     return {
       claims: claimsOf(req).map((span) => {
-        const claim = /^(?:yes|no)\b/i.test(span) ? `${span} (in answer to: ${questionOf(req)})` : span;
+        // a note says what the agreement doesn't say; the real verifier restates it that way
+        const notes = [...req.document.matchAll(/<note>([\s\S]*?)<\/note>/g)].map((m) => m[1].replace(/‹/g, "<").replace(/›/g, ">"));
+        if (notes.some((x) => x.includes(span) || span.includes(x))) {
+          const claim = `The agreement does not say ${span.charAt(0).toLowerCase()}${span.slice(1)}`;
+          return numbersIn(span).size
+            ? { span, claim, kind: "absence", material: true, verdict: "supported", evidence: evidenceFor(req, span), reason: "stub" }
+            : { span, claim, kind: "absence", material: true, verdict: "supported", evidence: [], reason: "stub" };
+        }
+        const claim = /^(?:yes|no)(?:[.,!:;]|\s*$)/i.test(span) ? `${span} (in answer to: ${questionOf(req)})` : span;
         const evidence = evidenceFor(req, span);
         const unofficial = new Set([...(req.context ?? "").matchAll(/<passage id="(p[^"]+)" page="\d+" binding="false">/g)].map((m) => m[1]));
         const aside = ABOUT_ASIDE.test(span) && evidence.some((e) => unofficial.has(e.passage));
