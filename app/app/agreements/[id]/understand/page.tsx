@@ -11,6 +11,16 @@ import { fmtDay } from "@/lib/time";
 
 export const metadata = { title: "What this agreement says" };
 
+const ERRORS: Record<string, string> = {
+  limit: "This workspace has read 20 agreements in the last hour, the current limit. Try again later.",
+  notfound: "That suggestion no longer exists. The agreement may have been read again.",
+  changed: "The stored agreement doesn't match its fingerprint, so it wasn't read.",
+  stale: "This agreement was read again since you opened the page. Review the new results.",
+  toolong: "This agreement has more than 200 pages, more than we read.",
+  unreadable: "We couldn't read the text in this agreement.",
+  failed: "Something went wrong. Try again.",
+};
+
 const STATUS_TONE: Record<Status, "ok" | "warn" | "neutral" | "bad"> = { stated: "ok", inferred: "warn", missing: "neutral", ambiguous: "warn" };
 
 export default async function Page({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string; read?: string }> }) {
@@ -51,7 +61,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         {admin && view && <div className="shrink-0">{readForm("Read again", "secondary")}</div>}
       </div>
 
-      {q.error && <div className="mb-4"><Notice tone="error">{q.error}</Notice></div>}
+      {q.error && <div className="mb-4"><Notice tone="error">{Object.hasOwn(ERRORS, q.error) ? ERRORS[q.error] : ERRORS.failed}</Notice></div>}
 
       {!view ? (
         <Card className="p-6">

@@ -63,3 +63,46 @@ test("read an uploaded agreement, see quoted findings, confirm and dismiss them"
   expect(await other.content()).not.toContain(label === "Agreement type" ? "Engagement letter" : label);
   await ctx.close();
 });
+
+test("staff can read the findings but not run or review them; error text never comes from the URL", async ({ page, browser }) => {
+  test.setTimeout(180_000);
+  await signup(page);
+  await page.goto("/app/agreements");
+  await page.locator('input[type="file"]').first().setInputFiles(path.join(process.cwd(), "fixtures/agreements/02-msa-two-column.pdf"));
+  await expect(page).toHaveURL(/\/app\/agreements\/tv_/, { timeout: 90_000 });
+  const understandUrl = page.url().split("?")[0] + "/understand";
+  await page.goto(understandUrl);
+  await page.getByRole("button", { name: "Read this agreement" }).click();
+  await expect(page.getByRole("heading", { name: "Parties", level: 2 })).toBeVisible();
+
+  // a forged error in the URL shows only our own generic message
+  await page.goto(`${understandUrl}?error=${encodeURIComponent("Your account is suspended, call 555-0100")}`);
+  await expect(page.getByText("Something went wrong. Try again.")).toBeVisible();
+  await expect(page.getByText(/suspended/)).toHaveCount(0);
+  await page.goto(`${understandUrl}?error=__proto__`);
+  await expect(page.getByText("Something went wrong. Try again.")).toBeVisible();
+
+  // a staff teammate
+  await page.goto("/app/settings");
+  const email = `staff-${Math.random().toString(36).slice(2, 8)}@example.com`;
+  await page.getByPlaceholder("colleague@example.com").fill(email);
+  await page.getByLabel("Role for the new teammate").selectOption("staff");
+  await page.getByRole("button", { name: "Invite" }).click();
+  const code = page.locator("code", { hasText: "/invite/" }).first();
+  await expect(code).toBeVisible();
+  const invite = (await code.textContent())!.trim();
+  const ctx = await browser.newContext();
+  const st = await ctx.newPage();
+  await st.goto(invite);
+  await st.getByLabel("Your name").fill("Sam Staff");
+  await st.getByLabel("Choose a password").fill("correct-horse-42");
+  await st.getByRole("button", { name: "Join workspace" }).click();
+  await expect(st).toHaveURL(/\/app/);
+
+  await st.goto(understandUrl);
+  await expect(st.getByRole("heading", { name: "Parties", level: 2 })).toBeVisible();
+  await expect(st.locator("figure blockquote").first()).toBeVisible();
+  await expect(st.getByRole("button", { name: /^(Read again|Read this agreement)$/ })).toHaveCount(0);
+  await expect(st.getByRole("button", { name: /^(Confirm|Dismiss|Undo):/ })).toHaveCount(0);
+  await ctx.close();
+});
