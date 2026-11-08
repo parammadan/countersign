@@ -186,3 +186,48 @@ describe("review 4: superseded schedules with their own numbering, and the false
     expect([...partyRoles('HARROW EXAMPLE LTD ("Provider")')]).toEqual([["harrow example ltd", "provider"]]);
   });
 });
+
+describe("review 5", () => {
+  it("a short plain sentence doesn't end a superseded section; 'Section numbering…' isn't a heading", () => {
+    for (const mid of ["The Provider proposed different pricing.", "None for new clients.", "Section numbering below follows the old draft."]) {
+      const { passages: ps } = passages(linesFromText([`1. Fees. The Client will pay $3,200 per month. Schedule C. Superseded draft terms (withdrawn). ${mid} The monthly fee is $50.`]));
+      expect(ps.map((p) => p.text).join(" "), mid).not.toContain("$50");
+    }
+  });
+  it("'30 days' notice is required' isn't a clause number; the next main clause still ends the section", () => {
+    const { passages: ps } = passages(linesFromText(["1. Fees. The Client will pay $3,200 per month. 2. Notice. Notice is required. Schedule C. Superseded draft terms (withdrawn). 30 days' notice is required for the draft. 3. Law. Oregon law governs."]));
+    const text = ps.map((p) => p.text).join(" ");
+    expect(text).not.toContain("30 days' notice is required for the draft");
+    expect(text).toContain("Oregon law governs.");
+  });
+  it("a colon label with content covers only its own sentence", () => {
+    const { passages: ps } = passages(linesFromText(["1. Fees. The Client will pay $3,200 per month. Marketing summary: great value for growing teams. Payment is due within 30 days of invoice. The Client may terminate on 30 days' notice."]));
+    const text = ps.map((p) => p.text).join(" ");
+    expect(text).not.toContain("great value");
+    expect(text).toContain("Payment is due within 30 days of invoice.");
+    expect(text).toContain("The Client may terminate on 30 days' notice.");
+  });
+  const MINFEE = linesFromText(['Agreement between Harrow Example Ltd ("Harrow" or the "Provider") and Quill Sample Inc., a company incorporated in England (company number 1234567) (the "Client"). 1. Fees. The Client will pay $3,200 per month. 2. Late fee. A late fee of 5% of the overdue amount or $50, whichever is greater, applies to each late invoice. 3. Late interest. Overdue amounts accrue interest at 1.5% per month.']);
+  const shown: [string, Out][] = [
+    ["What is the monthly fee?", { answer: "The monthly fee is $3,200." }],
+    ["What is the late fee on a $2,000 invoice?", { answer: "The late fee is 5% of $2,000 or $50, whichever is greater, so $100.", calculations: [{ expression: "2000 * 5%", result: "100" }] }],
+    ["What is the late fee on a $1,000 invoice?", { answer: "5% of $1,000 is $50, which equals the $50 minimum." }],
+    ["What does the client pay per year?", { answer: "$3,200 x 12 = $38,400 per year." }],
+    ["What is the late interest on a $3,200 invoice?", { answer: "$48 (1.5% of $3,200) for each month it's late." }],
+    ["What is the late interest on a $3,200 invoice?", { answer: "1.5% of the $3,200 fee, or $48, for each month it's late." }],
+    ["What is the late interest on a $3,200 invoice over a year?", { answer: "1.5% of $3,200 is $48 a month, or $576 a year." }],
+  ];
+  for (const [q, o] of shown)
+    it(`shows: ${o.answer}`, async () => {
+      const r = await answerWithModel(model(o), q, MINFEE);
+      expect(r.status, r.warnings.join(" / ")).toBe("answered");
+    });
+  it("party names in these forms map to their roles, so a swap by name is caught", async () => {
+    const { partyRoles } = await import("@/lib/qa/check");
+    const roles = partyRoles(MINFEE.map((p) => p.lines.join(" ")).join(" "));
+    expect(roles.get("harrow example ltd")).toBe("provider");
+    expect(roles.get("quill sample inc.") ?? roles.get("quill sample inc")).toBe("client");
+    const r = await answerWithModel(model({ answer: "Harrow Example Ltd pays Quill Sample Inc. $3,200 per month." }), "Who pays whom?", MINFEE);
+    expect(r.status).not.toBe("answered");
+  });
+});

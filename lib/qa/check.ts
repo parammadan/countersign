@@ -47,7 +47,7 @@ const ANCHOR_STOP = new Set(
     ROLES.join(" ")).split(" "),
 );
 const IRREGULAR: Record<string, string> = { paid: "pay", owed: "owe", owing: "owe", due: "due", fees: "fee" };
-function stemWord(w: string): string {
+export function stemWord(w: string): string {
   if (IRREGULAR[w]) return IRREGULAR[w];
   return w.replace(/(?:ations?|ments?|ings?|ables?|ibles?|ions?|ers?|ed|es|s|ly)$/, "").slice(0, 6) || w.slice(0, 6);
 }
@@ -162,7 +162,8 @@ export function unboundValues(answer: string, support: string[], question = "", 
     // conditional ("on a $3,200 invoice, ..."); stated as a fact it's checked like any other figure
     const conditional = /\b(?:if|assuming|suppos\w*|on an?|in that case|in your example|in this scenario)\b/i.test(c);
     for (const v of stated) {
-      if (skip.has(v.n) || (conditional && scenario.has(v.n))) continue;
+      // "5% of $1,000" applies a stated rate to the user's own figure
+      if (skip.has(v.n) || (scenario.has(v.n) && (conditional || /%\s+of\b/.test(c)))) continue;
       const withValue = segs.filter((s) => s.v.some((x) => x.n === v.n && compatible(x.kind, v.kind)));
       if (withValue.some((s) => binding.some((w) => s.a.has(w)))) continue;
       const asked = fromQuestion.has(v.n);
@@ -223,10 +224,11 @@ export function partyRoles(text: string): Map<string, string> {
   const out = new Map<string, string>();
   // the name is the run of capitalised words (and "&", "of", company suffixes) right before the label, so a title
   // like "CONSULTING AGREEMENT between ..." isn't taken as part of it
-  const label = String.raw`\(\s*(?:the\s+|each\s+a\s+|hereinafter\s+(?:called\s+|referred\s+to\s+as\s+)?(?:the\s+)?)?["“']?([A-Z][a-z]+)["”']?\s*\)`;
+  // '("Provider")', '(the "Provider")', '(hereinafter "Provider")', '("Harrow" or the "Provider")'
+  const label = String.raw`\(\s*(?:["“'][^"”'()]{1,40}["”']\s+or\s+)?(?:the\s+|each\s+a\s+|hereinafter\s+(?:called\s+|referred\s+to\s+as\s+)?(?:the\s+)?)?["“']?([A-Z][a-z]+)["”']?\s*\)`;
   const name = String.raw`((?:[A-Z][\w&.'’-]*|&|of|and)(?:,?\s+(?:[A-Z][\w&.'’-]*|&|of|and))*)`;
   // 'Harrow Example Ltd ("Provider")', 'Harrow Example Ltd, a Delaware corporation (the "Provider")'
-  for (const re of [new RegExp(`${name}\\s*,?\\s*${label}`, "g"), new RegExp(`${name}\\s*,\\s*an?\\s+[^()]{3,80}?${label}`, "g")]) {
+  for (const re of [new RegExp(`${name}\\s*,?\\s*${label}`, "g"), new RegExp(`${name}\\s*,\\s*an?\\s+(?:[^()]|\\([^()]{0,60}\\)){3,160}?${label}`, "g")]) {
     for (const m of text.matchAll(re)) {
       const role = m[2].toLowerCase();
       const words = m[1].split(/\s+/);
@@ -378,6 +380,7 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
     const bad = value === null || !operands.length || !operands.every(known) || !NUMERIC_RESULT.test(c.result) || !Number.isFinite(stated) || Math.abs(value - stated) > 0.005 + Math.abs(value) * 1e-9;
     if (bad) failed.push(`${c.expression} = ${c.result}`);
     else {
+      for (const o of operands) verified.add(o.n);
       verified.add(String(Number(stated)));
       verified.add(String(Number(value.toFixed(2))));
       verified.add(String(Math.round(value)));
@@ -423,9 +426,19 @@ export function impliedCalculations(text: string): Calculation[] {
   const out: Calculation[] = [];
   const t = text.slice(0, MAX_TEXT);
   const NUM = String.raw`[$£€]?\s?(\d[\d,]*(?:\.\d+)?)`;
-  for (const m of t.matchAll(new RegExp(String.raw`(\d+(?:\.\d+)?)\s*%\s+of\s+${NUM}[^.;\d]{0,40}?\b(?:is|=|equals|comes to|which is|totals?|or|gives)\s+${NUM}`, "gi")))
-    out.push({ expression: `${m[2].replace(/,/g, "")} * ${m[1]}%`, result: m[3].replace(/,/g, "") });
+  const RESULT = String.raw`(?:is|=|equals|comes to|which is|that is|gives|making|,\s*or)`;
+  const n = (x: string) => x.replace(/,/g, "");
+  // "1.5% of $3,200 is $48", "1.5% of the $3,200 fee, or $48" (but not "5% of $2,000 or $50, whichever is greater")
+  for (const m of t.matchAll(new RegExp(String.raw`(\d+(?:\.\d+)?)\s*%\s+of\s+(?:(?:the|a|an|each|your|its)\s+)?(?:[a-z]+\s+){0,2}?${NUM}(?:\s+[a-z]+){0,2}?[^.;\d]{0,30}?\b${RESULT}\s+${NUM}(?![^.;]{0,40}\bwhichever\b)`, "gi")))
+    out.push({ expression: `${n(m[2])} * ${m[1]}%`, result: n(m[3]) });
+  // "$48 (1.5% of $3,200)"
+  for (const m of t.matchAll(new RegExp(String.raw`${NUM}\s*\(\s*(\d+(?:\.\d+)?)\s*%\s+of\s+(?:the\s+)?${NUM}\s*\)`, "gi")))
+    out.push({ expression: `${n(m[3])} * ${m[2]}%`, result: n(m[1]) });
+  // "$3,200 x 12 = $38,400"
   for (const m of t.matchAll(new RegExp(String.raw`${NUM}\s*(?:x|×|\*|times)\s*(\d[\d,]*(?:\.\d+)?)(%?)\s*(?:=|is|equals|comes to|gives)\s+${NUM}`, "gi")))
-    out.push({ expression: `${m[1].replace(/,/g, "")} * ${m[2].replace(/,/g, "")}${m[3]}`, result: m[4].replace(/,/g, "") });
+    out.push({ expression: `${n(m[1])} * ${n(m[2])}${m[3]}`, result: n(m[4]) });
+  // "$48 a month, or $576 a year"
+  for (const m of t.matchAll(new RegExp(String.raw`${NUM}\s+(?:a|per|each)\s+month,?\s+(?:or|so|which is|i\.e\.)\s+(?:about\s+)?${NUM}\s+(?:a|per|each)\s+year`, "gi")))
+    out.push({ expression: `${n(m[1])} * 12`, result: n(m[2]) });
   return out.slice(0, 6);
 }

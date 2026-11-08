@@ -38,7 +38,10 @@ export const QA_INSTRUCTION_RE = new RegExp(`${INSTRUCTION_RE.source}|${QA_EXTRA
  * heading or capitalised heading, across pages; a parenthetical label ("(non-binding)") covers only its own sentence.
  * Neither is evidence; the reader is told it was set aside.
  */
-const HEADING_START = /^\s*(?:(?:schedule|appendix|exhibit|annex|article|section|part)\b|[A-Z][A-Z &,'-]{3,60}[.:]?$)/i;
+// "Schedule C", "Section 5", "Exhibit IV" (with an identifier), or a heading in capitals ("GENERAL TERMS")
+const KEYWORD_HEADING = /^\s*(?:schedule|appendix|exhibit|annex|article|section|part)\s+(?:[a-z]|\d{1,3}|[ivx]{1,5})(?:[.:)\s]|$)/i;
+const CAPS_HEADING = /^\s*[A-Z][A-Z &,'-]{3,60}[.:]?$/;
+const isHeading = (t: string) => KEYWORD_HEADING.test(t) || CAPS_HEADING.test(t);
 export const NON_BINDING_SECTION_RE = /^(?:[a-z][\w ]{0,30}\.\s+)?(?:marketing (?:summary|copy|material|overview)|unofficial (?:faq|summary|notes?|guide|overview)|superseded (?:drafts?|versions?|terms)|draft (?:summary|version|terms|overview)|faq|sales (?:summary|sheet))\b/i;
 export const NON_BINDING_SENTENCE_RE = /\((?:not (?:legally )?binding|non-binding|unofficial|superseded|draft only|for discussion only)\)/i;
 export const NON_BINDING_RE = new RegExp(`${NON_BINDING_SECTION_RE.source}|${NON_BINDING_SENTENCE_RE.source}`, "i");
@@ -97,14 +100,17 @@ export function passages(pages: PageLines[]): { passages: Passage[]; excluded: P
     let prev = "";
     for (const t of sentences) {
       const n = normalize(t);
-      const num = Number((/^\s*\(?(\d{1,3})(?:\.\d{1,3})*[.)]?(?:\s|$)/.exec(t) ?? [])[1] ?? NaN);
-      // the label is a heading: short, ends in a colon, or comes right after a heading ("Schedule C.")
-      const headingLike = t.split(/\s+/).length <= 8 || /:/.test(t) || (prev !== "" && (HEADING_START.test(prev) || prev.split(/\s+/).length <= 3));
+      // a clause label is a number with a period or bracket ("4.", "4.1", "(4)"), not "30 days' notice is required"
+      const num = Number((/^\s*\(?(\d{1,3})(?:\.\d{1,3})*[.)](?:\s|$)/.exec(t) ?? [])[1] ?? NaN);
+      // a label sentence is itself set aside; it opens a section only when it's a heading: short with nothing after
+      // a colon, ending in a colon, or right after a heading ("Schedule C.")
+      const label = NON_BINDING_SECTION_RE.test(n);
+      const headingLike = /:\s*$/.test(t) || (t.split(/\s+/).length <= 8 && !/:\s*\S/.test(t)) || (prev !== "" && (isHeading(prev) || prev.split(/\s+/).length <= 3));
       prev = t;
-      if (NON_BINDING_SECTION_RE.test(n) && headingLike) unofficial = true;
-      else if (unofficial && (HEADING_START.test(t) || (num > lastClause && num > 0))) unofficial = false;
-      if (!unofficial && num > 0) lastClause = Math.max(lastClause, num);
-      aside.push(QA_INSTRUCTION_RE.test(n) ? "x" : unofficial || NON_BINDING_SENTENCE_RE.test(n) ? "n" : null);
+      if (label && headingLike) unofficial = true;
+      else if (unofficial && !label && (isHeading(t) || (num > lastClause && num > 0))) unofficial = false;
+      if (!unofficial && !label && num > 0) lastClause = Math.max(lastClause, num);
+      aside.push(QA_INSTRUCTION_RE.test(n) ? "x" : unofficial || label || NON_BINDING_SENTENCE_RE.test(n) ? "n" : null);
     }
     let n = 0;
     for (let i = 0; i < sentences.length; i++) {

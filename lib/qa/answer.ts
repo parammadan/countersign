@@ -11,8 +11,8 @@ import { MIN_QUOTE, normalize, unsupportedTokens, unsupportedWords } from "../un
 import { AnalysisError, callModel, type ModelProvider, type Usage } from "../understand/model";
 import type { Finding } from "../understand/schema";
 import type { PageLines } from "../understand/text";
-import { checkCalculations, impliedCalculations, misquoted, roleSwaps, scenarioFigures, stripPageRefs, unboundValues, unsupportedNegations, unsupportedPlaces, withoutAbsence, type Calculation } from "./check";
-import { passages, QA_INSTRUCTION_RE, retrieve, terms, type Passage, type Scored } from "./retrieve";
+import { checkCalculations, impliedCalculations, stemWord, misquoted, roleSwaps, scenarioFigures, stripPageRefs, unboundValues, unsupportedNegations, unsupportedPlaces, withoutAbsence, type Calculation } from "./check";
+import { GROUP_OF, passages, QA_INSTRUCTION_RE, retrieve, terms, type Passage, type Scored } from "./retrieve";
 
 export const QA_STATUSES = ["answered", "partial", "not_found"] as const;
 export type QaStatus = (typeof QA_STATUSES)[number];
@@ -258,7 +258,9 @@ export function modelContext(question: string, pages: PageLines[], limits: QaLim
   if (size <= limits.maxDocumentChars) return { shown: inOrder([...all, ...unofficial]), excluded, whole: true };
   const q = [question, ...history.slice(-2).map((t) => t.question)].join(" ");
   const keep = new Set(retrieve(q, all, { k: 10_000, maxChars: limits.maxDocumentChars }).map((p) => p.id));
-  return { shown: inOrder([...all.filter((p) => keep.has(p.id)), ...unofficial]), excluded, whole: false };
+  const kept = all.filter((p) => keep.has(p.id));
+  const pagesKept = new Set(kept.map((p) => p.page));
+  return { shown: inOrder([...kept, ...unofficial.filter((p) => pagesKept.has(p.page)).slice(0, 20)]), excluded, whole: false };
 }
 
 const agreementBlock = (title: string, shown: Passage[], whole: boolean) =>
@@ -369,9 +371,14 @@ export async function answerWithModel(
   const extra = { explanation: out.explanation || undefined, calculations: out.calculations.length ? out.calculations : undefined, notStated: out.not_stated.length ? out.not_stated : undefined };
   // an answer whose words are mostly not in the text it cites isn't tied to it; a looser paraphrase gets a note
   // the same significant words on both sides of the ratio (no "the", "agreement", party labels or bare numbers)
+  // words count as supported by stem ("monthly" ~ "month") or synonym group ("fee" ~ "pay"), not only exactly
   const generic = (w: string) => COMMON_CAPS.has(w) || GENERIC_WORDS.has(w);
+  const supportWords = normalize(support.join(" ")).split(/[^\p{L}\p{N}]+/u);
+  const stems = new Set(supportWords.map(stemWord));
+  const groups = new Set(supportWords.map((w) => GROUP_OF.get(w)).filter((g) => g !== undefined));
+  const covered = (w: string) => stems.has(stemWord(w)) || (GROUP_OF.has(w) && groups.has(GROUP_OF.get(w)!));
   const words = unsupportedWords(out.answer, []).filter((w) => !generic(w));
-  const extraWords = unsupportedWords(out.answer, support).filter((w) => !generic(w));
+  const extraWords = unsupportedWords(out.answer, support).filter((w) => !generic(w) && !covered(w));
   const share = words.length ? extraWords.length / words.length : 0;
   if (words.length >= 2 && share > LOOSE_WORDING) return withheld("Most of the answer's wording isn't in the text it cites, so it isn't shown.");
   if (share > 0.5) warnings.push("Much of this answer is worded differently from the quoted text. Check it against the quotes.");
@@ -379,7 +386,7 @@ export async function answerWithModel(
 }
 
 /** Everyday words an answer adds around the agreement's terms; they don't count as unsupported wording. */
-const GENERIC_WORDS = new Set(["pro", "rata", "rated", "prorated", "basis", "approx", "yes", "according", "says", "say", "stated", "states", "agreement", "clause", "section", "means", "would", "comes", "come", "works", "out", "per", "each", "every", "also", "both", "plus", "only", "just", "already", "still", "yet", "this", "that", "there", "here", "they", "them", "you", "your"]);
+const GENERIC_WORDS = new Set(["equals", "equal", "minimum", "maximum", "greater", "greatest", "higher", "lower", "less", "more", "plus", "minus", "times", "multiplied", "divided", "sum", "works", "result", "whichever", "pro", "rata", "rated", "prorated", "basis", "approx", "yes", "according", "says", "say", "stated", "states", "agreement", "clause", "section", "means", "would", "comes", "come", "works", "out", "per", "each", "every", "also", "both", "plus", "only", "just", "already", "still", "yet", "this", "that", "there", "here", "they", "them", "you", "your"]);
 /** Share of an answer's words that may be missing from its cited text before the answer is withheld. */
 export const LOOSE_WORDING = 0.7;
 const WITHHELD = "The AI's answer didn't pass AgreementOS's checks against the agreement, so it isn't shown. These are the passages it relied on; read them to answer your question.";
