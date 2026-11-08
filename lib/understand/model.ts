@@ -18,6 +18,8 @@ export type ModelRequest = {
   schema: Record<string, unknown>;
   maxOutputTokens: number;
   signal: AbortSignal;
+  /** called by the provider with token counts, for cost tracking */
+  onUsage?: (u: { inputTokens: number; outputTokens: number }) => void;
 };
 
 /** A model provider returns the parsed JSON answer; anything else is the orchestrator's job. */
@@ -96,26 +98,33 @@ export function documentForModel(pages: PageLines[], maxChars = LIMITS.maxInputC
   return { text: `<document>\n${parts.join("\n")}\n</document>`, pages: n, truncated: n < pages.length || used > maxChars };
 }
 
-export async function analyzeWithModel(provider: ModelProvider, pages: PageLines[], limits = LIMITS): Promise<Grounded & { truncated: boolean }> {
-  const doc = documentForModel(pages, limits.maxInputChars);
+/**
+ * One provider call with a deadline. The request is aborted at the deadline; any error the provider throws is
+ * replaced by a fixed message, because provider errors can echo the request (and so the document).
+ */
+export async function callModel(provider: ModelProvider, req: Omit<ModelRequest, "signal">, timeoutMs: number): Promise<unknown> {
   const ctl = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
-      ctl.abort();
+      // settle the deadline first, so a provider that resolves on abort can't win the race
       reject(new DeadlineError("The analysis took too long and was stopped."));
-    }, limits.timeoutMs);
+      ctl.abort();
+    }, timeoutMs);
   });
-  let raw: unknown;
   try {
-    raw = await Promise.race([provider.complete({ system: SYSTEM_PROMPT, document: doc.text, schema: ANSWER_SCHEMA, maxOutputTokens: limits.maxOutputTokens, signal: ctl.signal }), deadline]);
+    return await Promise.race([provider.complete({ ...req, signal: ctl.signal }), deadline]);
   } catch (e) {
     if (e instanceof DeadlineError) throw e;
-    // provider errors can echo the request; never pass their text on (it could contain document content)
     throw new AnalysisError("The analysis service didn't answer. Try again later.");
   } finally {
     clearTimeout(timer);
   }
+}
+
+export async function analyzeWithModel(provider: ModelProvider, pages: PageLines[], limits = LIMITS): Promise<Grounded & { truncated: boolean }> {
+  const doc = documentForModel(pages, limits.maxInputChars);
+  const raw = await callModel(provider, { system: SYSTEM_PROMPT, document: doc.text, schema: ANSWER_SCHEMA, maxOutputTokens: limits.maxOutputTokens }, limits.timeoutMs);
   let out: AnalyzerOutput;
   try {
     out = AnalyzerOutputSchema.parse(raw);
