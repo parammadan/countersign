@@ -7,6 +7,7 @@
 //     only; a verified result may then appear in the answer.
 // All of it is deterministic and bounded; none of it calls a model.
 import { normalize } from "../understand/evidence";
+import { GROUP_OF } from "./retrieve";
 
 const MAX_TEXT = 6000;
 
@@ -85,14 +86,14 @@ export function valuesIn(text: string): Value[] {
   const s = normalize(text.slice(0, MAX_TEXT).replace(/^\s*\(?\d{1,3}(?:\.\d{1,3})*[.)]?\s+(?=[A-Z(“"])/, ""))
     .replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, " ");
   const out: Value[] = [];
-  const re = /([$£€])?\s?(\d[\d,]*(?:\.\d+)?)\s*(?:\)\s*)?(%|percent|per\s?cent|(?:(?:business|calendar|working)\s+)?(?:hours?|days?|weeks?|months?|years?))?/g;
+  const re = /([$£€]|\b(?:usd|eur|gbp|cad|aud)\s?)?\s?(\d[\d,]*(?:\.\d+)?)\s*(?:\)\s*)?(%|percent|per\s?cent|dollars?\b|usd\b|euros?\b|eur\b|pounds?\b|gbp\b|(?:(?:business|calendar|working)\s+)?(?:hours?|days?|weeks?|months?|years?))?/g;
   for (const m of s.matchAll(re)) {
     const raw = m[2].replace(/,/g, "");
     if (!raw || Number.isNaN(Number(raw))) continue;
     // a year in a date ("2027") or a day of month next to a month name is a date, checked elsewhere
     const before = s.slice(Math.max(0, (m.index ?? 0) - 12), m.index);
     if (/(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*$/.test(before) || /^\d{4}$/.test(raw) && !m[1] && !m[3]) continue;
-    const kind: Kind = m[1] ? "money" : m[3] ? (/%|cent/.test(m[3]) ? "percent" : "duration") : "plain";
+    const kind: Kind = m[1] || (m[3] && /dollar|usd|euro|eur|pound|gbp/.test(m[3])) ? "money" : m[3] ? (/%|cent/.test(m[3]) ? "percent" : "duration") : "plain";
     out.push({ n: String(Number(raw)), kind });
   }
   // "thirty (30) days" style figures are already digits; spelled-out-only figures are rare in answers
@@ -141,7 +142,7 @@ export function supportSegments(support: string[]): Seg[] {
  * question (`fromQuestion`) may be repeated, but not when the agreement gives that term a different figure of the
  * same kind ("Is the fee $5,000?" when it's $3,200). Figures whose term can't be judged aren't reported.
  */
-export function unboundValues(answer: string, support: string[], question = "", skip: Set<string> = new Set(), fromQuestion: Set<string> = new Set()): string[] {
+export function unboundValues(answer: string, support: string[], question = "", skip: Set<string> = new Set(), fromQuestion: Set<string> = new Set(), scenario: Set<string> = new Set()): string[] {
   const segs = supportSegments(support);
   const out: string[] = [];
   let prev = new Set<string>();
@@ -157,8 +158,11 @@ export function unboundValues(answer: string, support: string[], question = "", 
     const binding = contentKnown ? content : [...a];
     const stated = valuesIn(c);
     const statedHere = new Set(stated.map((x) => x.n));
+    // a scenario figure from the question ("if a $3,200 invoice is late") may be used where the answer is itself
+    // conditional ("on a $3,200 invoice, ..."); stated as a fact it's checked like any other figure
+    const conditional = /\b(?:if|assuming|suppos\w*|on an?|for an?|with an?|of an?|in that case|in your example)\b/i.test(c);
     for (const v of stated) {
-      if (skip.has(v.n)) continue;
+      if (skip.has(v.n) || (conditional && scenario.has(v.n))) continue;
       const withValue = segs.filter((s) => s.v.some((x) => x.n === v.n && compatible(x.kind, v.kind)));
       if (withValue.some((s) => binding.some((w) => s.a.has(w)))) continue;
       const asked = fromQuestion.has(v.n);
@@ -181,7 +185,7 @@ const NEG = /\b(?:\w+n['’]t|cannot|no|not|nothing|never|none|neither|nor|witho
 const NEG_WORD = /\b(\w+n['’]t|cannot|no|not|nothing|never|none|neither|nor|without|non-\w+|waived?|free|zero)\b/g;
 /** "No, ..." / "Yes, ..." opening a sentence is a reply, not a claim; "no later than" is a deadline, not a negation. */
 const REPLY = /(^|[.!?]\s+)(?:no|yes)\s*[,.;:!—-]\s*/gi;
-const BOUNDS = /\b(?:no|not)\s+(?:later|earlier|more|less|fewer|sooner)\s+than\b/g;
+const BOUNDS = /\b(?:no|not)\s+(?:later|earlier|more|less|fewer|sooner)\s+than\b|\b(?:not|cannot|\w+n['’]t)\b[^.,;]{0,50}?\bwithout\b/g;
 /**
  * Negations (and "waived", "free", "zero") in the answer that the cited text doesn't support where it talks about
  * the same thing: "Either party may not terminate" when the termination sentence has no negation is rejected
@@ -196,7 +200,10 @@ export function unsupportedNegations(answer: string, support: string[], absenceF
     const words = [...c.matchAll(NEG_WORD)].map((m) => m[1]);
     if (!words.length) continue;
     const a = [...anchors(c)].filter((w) => !isRate(w));
-    const near = segs.filter((s) => a.some((w) => s.a.has(w)));
+    // the cited sentences most about the same thing (not any sentence sharing one word)
+    const overlap = (s: { a: Set<string> }) => a.filter((w) => s.a.has(w)).length;
+    const best = Math.max(0, ...segs.map(overlap));
+    const near = best ? segs.filter((s) => overlap(s) === best) : [];
     for (const w of words) {
       const special = /^(?:waived?|free|zero)$/.test(w);
       const has = (t: string) => (special ? new RegExp(`\\b${w.replace(/d$/, "")}`).test(normalize(t)) : NEG.test(normalize(t)) || BOUNDS.test(normalize(t)));
@@ -214,9 +221,14 @@ const ROLE_RE = new RegExp(`\\b(${ROLES.filter((r) => !/part/.test(r)).join("|")
 /** Defined parties: 'Harrow Example Ltd ("Provider")' -> harrow example ltd = provider. */
 export function partyRoles(text: string): Map<string, string> {
   const out = new Map<string, string>();
-  for (const m of text.matchAll(/([A-Z][A-Za-z0-9&.,'’ -]{2,80}?)\s*\(\s*(?:the\s+)?["“']?([A-Z][a-z]+)["”']?\s*\)/g)) {
+  // the name is the run of capitalised words (and "&", "of", company suffixes) right before the label, so a title
+  // like "CONSULTING AGREEMENT between ..." isn't taken as part of it
+  for (const m of text.matchAll(/((?:[A-Z][\w&.'’-]*|&|of|and)(?:,?\s+(?:[A-Z][\w&.'’-]*|&|of|and))*)\s*,?\s*\(\s*(?:the\s+|each\s+a\s+)?["“']?([A-Z][a-z]+)["”']?\s*\)/g)) {
     const role = m[2].toLowerCase();
-    if (ROLES.includes(role)) out.set(normalize(m[1]).replace(/^(?:and|between|by|with)\s+/, "").replace(/[,.]+$/, ""), role);
+    const words = m[1].split(/\s+/);
+    // drop a leading all-caps title ("CONSULTING AGREEMENT") or connective
+    while (words.length > 1 && (/^[A-Z]{2,}$/.test(words[0]) || /^(?:and|of|between|by|with)$/i.test(words[0]))) words.shift();
+    if (ROLES.includes(role)) out.set(normalize(words.join(" ")).replace(/[,.]+$/, ""), role);
   }
   return out;
 }
@@ -254,7 +266,7 @@ export function roleSwaps(answer: string, support: string[], definitions: string
 }
 
 // ---- places, which models often write in lower case ----
-const PLACES = ["alabama", "alaska", "arizona", "arkansas", "california", "colorado", "connecticut", "delaware", "florida", "georgia", "hawaii", "idaho", "illinois", "indiana", "iowa", "kansas", "kentucky", "louisiana", "maine", "maryland", "massachusetts", "michigan", "minnesota", "mississippi", "missouri", "montana", "nebraska", "nevada", "new hampshire", "new jersey", "new mexico", "new york", "north carolina", "north dakota", "ohio", "oklahoma", "oregon", "pennsylvania", "rhode island", "south carolina", "south dakota", "tennessee", "texas", "utah", "vermont", "virginia", "washington", "west virginia", "wisconsin", "wyoming", "district of columbia", "ontario", "quebec", "british columbia", "england", "scotland", "wales", "ireland", "canada", "mexico", "germany", "france", "spain", "italy", "netherlands", "switzerland", "singapore", "australia", "india", "japan", "china"];
+const PLACES = ["alabama", "alaska", "arizona", "arkansas", "california", "colorado", "connecticut", "delaware", "florida", "georgia", "hawaii", "idaho", "illinois", "indiana", "iowa", "kansas", "kentucky", "louisiana", "maine", "maryland", "massachusetts", "michigan", "minnesota", "mississippi", "missouri", "montana", "nebraska", "nevada", "new hampshire", "new jersey", "new mexico", "new york", "north carolina", "north dakota", "ohio", "oklahoma", "oregon", "pennsylvania", "rhode island", "south carolina", "south dakota", "tennessee", "texas", "utah", "vermont", "virginia", "washington", "west virginia", "wisconsin", "wyoming", "district of columbia", "ontario", "quebec", "british columbia", "england", "scotland", "wales", "ireland", "canada", "mexico", "germany", "france", "spain", "italy", "netherlands", "switzerland", "singapore", "australia", "india", "japan", "china", "new zealand", "south africa", "hong kong", "united kingdom", "united states", "brazil", "sweden", "norway", "denmark", "belgium", "austria", "portugal", "poland", "israel", "korea", "taiwan", "cayman islands", "bermuda", "luxembourg"];
 /** Place names in the answer (any case) that the cited text and the question don't contain. */
 export function unsupportedPlaces(answer: string, support: string[], question: string): string[] {
   const a = normalize(answer);
@@ -308,7 +320,17 @@ export function evaluate(expr: string): number | null {
 }
 
 /** Calendar and unit constants a calculation may use without a quote (months in a year, days in a year, ...). */
-const CONSTANTS = new Set(["1", "2", "7", "12", "24", "52", "60", "100", "365", "1000"]);
+/** Calendar constants, allowed only when the question or answer talks about that period. */
+const CONSTANTS: [string, RegExp][] = [
+  ["12", /\b(?:year|years|yearly|annual|annually|annum|12 months|twelve months)\b/],
+  ["52", /\b(?:year|yearly|annual|annually|weeks?|weekly)\b/],
+  ["365", /\b(?:year|yearly|annual|annually|days?|daily)\b/],
+  ["7", /\b(?:weeks?|weekly)\b/],
+  ["24", /\b(?:hours?|hourly|days?|daily)\b/],
+  ["60", /\b(?:minutes?|hours?|hourly)\b/],
+  ["30", /\b(?:pro[ -]?rat\w*|pro rata|per day|daily|prorated)\b/],
+  ["31", /\b(?:pro[ -]?rat\w*|pro rata|per day|daily|prorated)\b/],
+];
 const OPERAND = /([$£€])?\s*(\d[\d,]*(?:\.\d+)?)\s*(%)?/g;
 const NUMERIC_RESULT = /^\s*[$£€]?\s*-?\d[\d,]*(?:\.\d+)?\s*%?\s*$/;
 /**
@@ -323,14 +345,24 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
   const q = valuesIn(question);
   const fromQuestion = new Set(q.map((v) => v.n));
   const topicAnchors = anchors(`${question} ${topic}`);
+  // "cost", "fee", "pay" and "invoice" are one topic: the synonym groups retrieval uses
+  const groupsOf = (t: string) => new Set(normalize(t).split(/[^\p{L}]+/u).map((w) => GROUP_OF.get(w)).filter((g) => g !== undefined));
+  const topicGroups = groupsOf(`${question} ${topic}`);
+  const onTopic = (s: Seg) => [...s.a].some((w) => topicAnchors.has(w)) || [...groupsOf(s.t)].some((g) => topicGroups.has(g));
   const fromAgreement = (n: string, kind: Kind | null) => {
     const withIt = segs.filter((s) => s.v.some((x) => x.n === n && (kind === null || x.kind === kind || x.kind === "plain")));
-    return withIt.length > 0 && withIt.some((s) => [...s.a].some((w) => topicAnchors.has(w)));
+    return withIt.length > 0 && withIt.some(onTopic);
   };
+  const talk = normalize(`${question} ${topic}`);
+  const constant = (n: string) => CONSTANTS.some(([c, re]) => c === n && re.test(talk));
+  // dividing by 100 turns a stated percentage into a fraction; it's allowed only with such a percentage
+  const percents = new Set(segs.filter(onTopic).flatMap((s) => s.v.filter((x) => x.kind === "percent").map((x) => x.n)));
   for (const c of calcs.slice(0, 6)) {
     const value = evaluate(c.expression);
     const operands = [...c.expression.replace(/[×x÷]/g, " ").matchAll(OPERAND)].map((m) => ({ n: String(Number(m[2].replace(/,/g, ""))), kind: (m[1] ? "money" : m[3] ? "percent" : null) as Kind | null }));
-    const known = (o: { n: string; kind: Kind | null }) => verified.has(o.n) || fromQuestion.has(o.n) || (o.kind === null && CONSTANTS.has(o.n)) || fromAgreement(o.n, o.kind);
+    const hundredOk = operands.some((o) => o.n !== "100" && percents.has(o.n));
+    const known = (o: { n: string; kind: Kind | null }) =>
+      verified.has(o.n) || fromQuestion.has(o.n) || (o.kind === null && (constant(o.n) || (o.n === "100" && hundredOk))) || fromAgreement(o.n, o.kind === "percent" ? "percent" : o.kind);
     const stated = Number(c.result.replace(/[$£€,%\s]/g, ""));
     const bad = value === null || !operands.length || !operands.every(known) || !NUMERIC_RESULT.test(c.result) || !Number.isFinite(stated) || Math.abs(value - stated) > 0.005 + Math.abs(value) * 1e-9;
     if (bad) failed.push(`${c.expression} = ${c.result}`);

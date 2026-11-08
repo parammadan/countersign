@@ -71,7 +71,11 @@ describe("arithmetic is re-done, from the agreement's and the question's numbers
     expect(checkCalculations([{ expression: "4000 * 2%", result: "80" }], sup, q, "interest").failed).toHaveLength(1);
     expect(checkCalculations([{ expression: "4000 * 1.5%", result: "60 plus a $900 admin fee" }], sup, q, "interest").failed).toHaveLength(1);
     // a verified result can feed the next step; calendar constants are allowed
-    expect(checkCalculations([{ expression: "4000 * 1.5%", result: "60" }, { expression: "60 * 12", result: "720" }], sup, q, "interest").failed).toEqual([]);
+    expect(checkCalculations([{ expression: "4000 * 1.5%", result: "60" }, { expression: "60 * 12", result: "720" }], sup, q, "interest for a year").failed).toEqual([]);
+    // a calendar constant needs its period in the question or answer; 100 needs a stated percentage
+    expect(checkCalculations([{ expression: "4000 * 12", result: "48000" }], sup, q, "interest").failed).toHaveLength(1);
+    expect(checkCalculations([{ expression: "4000 * 2 / 100", result: "80" }], sup, q, "interest").failed).toHaveLength(1);
+    expect(checkCalculations([{ expression: "4000 * 1.5 / 100", result: "60" }], sup, q, "interest").failed).toEqual([]);
   });
 });
 

@@ -101,7 +101,7 @@ function unitPairs(prepped: string): Set<string> {
 }
 const MONTH_RE = /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/g;
 const PERIOD: [RegExp, string][] = [[/\b(hours?|hourly)\b/, "hour"], [/\b(days?|daily)\b/, "day"], [/\b(weeks?|weekly)\b/, "week"], [/\b(months?|monthly)\b/, "month"], [/\b(quarters?|quarterly)\b/, "quarter"], [/\b(years?|yearly|annual|annually|annum)\b/, "year"]];
-const COMMON_CAPS = new Set(["see", "check", "read", "refer", "look", "how", "why", "whether", "whose", "whom", "would", "could", "should", "does", "do", "did", "is", "are", "was", "were", "can", "may", "might", "must", "will", "shall", "has", "have", "had", "instead", "likewise", "overall", "generally", "typically", "usually", "though", "given", "assuming", "thus", "hence", "besides", "additionally", "furthermore", "moreover", "nevertheless", "still", "yet", "just", "even", "again", "first", "second", "third", "finally", "next", "last", "lastly", "out", "up", "over", "some", "most", "many", "much", "more", "less", "such", "every", "other", "another", "nor", "whatever", "whoever", "clause", "section", "page", "paragraph", "schedule", "appendix", "exhibit", "article", "because", "since", "although", "therefore", "so", "according", "based", "not", "nothing", "none", "neither", "note", "here", "then", "otherwise", "the", "this", "that", "these", "those", "it", "its", "if", "either", "each", "both", "there", "a", "an", "i", "under", "no", "yes", "only", "all", "any", "after", "before", "when", "within", "from", "for", "per", "they", "their", "however", "also", "but", "and", "or", "in", "on", "at", "by", "to", "with", "as", "unless", "until", "once", "while", "where", "which", "who", "what", "you", "your", "we"]);
+const COMMON_CAPS = new Set(["about", "around", "approximately", "roughly", "nearly", "almost", "exactly", "total", "altogether", "combined", "together", "see", "check", "read", "refer", "look", "how", "why", "whether", "whose", "whom", "would", "could", "should", "does", "do", "did", "is", "are", "was", "were", "can", "may", "might", "must", "will", "shall", "has", "have", "had", "instead", "likewise", "overall", "generally", "typically", "usually", "though", "given", "assuming", "thus", "hence", "besides", "additionally", "furthermore", "moreover", "nevertheless", "still", "yet", "just", "even", "again", "first", "second", "third", "finally", "next", "last", "lastly", "out", "up", "over", "some", "most", "many", "much", "more", "less", "such", "every", "other", "another", "nor", "whatever", "whoever", "clause", "section", "page", "paragraph", "schedule", "appendix", "exhibit", "article", "because", "since", "although", "therefore", "so", "according", "based", "not", "nothing", "none", "neither", "note", "here", "then", "otherwise", "the", "this", "that", "these", "those", "it", "its", "if", "either", "each", "both", "there", "a", "an", "i", "under", "no", "yes", "only", "all", "any", "after", "before", "when", "within", "from", "for", "per", "they", "their", "however", "also", "but", "and", "or", "in", "on", "at", "by", "to", "with", "as", "unless", "until", "once", "while", "where", "which", "who", "what", "you", "your", "we"]);
 
 /**
  * Facts in an answer that none of its quotes contain: numbers, months, periods, names, negations. Numbers in
@@ -346,7 +346,7 @@ export async function answerWithModel(
   if (wrongQuotes.length) return withheld(`The answer quoted ${wrongQuotes.slice(0, 2).join(", ")}, which isn't what the agreement says, so it isn't shown.`);
   const unsupported = unsupportedFacts(said, support, allowed, question);
   if (unsupported.length) return withheld(`The answer mentioned ${unsupported.slice(0, 6).join(", ")}, which the quoted text doesn't contain, so it isn't shown.`);
-  const unbound = unboundValues(said, support, question, new Set([...verified, ...scenarioFigures(question)]), fromQuestion);
+  const unbound = unboundValues(said, support, question, verified, fromQuestion, scenarioFigures(question));
   if (unbound.length) return withheld(`The answer gave ${unbound.slice(0, 4).join(", ")} for something the quoted text gives a different figure for, so it isn't shown.`);
   const places = unsupportedPlaces(said, support, question);
   if (places.length) return withheld(`The answer mentioned ${places.join(", ")}, which the quoted text doesn't contain, so it isn't shown.`);
@@ -356,14 +356,17 @@ export async function answerWithModel(
   const extra = { explanation: out.explanation || undefined, calculations: out.calculations.length ? out.calculations : undefined, notStated: out.not_stated.length ? out.not_stated : undefined };
   // an answer whose words are mostly not in the text it cites isn't tied to it; a looser paraphrase gets a note
   // the same significant words on both sides of the ratio (no "the", "agreement", party labels or bare numbers)
-  const words = unsupportedWords(out.answer, []);
-  const extraWords = unsupportedWords(out.answer, support);
+  const generic = (w: string) => COMMON_CAPS.has(w) || GENERIC_WORDS.has(w);
+  const words = unsupportedWords(out.answer, []).filter((w) => !generic(w));
+  const extraWords = unsupportedWords(out.answer, support).filter((w) => !generic(w));
   const share = words.length ? extraWords.length / words.length : 0;
-  if (words.length >= 3 && share > LOOSE_WORDING) return withheld("Most of the answer's wording isn't in the text it cites, so it isn't shown.");
+  if (words.length >= 2 && share > LOOSE_WORDING) return withheld("Most of the answer's wording isn't in the text it cites, so it isn't shown.");
   if (share > 0.5) warnings.push("Much of this answer is worded differently from the quoted text. Check it against the quotes.");
   return result(out.status, out.answer, extra);
 }
 
+/** Everyday words an answer adds around the agreement's terms; they don't count as unsupported wording. */
+const GENERIC_WORDS = new Set(["pro", "rata", "rated", "prorated", "basis", "approx", "yes", "according", "says", "say", "stated", "states", "agreement", "clause", "section", "means", "would", "comes", "come", "works", "out", "per", "each", "every", "also", "both", "plus", "only", "just", "already", "still", "yet", "this", "that", "there", "here", "they", "them", "you", "your"]);
 /** Share of an answer's words that may be missing from its cited text before the answer is withheld. */
 export const LOOSE_WORDING = 0.7;
 const WITHHELD = "The AI's answer didn't pass AgreementOS's checks against the agreement, so it isn't shown. These are the passages it relied on; read them to answer your question.";

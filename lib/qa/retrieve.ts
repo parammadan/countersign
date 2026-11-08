@@ -24,23 +24,22 @@ const QA_EXTRA = [
   String.raw`\[\s*(?:system|assistant|admin|instructions?|developer|prompt)\s*\]|<\s*/?\s*(?:system|instructions?)\s*>`,
   String.raw`\b(?:reveal|print|repeat|show|output)\b[^.]{0,30}\b(?:system prompt|your (?:instructions|prompt|rules))\b`,
   String.raw`\bnotes?\b[^.:]{0,60}?\b(?:to|for)\b[^.:]{0,20}?\b(?:automated|ai|assistants?|language models?|llms?|chatbots?|bots?|machine)\b`,
-  String.raw`\b(?:summar(?:y|ies)|answers?|responses?|outputs?|replies)\s+(?:should|must|shall|will|are to)\s+(?:say|state|report|show|read|confirm|claim)\b`,
+  String.raw`\b(?:summar(?:y|ies)|answers?|responses?|outputs?|replies)\b[^.]{0,50}?\b(?:should|must|shall|are to)\s+(?:say|state|report|show|read|confirm|claim|list|give|describe)\b`,
+  String.raw`\b(?:automated|ai|machine)\s+(?:summar\w*|review\w*|readers?|tools?|systems?|assistants?)\b[^.]{0,60}?\b(?:should|must|shall|are to)\b`,
+  String.raw`\b(?:reviewer|reader|assistant|summari[sz]er)\s+(?:guidance|instructions?|notes?)\s*:`,
 ].join("|");
 export const QA_INSTRUCTION_RE = new RegExp(`${INSTRUCTION_RE.source}|${QA_EXTRA}`, "i");
 
 /**
- * Text the agreement itself labels as not part of its terms ("Marketing summary (not binding): ...",
- * "Superseded draft: ...", "Unofficial FAQ: ..."). It stays visible (so the reader can be told it exists) but an
- * answer can't rely on it.
+ * Text the agreement itself labels as not part of its terms. A heading-style label ("Marketing summary:",
+ * "Superseded draft terms", "Unofficial FAQ") opens a section that runs to the next numbered clause, schedule
+ * heading or capitalised heading, across pages; a parenthetical label ("(non-binding)") covers only its own sentence.
+ * Neither is evidence; the reader is told it was set aside.
  */
-const SECTION_START = /^\s*(?:\(?\d{1,3}(?:\.\d{1,3})*[.)]?(?:\s|$)|(?:schedule|appendix|exhibit|annex|article|section|part)\b)/i;
-export const NON_BINDING_RE = new RegExp(
-  [
-    String.raw`^(?:[a-z][\w ]{0,30}\.\s+)?(?:marketing (?:summary|copy|material|overview)|unofficial (?:faq|summary|notes?|guide|overview)|superseded (?:drafts?|versions?|terms)|draft (?:summary|version|terms|overview)|faq|sales (?:summary|sheet))\b`,
-    String.raw`\((?:not (?:legally )?binding|non-binding|unofficial|superseded|draft only|for discussion only)\)`,
-  ].join("|"),
-  "i",
-);
+const SECTION_START = /^\s*(?:\(?\d{1,3}(?:\.\d{1,3})*[.)]?(?:\s|$)|(?:schedule|appendix|exhibit|annex|article|section|part)\b|[A-Z][A-Z &,'-]{3,60}[.:]?$)/;
+export const NON_BINDING_SECTION_RE = /^(?:[a-z][\w ]{0,30}\.\s+)?(?:marketing (?:summary|copy|material|overview)|unofficial (?:faq|summary|notes?|guide|overview)|superseded (?:drafts?|versions?|terms)|draft (?:summary|version|terms|overview)|faq|sales (?:summary|sheet))\b/i;
+export const NON_BINDING_SENTENCE_RE = /\((?:not (?:legally )?binding|non-binding|unofficial|superseded|draft only|for discussion only)\)/i;
+export const NON_BINDING_RE = new RegExp(`${NON_BINDING_SECTION_RE.source}|${NON_BINDING_SENTENCE_RE.source}`, "i");
 import { pageText, type PageLines } from "../understand/text";
 
 export type Passage = { id: string; page: number; text: string };
@@ -66,7 +65,7 @@ const GROUPS: string[][] = [
   ["data", "personal", "privacy", "gdpr", "protection"],
 ];
 const GENERIC = new Set(["agreement", "agreements", "contract", "contracts", "document", "documents", "letter", "terms", "clause", "clauses", "section", "include", "includes", "say", "says", "state", "states", "mention", "mentions", "tell", "anything", "there", "much", "many", "need", "needed", "needs", "happen", "happens", "get", "gets", "allowed", "able", "possible", "specific", "exactly", "kind", "type", "apply", "applies", "give", "given", "know", "explain", "actually"]);
-const GROUP_OF = new Map<string, number>();
+export const GROUP_OF = new Map<string, number>();
 GROUPS.forEach((g, i) => g.forEach((w) => GROUP_OF.set(w, i)));
 
 const stem = (w: string) => w.replace(/(?:ations?|ation|ings?|ing|ed|es|s)$/, "") || w;
@@ -81,18 +80,18 @@ export function terms(s: string): string[] {
 export function passages(pages: PageLines[]): { passages: Passage[]; excluded: Passage[] } {
   const out: Passage[] = [];
   const excluded: Passage[] = [];
+  let unofficial = false;
   for (const p of pages) {
     // every fragment is kept (a clause number like "2." too), so a passage is always a verbatim run of the page
     const sentences = pageText(p).split(/(?<=[.;!?])\s+(?=[A-Z0-9("“[])/).map((s) => s.trim()).filter(Boolean);
     // set aside, sentence by sentence: text addressed to software ("x"), and text the agreement labels as not part
     // of its terms ("n"), which runs on until the next numbered clause or schedule heading
     const aside: ("x" | "n" | null)[] = [];
-    let unofficial = false;
     for (const t of sentences) {
       const n = normalize(t);
-      if (NON_BINDING_RE.test(n)) unofficial = true;
+      if (NON_BINDING_SECTION_RE.test(n)) unofficial = true;
       else if (unofficial && SECTION_START.test(t)) unofficial = false;
-      aside.push(QA_INSTRUCTION_RE.test(n) ? "x" : unofficial ? "n" : null);
+      aside.push(QA_INSTRUCTION_RE.test(n) ? "x" : unofficial || NON_BINDING_SENTENCE_RE.test(n) ? "n" : null);
     }
     let n = 0;
     for (let i = 0; i < sentences.length; i++) {
