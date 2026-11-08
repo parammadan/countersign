@@ -434,6 +434,20 @@ describe("review of two-level validation: wrong material claims are blocked", ()
       expect(r.status, r.warnings.join(" / ")).toBe("answered");
     });
 
+  // fifth round: comparisons with the user's figure must be true
+  it("blocks a false comparison: 30 days after invoice isn't within 15-day terms", async () => {
+    const r = await answerWithModel(only(/Fees\./, { answer: "Yes, paying 30 days after invoice is within the payment terms." }), "Can we pay 30 days after the invoice?", D);
+    expect(r.status === "answered" ? r.verification : "blocked").not.toBe("checked");
+  });
+  for (const [q, a] of [
+    ["Is 30 days' notice enough to terminate?", "No, 30 days is fewer than the 45 days' written notice required."],
+    ["Is 60 days' notice enough to terminate?", "Yes, 60 days exceeds the 45 days' written notice either party must give."],
+  ])
+    it(`shows a true comparison: ${a}`, async () => {
+      const r = await answerWithModel(only(/Termination/, { answer: a }), q, D);
+      expect(r.status, r.warnings.join(" / ")).toBe("answered");
+    });
+
   it("a liability negation isn't supported by an unrelated negated sentence sharing one word", async () => {
     const r = await answerWithModel(only(/Late payment|Termination/, { answer: "Overdue amounts accrue interest at 1.5% per month.", explanation: "The Provider is not liable for late payment interest." }), "Is interest charged?", D);
     expect(r.status === "answered" ? r.verification : "blocked").not.toBe("checked");

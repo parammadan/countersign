@@ -11,7 +11,7 @@ import { MIN_QUOTE, normalize, unsupportedTokens, unsupportedWords } from "../un
 import { AnalysisError, callModel, type ModelProvider, type Usage } from "../understand/model";
 import type { Finding } from "../understand/schema";
 import type { PageLines } from "../understand/text";
-import { checkCalculations, impliedCalculations, negationCheck, periodConflicts, stripRefutations, stemWord, misquoted, roleSwaps, scenarioFigures, stripPageRefs, unboundValues, unsupportedNegations, unsupportedPlaces, withoutAbsence, type Calculation } from "./check";
+import { checkCalculations, figuresInTrueComparisons, impliedCalculations, negationCheck, periodConflicts, stripRefutations, stemWord, misquoted, roleSwaps, scenarioFigures, stripPageRefs, unboundValues, unsupportedNegations, unsupportedPlaces, withoutAbsence, type Calculation } from "./check";
 import { GROUP_OF, passages, QA_INSTRUCTION_RE, retrieve, terms, type Passage, type Scored } from "./retrieve";
 
 export const QA_STATUSES = ["answered", "partial", "not_found"] as const;
@@ -490,6 +490,8 @@ export async function answerWithModel(
   // when the agreement gives that term a different figure
   const asserted = unboundValues(question, agreementText, "", scenario, fromQuestion, scenario, agreementText);
   const restated = numbersIn(withoutAbsence(stripRefutations(said, question)));
+  // a figure from the question that the answer only compares, correctly, with the agreement's isn't relied on
+  for (const n of figuresInTrueComparisons(said, agreementText)) restated.delete(n);
   const used = asserted.map((x) => x.replace(/%$/, "")).filter((n) => calcs.operands.has(n) || restated.has(n));
   if (used.length) return withheld(`The answer relied on ${used.join(", ")} from the question, but the agreement gives a different figure, so it isn't shown.`);
   const wrongPeriod = periodConflicts(said, support);

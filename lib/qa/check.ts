@@ -201,7 +201,12 @@ export function unboundValues(answer: string, support: string[], question = "", 
         // against "45 days' written notice"), or sharing two words with that clause
         const after = headsAfter(c, v.n);
         const strong = segs.some((sg) => sg.v.some((x) => x.kind === v.kind && x.kind !== "plain" && x.n !== v.n && !statedHere.has(x.n) && (own.filter((w) => sg.a.has(w)).length >= 2 || (v.kind !== "money" && [...headsAfter(sg.t, x.n)].some((w) => after.has(w))))));
-        if (!strong || compares) continue;
+        if (compares) {
+          // the comparison must be true: 30 days after invoice isn't within 15-day payment terms
+          if (comparisonHolds(c, v.n, segs.map((x) => x.t)) === false) out.push(`${v.n}${v.kind === "percent" ? "%" : ""}`);
+          continue;
+        }
+        if (!strong) continue;
         out.push(`${v.n}${v.kind === "percent" ? "%" : ""}`);
         continue;
       }
@@ -753,5 +758,57 @@ function headsAfter(text: string, n: string): Set<string> {
   const num = n.replace(/\./g, "\\.");
   const re = new RegExp(`(?:^|[^\\d.])(?:[$£€]\\s?)?${num}(?:[\\d,]*)\\s*(?:\\(\\s*\\d+\\s*\\)\\s*)?(?:%|percent|(?:business|calendar|working)\\s+)?(?:hours?|days?|weeks?|months?|years?)?['’]?s?\\s+((?:[a-z'’-]+\\s+){0,2}[a-z'’-]+)`, "g");
   for (const m of t.matchAll(re)) for (const w of anchors(m[1])) if (!isRate(w)) out.add(w);
+  return out;
+}
+
+// ---- comparisons the answer makes between the user's figure and the agreement's ----
+const LE = /\b(?:falls?\s+(?:in|within|inside|under)|is\s+(?:within|inside|under|below)|(?:is\s+)?(?:fewer|less|shorter|lower)\s+than|within)\b/i;
+const GE = /\b(?:exceeds?|(?:is\s+)?(?:more|greater|longer|higher)\s+than|is\s+(?:over|above|outside)|falls?\s+outside)\b/i;
+const UNIT_DAYS: [RegExp, number][] = [[/^hours?/, 1 / 24], [/^(?:business |calendar |working )?days?/, 1], [/^weeks?/, 7], [/^fortnights?/, 14], [/^months?/, 30], [/^years?/, 365]];
+/** The figure n in the text, in days when it's a period ("2 weeks" -> 14), or as is. */
+function amountOf(text: string, n: string): number | null {
+  const t = normalize(text).replace(/\b(?:one|two|three|four|five|six|seven|eight|nine|ten|twelve|fourteen|fifteen|twenty|thirty|forty-five|sixty|ninety)\b/g, (w) => WORD_NUM[w]);
+  const re = new RegExp(`(?:^|[^\\d.])[$£€]?\\s?${n.replace(/\./g, "\\.")}(?![\\d.])\\s*(?:\\(\\s*\\d+\\s*\\)\\s*)?([a-z ]{0,20})`);
+  const m = re.exec(t);
+  if (!m) return null;
+  const unit = UNIT_DAYS.find(([u]) => u.test(m[1].trim()));
+  return Number(n) * (unit ? unit[1] : 1);
+}
+/**
+ * Whether a comparison the answer states is true: "paying 30 days after invoice is within the payment terms" when
+ * the terms say 15 days is false. Compared with another figure of the same kind in the clause, or else the cited
+ * sentence about the same thing. Null when there's no comparison or nothing to compare with.
+ */
+export function comparisonHolds(clause: string, n: string, support: string[]): boolean | null {
+  const le = LE.test(clause);
+  const ge = GE.test(clause);
+  if (le === ge) return null;
+  const mine = valuesIn(clause).find((v) => v.n === n);
+  if (!mine) return null;
+  const x = amountOf(clause, n);
+  // "falls in the 89-to-30-day window", "between 30 and 89 days": within a range means between its ends
+  const range = /(\d+(?:\.\d+)?)\s*(?:-\s*to\s*-|-|–|\bto\b|\band\b)\s*(\d+(?:\.\d+)?)\s*-?\s*(?:business |calendar |working )?(?:day|week|month|year|hour)/i.exec(clause.replace(/\bbetween\s+/i, ""));
+  if (range && le && x !== null) {
+    const unit = /(?:week)/i.test(range[0]) ? 7 : /month/i.test(range[0]) ? 30 : /year/i.test(range[0]) ? 365 : /hour/i.test(range[0]) ? 1 / 24 : 1;
+    const [lo, hi] = [Number(range[1]) * unit, Number(range[2]) * unit].sort((p, q) => p - q);
+    if (!(range[1] === n || range[2] === n)) return x >= lo && x <= hi;
+  }
+  let other = valuesIn(clause).find((v) => v.n !== n && v.kind === mine.kind && v.kind !== "plain");
+  let y = other ? amountOf(clause, other.n) : null;
+  if (y === null) {
+    const a = [...anchors(clause)].filter((w) => !isRate(w));
+    const segs = supportSegments(support).map((s) => ({ s, k: a.filter((w) => s.a.has(w)).length, vals: s.v.filter((v) => v.kind === mine.kind && v.kind !== "plain") }));
+    const best = segs.filter((x) => x.k > 0 && x.vals.length === 1).sort((p, q) => q.k - p.k)[0];
+    if (!best) return null;
+    other = best.vals[0];
+    y = amountOf(best.s.t, other.n);
+  }
+  if (x === null || y === null) return null;
+  return le ? x <= y : x > y;
+}
+/** Figures that appear only in comparisons that hold ("30 days is fewer than the 45 days required"). */
+export function figuresInTrueComparisons(text: string, support: string[]): Set<string> {
+  const out = new Set<string>();
+  for (const c of clauses(text)) for (const v of valuesIn(c)) if (comparisonHolds(c, v.n, support) === true) out.add(v.n);
   return out;
 }
