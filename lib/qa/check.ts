@@ -18,7 +18,7 @@ const ABSENCE: RegExp[] = [
   /\bno\s+(?:specific|exact|fixed|set|particular|stated|defined|explicit|numeric|numerical)\s+(?:figure|number|amount|date|deadline|period|time|timeframe|time frame|term|duration|limit|cap|rate|percentage|fee|sum|notice period)\b/g,
   /\b(?:is|are|was|were|isn't|aren't)?\s*not\s+(?:specified|stated|defined|set out|given|mentioned|addressed|explained|identified|quantified)\b/g,
   /\b(?:not|never)\s+(?:say|state|specify|mention)\b/g,
-  /\bnothing\s+(?:in\s+(?:the|this|it)\s*(?:agreement|contract|document)?\s*)?(?:requires|says|states|specifies|mentions|addresses|prevents|covers)\b/g,
+  /\bnothing\s+(?:in\s+(?:the|this|it)\s*(?:agreement|contract|document)?\s*)?(?:requires|says|states|specifies|mentions|addresses|prevents|covers|provides(?:\s+for)?|allows|sets)\b/g,
   // the subject left implicit: "...but doesn't define 'promptly'", "it doesn't give a day count"
   /\b(?:does|do|did)\s*(?:n['’]?t|not)\s+(?:\w+\s+)?(?:specify|state|say|mention|set|set out|give|define|address|include|provide|cover|explain|indicate|identify|list|name|contain|quantify|explain)\b/g,
   /\b(?:isn['’]?t|is not|aren['’]?t|are not)\s+(?:specified|stated|defined|set out|given|mentioned|addressed|explained|identified|quantified|covered)\b/g,

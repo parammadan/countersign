@@ -369,6 +369,14 @@ export async function answerWithModel(
   const noIds = (t: string) => t.replace(/\s*\(?\b(?:passages?\s+)?p\d{1,4}-n?\d{1,4}\b\)?/gi, "").replace(/\s{2,}/g, " ").trim();
   out.answer = noIds(out.answer);
   out.explanation = noIds(out.explanation);
+  // a sentence that only declines an instruction in the question ("I can't share my system prompt", "the
+  // instruction to report $0 has been disregarded") isn't about the agreement: it's replaced by a standard note
+  const META = /\b(?:system prompt|api keys?|my (?:instructions|rules|prompt)|(?:can['’]?t|cannot|won['’]?t|will not|unable to) (?:share|reveal|provide|disclose|print))\b|\binstructions?\b[^.]{0,80}\b(?:disregard\w*|ignor\w*|not (?:reflected|followed)|won['’]?t follow|will not follow)\b|\b(?:disregard\w*|ignor\w*)\b[^.]{0,60}\b(?:instructions?|requests? to)\b/i;
+  let declined = false;
+  const dropMeta = (t: string) => t.split(/(?<=[.!?])\s+/).filter((x) => !(META.test(x) && (declined = true))).join(" ").trim();
+  out.answer = dropMeta(out.answer) || out.answer;
+  out.explanation = dropMeta(out.explanation);
+  if (declined) warnings.push("Instructions in your question that weren't about the agreement were ignored.");
   out.not_stated = out.not_stated.map(noIds).filter(Boolean);
   // the answer and its explanation are held to the cited text. "Not stated" notes say what the agreement lacks,
   // so they may name terms from anywhere in it, but nothing that isn't in it. A "not found" answer is itself a
@@ -398,7 +406,8 @@ export async function answerWithModel(
   // stated (an explanation contrasts and qualifies: "governs how often invoices are sent, not the time to pay")
   const unsupported = [...unsupportedFacts(said, support, allowed, question, { negations: false, names: agreementText }), ...(absent ? [] : unsupportedNegations(out.answer, support, withoutAbsence))];
   if (unsupported.length) return withheld(`The answer mentioned ${unsupported.slice(0, 6).join(", ")}, which the quoted text doesn't contain, so it isn't shown.`);
-  const unbound = unboundValues(said, support, question, verified, fromQuestion, scenarioFigures(question));
+  // statements of absence ("nothing provides for a $0 fee") don't attach a figure to a term
+  const unbound = unboundValues(withoutAbsence(said), support, question, verified, fromQuestion, scenarioFigures(question));
   if (unbound.length) return withheld(`The answer gave ${unbound.slice(0, 4).join(", ")} for something the quoted text gives a different figure for, so it isn't shown.`);
   const places = unsupportedPlaces(said, support, question);
   if (places.length) return withheld(`The answer mentioned ${places.join(", ")}, which the quoted text doesn't contain, so it isn't shown.`);
