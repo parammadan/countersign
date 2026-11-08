@@ -14,10 +14,10 @@ import { latestAnalysis, MAX_PAGES } from "../understand/store";
 import { AnalysisError, type ModelProvider, type Usage } from "../understand/model";
 import { configuredProvider, configuredVerifier } from "../ai/anthropic";
 import { costMicroUsd, worstCaseMicroUsd } from "../ai/pricing";
-import { answerFromPassages, answerWithModel, cleanQuestion, modelContext, QA_LIMITS, QaModelError, requestTokens, type QaResult, type Turn } from "./answer";
+import { answerFromPassages, answerWithModel, cleanQuestion, modelContext, QA_LIMITS, QaModelError, requestTokens, tokensAtMost, type QaResult, type Turn } from "./answer";
 import type { PageLines } from "../understand/text";
 import type { Finding } from "../understand/schema";
-import { VERIFY_LIMITS } from "./verify";
+import { VERIFY_JSON_SCHEMA, VERIFY_LIMITS, VERIFY_SYSTEM } from "./verify";
 
 export const QA_PER_USER_PER_MINUTE = 6;
 /** Questions per workspace per 24 hours: tight when a paid model answers, generous for passages only. */
@@ -61,6 +61,10 @@ export async function askQuestion(
   if (limited(`qa-user:${user.id}`, QA_PER_USER_PER_MINUTE, 60_000)) throw new AppError("You're asking quickly. Wait a minute and try again.", 429);
   if ((JSON.parse(version.pages_json) as unknown[]).length > MAX_PAGES) throw new AppError(`This agreement has more than ${MAX_PAGES} pages, more than we read.`, 422);
   const notes: string[] = [];
+  // a workspace past even the passages-only daily limit is turned away before the agreement is read
+  const since0 = new Date(Date.now() - 86400_000).toISOString();
+  if ((one<{ n: number }>("SELECT COUNT(*) n FROM qa_answers WHERE workspace_id = ? AND created_at > ?", wsId, since0)?.n ?? 0) >= Math.max(QA_DAILY.model, QA_DAILY.passages))
+    throw new AppError(`This workspace has asked ${Math.max(QA_DAILY.model, QA_DAILY.passages)} questions in the last 24 hours, the current limit. Try again tomorrow.`, 429);
   // the agreement is read first (no cost), so what each call will read is known before it's booked
   let read: { pages: PageLines[]; findings: Finding[] } | null = null;
   let readError: AppError | null = null;
@@ -142,7 +146,7 @@ export function reservation(provider: ModelProvider, verifier: ModelProvider | n
     answer: worstCaseMicroUsd(provider.model, input, QA_LIMITS.maxOutputTokens),
     // the verifier reads the same agreement, the answer under review (no longer than the first call's output) and
     // its own prompt
-    verify: verifier ? worstCaseMicroUsd(verifier.model, input + QA_LIMITS.maxOutputTokens + 1500, VERIFY_LIMITS.maxOutputTokens) : 0,
+    verify: verifier ? worstCaseMicroUsd(verifier.model, input + QA_LIMITS.maxOutputTokens + tokensAtMost(VERIFY_SYSTEM + JSON.stringify(VERIFY_JSON_SCHEMA)), VERIFY_LIMITS.maxOutputTokens) : 0,
   };
 }
 

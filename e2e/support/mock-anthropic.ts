@@ -32,7 +32,8 @@ export function startMockAnthropic(script: Script, verify: VerifyScript = approv
       const s: Seen = { apiKey: (req.headers["x-api-key"] as string | undefined) ?? (req.headers.authorization?.replace(/^Bearer\s+/i, "") || undefined), beta: req.headers["anthropic-beta"] as string | undefined, cached: blocks.some((x) => typeof x === "object" && "cache_control" in x && !!x.cache_control), question, earlierTurns: text.includes("<earlier_turns>"), verifier: isVerifier };
       seen.push(s);
       // the answer under review: its text, explanation, calculations and notes (the app writes ‹ › for < >)
-      const reviewed = (/<answer>([\s\S]*)<\/answer>/.exec(text)?.[1] ?? "").replace(/<\/?(?:text|explanation|calculation|note)>/g, " ").replace(/\s+/g, " ").trim();
+      // the last <answer> block (earlier turns carry their own)
+      const reviewed = (text.includes("</answer>") ? text.slice(text.lastIndexOf("<answer>") + 8, text.lastIndexOf("</answer>")) : "").replace(/<\/?(?:text|explanation|calculation|note)>/g, " ").replace(/\s+/g, " ").trim();
       const out = isVerifier ? verify(reviewed, ps, question) : script(question, ps, s);
       if (out.status && out.status !== 200) {
         res.writeHead(out.status, { "content-type": "application/json" });

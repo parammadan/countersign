@@ -11,7 +11,7 @@ import { MIN_QUOTE, normalize, unsupportedTokens, unsupportedWords } from "../un
 import { AnalysisError, callModel, type ModelProvider, type Usage } from "../understand/model";
 import type { Finding } from "../understand/schema";
 import type { PageLines } from "../understand/text";
-import { checkCalculations, clauses, figuresInTrueComparisons, partyRoles, impliedCalculations, negationCheck, periodConflicts, stripRefutations, stemWord, misquoted, roleSwaps, scenarioFigures, stripPageRefs, unboundValues, unsupportedNegations, unsupportedPlaces, withoutAbsence, type Calculation } from "./check";
+import { checkCalculations, clauses, figuresInTrueComparisons, partyRoles, ROLES, impliedCalculations, negationCheck, periodConflicts, stripRefutations, stemWord, misquoted, roleSwaps, scenarioFigures, stripPageRefs, unboundValues, unsupportedNegations, unsupportedPlaces, withoutAbsence, type Calculation } from "./check";
 import { answerParts, judge, verifyAnswer, VerifyError, type Verdict, type VerifiedClaim } from "./verify";
 import { GROUP_OF, passages, QA_INSTRUCTION_RE, retrieve, terms, type Passage, type Scored } from "./retrieve";
 
@@ -334,18 +334,21 @@ export function modelContext(question: string, pages: PageLines[], limits: QaLim
 
 /** Characters of markup around each passage sent to a model. */
 export const PASSAGE_OVERHEAD = 60;
-/** Tokens a text can take, generously: three ASCII characters per token, every other character a token. */
+/**
+ * Tokens a text can take, generously: two ASCII characters per token (spaced-out headings and digit-heavy tables
+ * run close to that), every other character a token.
+ */
 export function tokensAtMost(s: string): number {
   let ascii = 0;
   for (let i = 0; i < s.length; i++) if (s.charCodeAt(i) < 128) ascii++;
-  return Math.ceil(ascii / 3 + (s.length - ascii));
+  return Math.ceil(ascii / 2 + (s.length - ascii));
 }
 /**
  * The most a model call about these passages reads, in tokens: the passages and their markup, the system prompt,
  * the question and earlier turns (each counted as a token per character). Used to book the worst case beforehand.
  */
 export const requestTokens = (shown: Passage[]) =>
-  shown.reduce((n, p) => n + tokensAtMost(p.text) + Math.ceil(PASSAGE_OVERHEAD / 3), 0) + 2000 + QA_LIMITS.maxQuestionChars + QA_LIMITS.maxHistoryTurns * (QA_LIMITS.maxQuestionChars + 800);
+  shown.reduce((n, p) => n + tokensAtMost(p.text) + Math.ceil(PASSAGE_OVERHEAD / 2), 0) + tokensAtMost(QA_SYSTEM + JSON.stringify(QA_JSON_SCHEMA)) + 500 + QA_LIMITS.maxQuestionChars + QA_LIMITS.maxHistoryTurns * (QA_LIMITS.maxQuestionChars + 800);
 const agreementBlock = (title: string, shown: Passage[], whole: boolean) =>
   [
     `<agreement title="${neutral(title).replace(/"/g, "'").slice(0, 120)}"${whole ? "" : ' excerpt="the passages most relevant to the question; the rest of the agreement is not shown"'}>`,
@@ -466,11 +469,29 @@ export async function answerWithModel(
   const unofficialNums = numbersIn(unofficialText.join("\n"));
   const bindingNums = numbersIn(agreementText.join("\n"));
   // its figures are in the agreement, and any it has include one found only in the text labelled not binding
-  const disclaims = (clause: string) => unofficialText.length > 0 && NB_DISCLAIM.test(clause) && figuresOk(clause);
+  const disclaims = (clause: string) => unofficialText.length > 0 && NB_DISCLAIM.test(clause) && figuresOk(clause) && !statesTerm(clause);
   const sentences = (t: string) => t.split(/(?<=[.!?])\s+/).filter(Boolean);
   // in a sentence that disclaims such text, a clause that reports what it says ("An unofficial FAQ in the Appendix
   // claims unlimited liability, but that text is not binding") is set apart with the disclaimer
   const ASIDE_REF = /\b(?:faq|draft|marketing|summary|brochure|pitch|deck|extract|appendix|annex|schedule|exhibit|rate card|unofficial|superseded|note)\b/i;
+  // ...and only a clause that reports what that text says, without stating a term itself (no party, no "pays")
+  const ATTRIB = /\b(?:says?|said|states?|stated|advertis\w*|lists?|listed|shows?|mentions?|mentioned|claims?|claimed|quotes?|quoted|offers?|suggests?|describes?|reads|refers?|contains?|gives|labell?ed|marked|from just|appears?)\b/i;
+  const TERM_VERB = /\b(?:pays?|paid|payable|owes?|owed|must|shall|is due|are due|falls? due|will pay|charges?|is required|are required|is entitled|are entitled|is liable|are liable)\b/i;
+  const names = partyRoles(shown.map((p) => p.text).join("\n"));
+  // "the fee is $450", "a notice period of 30 days": a term asserted outright
+  const TERM_ASSERT = /\b(?:fees?|rates?|prices?|rent|costs?|charges?|amounts?|deposits?|caps?|periods?|notice|terms?|totals?|retainer|discounts?|credits?)\b[^.;]{0,30}\b(?:is|are|was|will be|of|at|equals?)\s*(?:just\s+|only\s+|about\s+)?[$£€]?\d/i;
+  const ROLE_WORD = new RegExp(`\\b(?:${ROLES.filter((r) => !/part/.test(r)).join("|")})\\b`, "i");
+  const firstAt = (t: string, re: RegExp) => { const m = re.exec(t); return m ? m.index : Infinity; };
+  // a clause states a term when it has a party, a verb of obligation or an outright figure for a term, unless it's
+  // reported speech: the text labelled not binding is named and said to say it first ("An unofficial FAQ claims the
+  // Firm accepts unlimited liability")
+  const statesTerm = (clause: string) => {
+    const t = normalize(clause);
+    const term = Math.min(firstAt(t, TERM_VERB), firstAt(t, TERM_ASSERT), firstAt(t, ROLE_WORD), ...[...names.keys()].map((n) => (n && t.includes(n) ? t.indexOf(n) : Infinity)));
+    if (term === Infinity) return false;
+    const said = firstAt(t, ATTRIB);
+    return !(said < term && firstAt(t, ASIDE_REF) < said);
+  };
   const figuresOk = (clause: string) => {
     const ns = [...numbersIn(stripPageRefs(clause))];
     return ns.every((n) => unofficialNums.has(n) || bindingNums.has(n)) && (ns.length === 0 || ns.some((n) => unofficialNums.has(n) && !bindingNums.has(n)));
@@ -481,7 +502,7 @@ export async function answerWithModel(
       .flatMap((sentence) => {
         if (!unofficialText.length || !NB_DISCLAIM.test(sentence)) return [sentence];
         const cs = clauses(sentence);
-        const apart = cs.filter((c) => disclaims(c) || (ASIDE_REF.test(c) && figuresOk(c)));
+        const apart = cs.filter((c) => disclaims(c) || (ASIDE_REF.test(c) && ATTRIB.test(c) && !statesTerm(c) && figuresOk(c)));
         // only when the sentence's disclaimer itself is set apart
         if (!apart.some((c) => NB_DISCLAIM.test(c))) return cs;
         aboutUnofficial.push(...apart);
@@ -683,7 +704,8 @@ export async function answerWithModel(
     bindingIds,
     unofficialIds: new Set(shown.filter((p) => p.binding === false).map((p) => p.id)),
     userText,
-    names: partyRoles(shown.map((p) => p.text).join("\n")),
+    question,
+    names,
   });
   if (judgement.show === "withheld") {
     // what failed is described by kind and count; a claim that failed is never shown, even with a warning

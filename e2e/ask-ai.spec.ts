@@ -116,7 +116,7 @@ test("ask with AI: checked answers, explanations, verified arithmetic, follow-up
 
     // plausible but wrong: the second check contradicts it, so it's withheld; the passages are shown, not the claim
     const a6 = await ask(page, "Can the client terminate without notice?", true);
-    await expect(a6).toContainText("The second check couldn't verify the answer against the agreement (1 contradicted)");
+    await expect(a6).toContainText(/The second check couldn.t verify the answer against the agreement \(1 contradicted/);
     await expect(a6).not.toContainText("without written notice");
     await expect(a6.getByRole("region", { name: "Sources" })).toContainText("30 days' written notice");
 

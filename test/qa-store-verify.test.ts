@@ -103,4 +103,21 @@ describe("two-pass answers: booking and recording both calls", () => {
       else process.env.AI_WORKSPACE_DAILY_BUDGET_USD = before;
     }
   });
+
+  it("a workspace past the daily limit is turned away before the agreement is read", async () => {
+    db.run("DELETE FROM qa_answers WHERE workspace_id = 'ws_v'");
+    const t = new Date().toISOString();
+    for (let i = 0; i < Q.QA_DAILY.passages; i++) db.run("INSERT INTO qa_answers (id, workspace_id, template_version_id, question, result_json, mode, asked_by, created_at, thread_id, cost_microusd) VALUES (?,?,?,?,?,?,?,?,?,?)", `qa_cap${i}`, "ws_v", vid, "q", "{}", "passages", "x@example.com", t, `qa_cap${i}`, 0);
+    // the stored PDF is replaced by something unreadable: if it were read, the error would be a different one
+    const { version } = T.getTemplateVersion("ws_v", vid);
+    const storage = await import("../lib/storage");
+    const orig = await storage.getBlob(version.pdf_path);
+    await storage.putBlob(version.pdf_path, Buffer.from("not a pdf"));
+    try {
+      await expect(Q.askQuestion("ws_v", vid, { id: "u_cap", email: "cap@example.com" }, "What are the payment terms?", answerer, null, verifier(true))).rejects.toThrow(/questions in the last 24 hours/);
+    } finally {
+      await storage.putBlob(version.pdf_path, orig);
+    }
+    expect(db.one<{ n: number }>("SELECT COUNT(*) n FROM qa_answers WHERE workspace_id = 'ws_v'")!.n).toBe(Q.QA_DAILY.passages);
+  });
 });

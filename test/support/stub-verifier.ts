@@ -4,10 +4,15 @@ import type { ModelProvider, ModelRequest } from "@/lib/understand/model";
 
 /** The answer under review, as the verifier sees it, split into sentence-sized claims (each its own span). */
 export function claimsOf(req: ModelRequest): string[] {
-  const body = /<answer>([\s\S]*)<\/answer>/.exec(req.document)?.[1] ?? "";
+  // the answer under review is the last <answer> block (earlier turns have their own)
+  const d = req.document;
+  const body = d.includes("</answer>") ? d.slice(d.lastIndexOf("<answer>") + "<answer>".length, d.lastIndexOf("</answer>")) : "";
   const text = body.replace(/<\/?(?:text|explanation|calculation|note)>/g, "\n");
   const out: string[] = [];
-  for (const s of text.split(/(?<=[.!?])\s+|\n+/).map((x) => x.trim()).filter((x) => x.length >= 3)) {
+  const parts = text.split(/(?<=[.!?])\s+|\n+/).map((x) => x.trim()).filter(Boolean);
+  // a bare "Yes." or "No." is judged with the sentence it answers for
+  for (let i = 0; i < parts.length - 1; i++) if (/^(?:yes|no)[.!,]?$/i.test(parts[i])) parts.splice(i, 2, `${parts[i]} ${parts[i + 1]}`);
+  for (const s of parts.filter((x) => x.length >= 3)) {
     for (let i = 0; i < s.length; i += 480) out.push(s.slice(i, i + 480));
   }
   return out.length ? out : ["(empty answer)"];

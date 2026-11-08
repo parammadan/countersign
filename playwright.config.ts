@@ -48,7 +48,7 @@ export default defineConfig({
         },
         {
           // a dummy key that only ever goes to the local mock (AI_TEST_ENDPOINT accepts loopback addresses only)
-          command: `rm -rf .e2e-ai && DATA_DIR=.e2e-ai APP_URL=http://localhost:${aiPort} PORT=${aiPort} DISABLE_WORKER=1 AUTH_RATE_LIMIT_X=20 TRUST_PROXY=1 AI_PROVIDER=anthropic ANTHROPIC_API_KEY=test-not-a-key AI_TEST_ENDPOINT=http://127.0.0.1:${MOCK_ANTHROPIC_PORT} AI_DAILY_BUDGET_USD=1 npx next start -p ${aiPort}`,
+          command: `rm -rf .e2e-ai && DATA_DIR=.e2e-ai APP_URL=http://localhost:${aiPort} PORT=${aiPort} DISABLE_WORKER=1 AUTH_RATE_LIMIT_X=20 TRUST_PROXY=1 AI_PROVIDER=anthropic ANTHROPIC_API_KEY=test-not-a-key AI_TEST_ENDPOINT=http://127.0.0.1:${MOCK_ANTHROPIC_PORT} AI_DAILY_BUDGET_USD=20 npx next start -p ${aiPort}`,
           url: `http://localhost:${aiPort}/api/health`,
           reuseExistingServer: false,
           timeout: 120_000,
