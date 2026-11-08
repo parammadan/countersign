@@ -187,10 +187,13 @@ describe.skipIf(!ON)("real model (paid)", () => {
     else if (suite === "dev") cases = q13;
     else if (suite === "security") cases = SECURITY;
     else if (suite === "holdout") {
-      const l = readLedger();
-      if (l.holdoutRun && process.env.HOLDOUT_RERUN !== "1") throw new Error(`the sealed set was already run (${l.holdoutRun})`);
-      cases = JSON.parse(fs.readFileSync(process.env.HOLDOUT_FILE ?? "", "utf8"));
-      writeLedger({ ...l, holdoutRun: new Date().toISOString() });
+      // each sealed set runs once: the ledger records every set file that has been run
+      const l = readLedger() as ReturnType<typeof readLedger> & { holdoutRuns?: Record<string, string> };
+      const file = path.resolve(process.env.HOLDOUT_FILE ?? "");
+      const runs = { ...(l.holdoutRuns ?? {}), ...(l.holdoutRun && !l.holdoutRuns ? { "sealed-1": l.holdoutRun } : {}) };
+      if (runs[file]) throw new Error(`this sealed set was already run (${runs[file]})`);
+      cases = JSON.parse(fs.readFileSync(file, "utf8"));
+      writeLedger({ ...l, holdoutRuns: { ...runs, [file]: new Date().toISOString() } });
     } else throw new Error(`unknown suite ${suite}`);
     const rows = await runCases(cases);
     report(suite, cases, rows);
