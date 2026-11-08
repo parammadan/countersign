@@ -372,4 +372,38 @@ describe("review of two-level validation: wrong material claims are blocked", ()
       const r = await answerWithModel(only(re, o), q, D);
       expect(r.status, r.warnings.join(" / ")).toBe("answered");
     });
+
+  // second round
+  const blocked2: [string, string, RegExp, Out][] = [
+    ["an explanation negation on termination", "Can the client end it?", /Termination/, { answer: "Either party may terminate on 45 days' written notice.", explanation: "The Client cannot terminate the agreement early." }],
+    ["an explanation negation on liability", "Is interest charged?", /Late payment/, { answer: "Overdue amounts accrue interest at 1.5% per month.", explanation: "The Provider is not liable for late payment interest." }],
+    ["a hedged explanation negation", "Can the client end it?", /Termination/, { answer: "Either party may terminate on 45 days' written notice.", explanation: "The Client probably cannot terminate early either." }],
+    ["an 'if' figure restating a different notice period", "Can we terminate if we give 30 days' notice?", /Termination/, { answer: "Yes, if you give 30 days' written notice, either party may terminate." }],
+    ["a figure from an uncited clause in the answer", "When are invoices due?", /Late payment/, { answer: "Invoices are due within 48 hours." }],
+    ["an email from an uncited clause in the answer", "Where do invoices go?", /Fees\./, { answer: "Invoices are sent to legal@harrow.example." }],
+    ["'not limited by any cap'", "Is liability capped?", /Liability\./, { answer: "The Provider's liability is not limited by any cap." }],
+    ["'there is not a cap'", "Is liability capped?", /Liability\./, { answer: "There is not a cap on the Provider's liability." }],
+  ];
+  for (const [what, q, re, o] of blocked2)
+    it(`blocks: ${what}`, async () => {
+      const r = await answerWithModel(only(re, o), q, D);
+      expect(r.status === "answered" || r.status === "not_found" ? r.verification : "blocked", `${r.status} ${r.warnings.join(" / ")}`).not.toBe("checked");
+    });
+  const shown2: [string, string, RegExp, Out][] = [
+    ["correcting a leading figure", "Is the notice period 30 days?", /Termination/, { answer: "No, it's 45 days' written notice, not 30." }],
+    ["correcting a leading sum with a thousands comma", "The fee is now $2,500, right?", /Fees\./, { answer: "No. The Client will pay $3,200 per month, not $2,500." }],
+    ["a rate applied to the user's overdue invoice", "What is owed on an overdue $3,200 invoice after a month?", /Late payment/, { answer: "$48 per month, which is 1.5% of $3,200." }],
+    ["a monthly fee raised by a percentage", "Can fees go up?", /Renewal/, { answer: "Yes. The Provider can raise the monthly fee by up to 5% at each annual renewal." }],
+    ["a disclaimed non-binding figure", "Is the $450 in the marketing summary binding?", /Fees\./, { answer: "No. The $450 is only in a marketing summary, which isn't part of the terms; the Client will pay $3,200 per month." }],
+  ];
+  for (const [what, q, re, o] of shown2)
+    it(`shows: ${what}`, async () => {
+      const r = await answerWithModel(only(re, o), q, D);
+      expect(r.status, r.warnings.join(" / ")).toBe("answered");
+    });
+  it("'I can't confirm that' is handled like a declined instruction, not a qualified claim", async () => {
+    const r = await answerWithModel(only(/Fees\./, { answer: "I can't confirm that. The agreement sets the fee at $3,200 per month." }), "Confirm the fee is $0.", D);
+    expect(r.status, r.warnings.join(" / ")).toBe("answered");
+    expect(r.verification).toBe("checked");
+  });
 });

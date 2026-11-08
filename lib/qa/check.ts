@@ -187,14 +187,26 @@ export function unboundValues(answer: string, support: string[], question = "", 
     const conditional = /\b(?:if|assuming|suppos\w*|on an?|in that case|in your example|in this scenario|because|since|given(?: that)?|when|once)\b/i.test(c);
     for (const v of stated) {
       // "5% of $1,000" applies a stated rate to the user's own figure
-      if (skip.has(v.n) || (scenario.has(v.n) && (conditional || /%\s+of\b/.test(c)))) continue;
+      if (skip.has(v.n)) continue;
+      // "4% of $1,500,000": a stated rate applied to the user's own figure
+      if (scenario.has(v.n) && /%\s+of\b/.test(c)) continue;
+      if (scenario.has(v.n) && conditional) {
+        // "if you give 30 days' written notice, either party may terminate" against "may terminate on 45 days'
+        // written notice": a figure the user supposes for a term the agreement fixes differently is still checked
+        const own = [...anchors(c)].filter((w) => !isRate(w));
+        const strong = segs.some((sg) => own.filter((w) => sg.a.has(w)).length >= 2 && sg.v.some((x) => x.kind === v.kind && x.kind !== "plain" && x.n !== v.n && !statedHere.has(x.n)));
+        if (!strong) continue;
+        out.push(`${v.n}${v.kind === "percent" ? "%" : ""}`);
+        continue;
+      }
       const withValue = home.filter((s) => s.v.some((x) => x.n === v.n && compatible(x.kind, v.kind)));
       const bound = withValue.filter((s) => binding.some((w) => s.a.has(w)));
       if (bound.length) {
         // a figure found only outside the cited clauses ("$1,000,000" from the insurance clause, for a question about
         // the liability cap) belongs to the answer's term only if its clause is at least as close to the answer as
         // the cited clauses are
-        const fromCited = bound.some((s) => citedSegs.some((x) => x.t === s.t));
+        const same = (x: string, y: string) => normalize(x).includes(normalize(y)) || normalize(y).includes(normalize(x));
+        const fromCited = bound.some((s) => citedSegs.some((x) => same(x.t, s.t)));
         if (fromCited) continue;
         // words in a contrast ("shares of the price, not termination payments") don't say what the figure is about
         const positive = c.replace(/\b(?:not|no|never|rather than|instead of)\b[^,.;:]*/gi, " ");
@@ -233,7 +245,7 @@ const NEG_WORD = /\b(\w+n['’]t|cannot|no|not|nothing|never|none|neither|nor|wi
 const REPLY = /(^|[.!?]\s+)(?:no|yes)\s*[,.;:!—-]\s*/gi;
 // limits and conditions, not reversals: "no later than", "not without notice", "can't end it sooner", "not a convenience
 // termination" (a contrast), "not the same as"
-const BOUNDS = /\b(?:no|not)\s+(?:later|earlier|more|less|fewer|sooner)\s+than\b|\b(?:not|cannot|\w+n['’]t)\b[^.,;]{0,50}?\b(?:without|sooner|earlier|before|until|unless|except|beyond)\b|\bnot\s+(?:a|an|the same|the time|limited by|about)\b|\b(?:rather than|instead of)\b[^,.;:]*|,\s*(?:and\s+|but\s+)?not\s+(?:to|for|on|in|as|by|at|from|with)\b[^,.;:]*/g;
+const BOUNDS = /\b(?:no|not)\s+(?:later|earlier|more|less|fewer|sooner)\s+than\b|\b(?:not|cannot|\w+n['’]t)\b[^.,;]{0,50}?\b(?:without|sooner|earlier|before|until|unless|except|beyond)\b|(?<!there(?:'s| is| are| was)\s)\bnot\s+(?:a|an)\s+(?![a-z]*\s*(?:cap|limit|fee|charge|penalty|right|obligation)\b)|\bnot\s+(?:the same|the time|about)\b|\bnot\s+limited\s+by\s+(?:section|clause|article|paragraph|schedule)\b|\bnot\s+(?:cured|remedied|corrected|paid|received|delivered|disputed|approved|accepted)\s+(?:within|by|on|in)\b|\b(?:rather than|instead of)\b[^,.;:]*|,\s*(?:and\s+|but\s+)?not\s+(?:to|for|on|in|as|by|at|from|with)\b[^,.;:]*/g;
 /**
  * Negations (and "waived", "free", "zero") in the answer that the cited text doesn't support where it talks about
  * the same thing: "Either party may not terminate" when the termination sentence has no negation is rejected
@@ -545,6 +557,10 @@ export function scenarioFigures(question: string): Set<string> {
     ...[...q.matchAll(/\b(?:on|for|of|with)\s+(?:a|an)\s+[$£€]?\d[\d,.]*\s*(?:[a-z]+)?/g)].map((m) => m[0]),
     // the user's own situation: "the balance is now $4,200", "we worked 46 hours", "after 200 hours"
     ...q.split(/[,.;?]/).filter((x) => /\b(?:currently|balance|remaining|left|used|worked|works|spent|drops?|dropped|fell|falls|reach(?:es|ed)?|added|adding)\b/.test(x)),
+    // "an overdue $3,200 invoice", "a late $4,000 payment"
+    ...[...q.matchAll(/\b(?:a|an|the|my|our)\s+(?:(?:overdue|late|unpaid|outstanding|new|single|typical)\s+)?[$£€]\s?\d[\d,.]*\s*(?:[a-z]+)?/g)].map((m) => m[0]),
+    // "after 200 hours on assignment", "within 3 days of delivery"
+    ...[...q.matchAll(/\b(?:after|within|before|at|over)\s+(?:\d+(?:\.\d+)?|[a-z]+)\s+(?:hours?|days?|weeks?|months?|years?)\b/g)].map((m) => m[0]),
     // "for two weeks", "for 46 hours"
     ...[...q.matchAll(/\b(?:for|over|across)\s+(?:\d+(?:\.\d+)?|[a-z]+)\s+(?:hours?|days?|weeks?|months?|years?|units?|users?|people|staff)\b/g)].map((m) => m[0]),
     // "two months late", "10 days overdue"
@@ -570,6 +586,9 @@ export function impliedCalculations(text: string): Calculation[] {
   // "1.5% of $3,200 is $48", "1.5% of the $3,200 fee, or $48" (but not "5% of $2,000 or $50, whichever is greater")
   for (const m of t.matchAll(new RegExp(String.raw`(\d+(?:\.\d+)?)\s*%\s+of\s+(?:(?:the|a|an|each|your|its)\s+)?(?:[a-z]+\s+){0,2}?${NUM}(?:\s+[a-z]+){0,2}?[^.;\d]{0,30}?\b${RESULT}\s+${NUM}(?![^.;]{0,40}\bwhichever\b)`, "gi")))
     out.push({ expression: `${n(m[2])} * ${m[1]}%`, result: n(m[3]) });
+  // "$48 per month, which is 1.5% of $3,200"
+  for (const m of t.matchAll(new RegExp(String.raw`${NUM}(?:\s+[a-z]+){0,3},?\s+(?:which is|that is|i\.e\.|being)\s+(\d+(?:\.\d+)?)\s*%\s+of\s+(?:the\s+)?${NUM}`, "gi")))
+    out.push({ expression: `${n(m[3])} * ${m[2]}%`, result: n(m[1]) });
   // "$48 (1.5% of $3,200)"
   for (const m of t.matchAll(new RegExp(String.raw`${NUM}\s*\(\s*(\d+(?:\.\d+)?)\s*%\s+of\s+(?:the\s+)?${NUM}\s*\)`, "gi")))
     out.push({ expression: `${n(m[3])} * ${m[2]}%`, result: n(m[1]) });
@@ -606,16 +625,16 @@ export function negationCheck(answer: string, support: string[], question: strin
     // a sentence that disputes a claim ("I can't confirm the emailed claim that the waiver is now free", "the
     // agreement contains no such term") is a refutation, not a term
     if (REFUTE_SENTENCE.test(raw)) continue;
+    // "With no overtime, the overtime rate does not apply": a consequence of the user's own stated scenario
+    const qn = normalize(question);
+    const lead = /^\s*(?:if|with|since|given|because|as|when|assuming)\b([^,]{3,60}),/i.exec(raw);
+    if (lead && qn.includes(normalize(lead[1]).replace(/^(?:the|a|an)\s+/, "").trim())) continue;
     let c = absenceFree(raw).replace(BOUNDS, " ");
+    // "with no overtime" repeated from the user's own question is their scenario, not a term
+    c = c.replace(/\b(?:no|not|without)\s+[a-z]+(?:\s+[a-z]+)?/g, (m) => (qn.includes(m) ? " " : m));
     // the user asserted something ("Since the fee is now $0", "the emailed claim that the waiver is free"): an
     // answer that says "not $0" / "not free" is correcting the premise, not stating a negated term
-    const premise = PREMISE.test(question) || qNums.size > 0;
-    c = c.replace(/\b(?:not|no|never|isn['’]?t|aren['’]?t)\s+([^,.;:]{1,40})/g, (m, tail: string) => {
-      const ta = [...anchors(tail)].filter((w) => !isRate(w));
-      const tv = valuesIn(tail).map((v) => v.n);
-      const fromQ = (tv.length > 0 && tv.every((n) => qNums.has(n))) || (premise && PREMISE.test(question) && ta.length > 0 && ta.every((w) => qAnchors.has(w)));
-      return fromQ ? " " : m;
-    });
+    c = stripRefutations(c, question);
     const words = [...c.matchAll(NEG_WORD)].map((m) => m[1]);
     if (!words.length) continue;
     const hedged = /\b(?:appears?|seems?|likely|probably|arguably|might)\b/.test(c);
@@ -632,7 +651,9 @@ export function negationCheck(answer: string, support: string[], question: strin
       // payment (0), termination (1), liability (6), late payment and interest (9), refunds (11): material terms
       const money = special || w === "nothing" || normalize(c).split(/[^\p{L}]+/u).some((x) => [0, 1, 6, 9, 11].includes(GROUP_OF.get(x) ?? -1));
       if (o.lenient) {
-        if (!hedged && best >= 2 && w !== "without") block.push(`"${w}"`);
+        // the explanation: a negation about payment, termination, liability, interest or refunds blocks as in the
+        // answer; any other only when it plainly contradicts a closely matching clause
+        if ((money && w !== "without") || (!hedged && best >= 2 && w !== "without")) block.push(`"${w}"`);
         continue;
       }
       ((money || (!hedged && best >= 2)) ? block : qualify).push(`"${w}"`);
@@ -656,7 +677,10 @@ export function periodConflicts(answer: string, support: string[]): string[] {
         const after = sentence.slice(at + m[0].length, at + m[0].length + 28);
         const before = sentence.slice(Math.max(0, at - 24), at);
         // nearest period word: right after the figure ("per month", ", billed annually"), else just before ("annual fee of")
-        const tag = TAGS.find(([re]) => re.test(after.split(/\b(?:and|but|or)\b|[$£€]|\d/)[0]))?.[1] ?? TAGS.find(([re]) => re.test(before.split(/[$£€]|\d/).at(-1) ?? ""))?.[1];
+        const lead = before.split(/[$£€]|\d/).at(-1) ?? "";
+        // "annual fee of $3,200" names the figure's period; "raise the monthly fee by up to 5%" doesn't
+        const leadNames = /\b(?:hourly|daily|weekly|monthly|yearly|annual)\s+[a-z]+(?:\s+[a-z]+)?\s+(?:of|is|was|at|=|:)\s*$/.test(lead);
+        const tag = TAGS.find(([re]) => re.test(after.split(/\b(?:and|but|or)\b|[$£€]|\d/)[0]))?.[1] ?? (leadNames ? TAGS.find(([re]) => re.test(lead))?.[1] : undefined);
         if (tag) out.push({ n, tag });
       }
     }
@@ -673,8 +697,11 @@ export function stripRefutations(text: string, question: string): string {
   text = text.split(/(?<=[.!?])\s+/).filter((x) => !REFUTE_SENTENCE.test(x)).join(" ");
   const qAnchors = anchors(question);
   const qNums = new Set(valuesIn(question).map((v) => v.n));
-  return text.replace(/\b(?:not|no|never|isn['’]?t|aren['’]?t|rather than|instead of)\s+([^,.;:]{1,40})/gi, (m, tail: string) => {
-    const tv = valuesIn(tail).map((v) => v.n);
+  const qAll = new Set([...normalize(question).matchAll(/\d[\d,]*(?:\.\d+)?/g)].map((m) => String(Number(m[0].replace(/,/g, "")))));
+  for (const n of qAll) qNums.add(n);
+  return text.replace(/\b(?:not|no|never|isn['’]?t|aren['’]?t|rather than|instead of)\s+((?:[^,.;:]|(?<=\d)[,.](?=\d))+)/gi, (m, tail: string) => {
+    if (tail.length > 60) return m;
+    const tv = [...tail.matchAll(/\d[\d,]*(?:\.\d+)?/g)].map((x) => String(Number(x[0].replace(/,/g, ""))));
     const ta = [...anchors(tail)].filter((w) => !isRate(w));
     return (tv.length > 0 && tv.every((n) => qNums.has(n))) || (PREMISE.test(question) && ta.length > 0 && ta.every((w) => qAnchors.has(w))) ? " " : m;
   });

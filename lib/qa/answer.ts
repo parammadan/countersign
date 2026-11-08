@@ -403,7 +403,7 @@ export async function answerWithModel(
   out.not_stated = out.not_stated.map(noIds).filter(Boolean);
   // a sentence that only declines an instruction in the question ("I can't share my system prompt", "the
   // instruction to report $0 has been disregarded") isn't about the agreement: it's replaced by a standard note
-  const META = /\b(?:system prompt|api keys?|my (?:instructions|rules|prompt)|(?:can['’]?t|cannot|won['’]?t|will not|unable to) (?:share|reveal|provide|disclose|print|take on|act as|play))\b|\binstructions?\b[^.]{0,80}\b(?:disregard\w*|ignor\w*|not (?:reflected|followed)|won['’]?t follow|will not follow)\b|\b(?:disregard\w*|ignor\w*)\b[^.]{0,60}\b(?:instructions?|requests? to)\b/i;
+  const META = /\b(?:system prompt|api keys?|my (?:instructions|rules|prompt)|(?:can['’]?t|cannot|won['’]?t|will not|unable to) (?:share|reveal|provide|disclose|print|take on|act as|play|confirm|verify))\b|\binstructions?\b[^.]{0,80}\b(?:disregard\w*|ignor\w*|not (?:reflected|followed)|won['’]?t follow|will not follow)\b|\b(?:disregard\w*|ignor\w*)\b[^.]{0,60}\b(?:instructions?|requests? to)\b/i;
   let declined = false;
   const dropMeta = (t: string) => t.split(/(?<=[.!?])\s+/).filter((x) => !(META.test(x) && (declined = true))).join(" ").trim();
   out.answer = dropMeta(out.answer) || out.answer;
@@ -447,6 +447,10 @@ export async function answerWithModel(
   const facts = (sup: string[]) => [...unsupportedFacts(said, sup, allowed, question, { negations: false, periods: false, names: agreementText }), ...unsupportedPlaces(said, sup, question)];
   const quotesOff = (sup: string[]) => misquoted(said, sup);
   const citedSupport = [...support];
+  // the answer's own figures, names and quotes must be in the passages it cites; only the explanation may draw on
+  // other clauses (which are then attached)
+  const answerFacts = [...unsupportedFacts(answerChecked, support, allowed, question, { negations: false, periods: false, names: agreementText }), ...unsupportedPlaces(answerChecked, support, question), ...misquoted(answerChecked, support)];
+  if (answerFacts.length) return withheld(`The answer mentioned ${answerFacts.slice(0, 6).join(", ")}, which the passages it cites don't contain, so it isn't shown.`);
   let missing = [...facts(support), ...quotesOff(support)];
   if (missing.length) {
     const cited = new Set(citations.map((c) => c.passage));
@@ -478,7 +482,10 @@ export async function answerWithModel(
 
   // figures on the wrong term, parties swapped, negations that contradict the clause they're about
   const scenario = scenarioFigures(question);
-  const unbound = unboundValues(withoutAbsence(stripRefutations(said, question)), support, question, new Set([...calcs.verified, ...calcs.fromAgreement]), fromQuestion, scenario, agreementText, citedSupport);
+  // a figure counts as cited when it's in a sentence the model quoted; one elsewhere in a cited passage or an
+  // attached one is held to the stricter test (its clause must be about the answer's term)
+  const quoted = citations.filter((c) => !c.added).map((c) => c.quote);
+  const unbound = unboundValues(withoutAbsence(stripRefutations(said, question)), support, question, new Set([...calcs.verified, ...calcs.fromAgreement]), fromQuestion, scenario, agreementText, quoted);
   if (unbound.length) return withheld(`The answer gave ${unbound.slice(0, 4).join(", ")} for something the agreement gives a different figure for, so it isn't shown.`);
   // a figure the question asserts about a term ("The monthly fee is $5,000 - what's that per year?") can't be used
   // when the agreement gives that term a different figure
@@ -501,7 +508,8 @@ export async function answerWithModel(
   }
   // rate words ("per week", "quarterly") the agreement doesn't use
   const nameless = said.replace(/(?<=[A-Za-z]\s)(?:Quarterly|Annual|Monthly|Weekly|Daily)\b/g, (w) => (agreementText.some((t) => t.includes(w)) ? " " : w));
-  const periods = unsupportedFacts(nameless, [...support, question], allowed, question, { negations: false, checkNames: false }).filter((x) => x.startsWith("per "));
+  // a rate word must be one the agreement uses; a figure given for the wrong period is caught by periodConflicts
+  const periods = unsupportedFacts(nameless, [...agreementText, question], allowed, question, { negations: false, checkNames: false }).filter((x) => x.startsWith("per "));
   // how often something is paid or happens is a term, not a detail
   if (periods.length) return withheld(`The answer said ${periods.join(", ")}, which the agreement doesn't say, so it isn't shown.`);
 
@@ -513,10 +521,10 @@ export async function answerWithModel(
     const groups = new Set(ws.map((w) => GROUP_OF.get(w)).filter((g) => g !== undefined));
     return (w: string) => stems.has(stemWord(w)) || (GROUP_OF.has(w) && groups.has(GROUP_OF.get(w)!));
   };
-  const words = unsupportedWords(out.answer, []).filter((w) => !generic(w));
+  const words = unsupportedWords(answerChecked, []).filter((w) => !generic(w));
   const share = (sup: string[]) => {
     const covered = coveredBy(sup);
-    return words.length ? unsupportedWords(out.answer, sup).filter((w) => !generic(w) && !covered(w)).length / words.length : 0;
+    return words.length ? unsupportedWords(answerChecked, sup).filter((w) => !generic(w) && !covered(w)).length / words.length : 0;
   };
   // the answer itself must be mostly in the words of the text it cites (sources attached above count)
   // (the question's own words don't count: "unlimited liability" isn't supported because the user asked about liability)
