@@ -84,12 +84,22 @@ export default async function Page({ params, searchParams }: { params: Promise<{
                 {h.result.warnings.length > 0 && (
                   <ul className="mt-2 list-disc pl-4 text-xs text-warn">{h.result.warnings.map((w) => <li key={w}>{w}</li>)}</ul>
                 )}
-                {h.result.citations.map((c, i) => (
-                  <figure key={i} className="mt-2 border-l-2 border-line-strong pl-3 text-xs text-ink-2">
-                    <blockquote className="break-words">“{c.quote}”</blockquote>
-                    <figcaption className="text-muted">Page {c.page}</figcaption>
-                  </figure>
-                ))}
+                {h.result.citations.map((c, i) => {
+                  // the whole passage, with the quoted part highlighted, so a fragment can't hide its context
+                  const at = c.context ? c.context.indexOf(c.quote) : -1;
+                  return (
+                    <figure key={i} className="mt-2 border-l-2 border-line-strong pl-3 text-xs text-ink-2">
+                      <blockquote className="break-words">
+                        {c.context && at >= 0 ? (
+                          <>“{c.context.slice(0, at)}<mark className="rounded bg-brand-soft px-0.5 text-ink">{c.quote}</mark>{c.context.slice(at + c.quote.length)}”</>
+                        ) : (
+                          <>“{c.quote}”{c.context && <span className="mt-1 block text-muted">In: “{c.context}”</span>}</>
+                        )}
+                      </blockquote>
+                      <figcaption className="text-muted">Page {c.page}</figcaption>
+                    </figure>
+                  );
+                })}
               </li>
             ))}
           </ol>

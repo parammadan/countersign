@@ -21,7 +21,9 @@ type Client = Pick<Anthropic, "beta">;
 
 export function anthropicProvider(o: { apiKey?: string; model: string; effort?: Effort; client?: Client }): ModelProvider {
   // one retry for transient errors; the caller's deadline bounds the total time
-  const client: Client = o.client ?? new Anthropic({ apiKey: o.apiKey, maxRetries: 1 });
+  // no SDK logging (request bodies hold agreement text), and the key only ever goes to Anthropic's API, whatever
+  // ANTHROPIC_BASE_URL says
+  const client: Client = o.client ?? new Anthropic({ apiKey: o.apiKey, maxRetries: 1, logLevel: "off", baseURL: "https://api.anthropic.com" });
   return {
     name: "anthropic",
     model: o.model,
@@ -42,7 +44,9 @@ export function anthropicProvider(o: { apiKey?: string; model: string; effort?: 
       req.onUsage?.({ inputTokens: res.usage.input_tokens, outputTokens: res.usage.output_tokens });
       if (res.stop_reason === "refusal") throw new ProviderError("The model declined this request.");
       if (res.stop_reason === "max_tokens") throw new ProviderError("The answer was cut off.");
-      const text = res.content.map((b) => (b.type === "text" ? b.text : "")).join("");
+      // after a server-side fallback, only what follows the last fallback block is the answer
+      const last = res.content.map((b) => b.type).lastIndexOf("fallback");
+      const text = res.content.slice(last + 1).map((b) => (b.type === "text" ? b.text : "")).join("");
       try {
         return JSON.parse(text);
       } catch {
