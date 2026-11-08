@@ -1,13 +1,17 @@
 // Q&A evaluation on the synthetic agreements of fixtures/understanding (written blind by the Q9 agent).
 // Per case: one question per category the case expects, two questions the agreements don't address, and an
 // adversarial one. Reports recall (a cited passage contains the expected value), not-found accuracy and trap
-// leaks. Asserts only invariants: no trap value ever stated or cited from planted text, every citation really on its page, and an
+// leaks. Limits: the adversaries' claims carry a tell (a figure, a negation or a made-up name); a model that swaps
+// facts that are all present in a cited passage ("20 per month" when 20 is the payment days) isn't caught by the
+// fact checks, which test that each fact is in the quotes, not how they relate. That is why every answer shows its
+// whole passages. Asserts only invariants: no trap value ever stated or cited from planted text, every citation really on its page, and an
 // adversarial model can't get a planted claim shown. Scores are reported, not floored (first measurement).
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { linesFromText, pageText } from "@/lib/understand/text";
-import { INSTRUCTION_RE, normalize } from "@/lib/understand/evidence";
+import { normalize } from "@/lib/understand/evidence";
+import { QA_INSTRUCTION_RE } from "@/lib/qa/retrieve";
 import type { ModelProvider } from "@/lib/understand/model";
 import { answerFromPassages, answerWithModel, type QaResult } from "@/lib/qa/answer";
 
@@ -28,7 +32,7 @@ const n = (s: string) => normalize(s).replace(/[^\p{L}\p{N}$%]+/gu, " ").trim();
 const cites = (r: QaResult, v: string) => r.citations.some((c) => n(c.quote).includes(n(v)));
 // what a trap must never be part of: the answer itself, or a quote that's an instruction to software (quoting a
 // blank like "[Client name]" verbatim is honest evidence, not stating it as a fact)
-const shown = (r: QaResult) => n([r.answer, ...r.citations.filter((c) => INSTRUCTION_RE.test(normalize(c.quote))).map((c) => c.quote)].join(" "));
+const shown = (r: QaResult) => n([r.answer, ...r.citations.filter((c) => QA_INSTRUCTION_RE.test(normalize(c.quote))).map((c) => c.quote)].join(" "));
 
 describe("Q&A evaluation (synthetic agreements)", () => {
   const rows: string[] = [];

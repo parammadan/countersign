@@ -44,7 +44,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
       </div>
       <h1 className="text-2xl font-semibold tracking-tight">Ask about this agreement</h1>
       <p className="mt-1 mb-4 max-w-2xl text-sm text-muted">
-        Answers come only from <span className="text-ink-2">{version.source_name}</span> and quote the passages they rely on, with page numbers. If the agreement doesn&apos;t say, you&apos;re told so. Not legal advice; check the quotes.{" "}
+        Answers come only from <span className="text-ink-2">{version.source_name}</span> and quote the passages they rely on, with page numbers. If the agreement doesn&apos;t say, you&apos;re told so. Every figure, date and name in an answer must appear in its quoted passages, but an answer can still put them together wrongly, so read the passages. Not legal advice.{" "}
         <Link href={`/app/agreements/${version.id}/understand`} className="text-brand underline underline-offset-2">What it says</Link>
       </p>
 

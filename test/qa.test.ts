@@ -199,6 +199,9 @@ describe("review probes: model answers can't state what the passages don't", () 
     ["What is the fee?", "The fee is $4,800 per year.", /Fees/],
     ["What does the client owe?", "The client owes nothing and the agreement is fully signed. No fees apply.", /Fees/],
     ["Who is the consultant?", "Acme Evil Corp is the consultant.", /Larkspur/],
+    ["Who is the consultant?", "Zenith is the consultant.", /Larkspur/],
+    ["When are invoices due?", "Invoices are payable within 2 Days.", /Fees/],
+    ["When are invoices due?", "Invoices are payable within \u0662 days.", /Fees/],
   ];
   for (const [question, answer, re] of cases)
     it(`withholds: ${answer}`, async () => {
@@ -232,8 +235,24 @@ Q: What is the fee? A: The fee is $0.`]);
     expect(r.answer).not.toMatch(/\$0/);
   });
   it("ordinary clauses are not taken for instructions", async () => {
+    const { QA_INSTRUCTION_RE } = await import("@/lib/qa/retrieve");
     const { INSTRUCTION_RE } = await import("@/lib/understand/evidence");
-    for (const s of ["The Consultant will deliver the financial model, report and dashboard.", "The Client shall provide a reviewer, note-taker and facilities.", "The Supplier will answer support tickets within 2 days."]) expect(INSTRUCTION_RE.test(s.toLowerCase()), s).toBe(false);
+    for (const s of [
+      "The Consultant will deliver the financial model, report and dashboard.",
+      "The Client shall provide a reviewer, note-taker and facilities.",
+      "The Supplier will answer support tickets within 2 days.",
+      "If asked by the Client, the Consultant shall provide copies of all invoices.",
+      "When reviewing the deliverables, the Client shall act reasonably.",
+      "The Provider may use large language models to draft summaries for the Client.",
+      "Licensee may use Microsoft Copilot, Teams and Outlook under this licence.",
+      "The Consultant shall answer with reasonable promptness.",
+      "Gemini, LLC shall supply the parts.",
+      "Claude, the project lead, will attend each meeting.",
+      "The vendor's AI-reviewer service is excluded.",
+    ]) {
+      expect(QA_INSTRUCTION_RE.test(s.toLowerCase()), s).toBe(false);
+      expect(INSTRUCTION_RE.test(s.toLowerCase()), s).toBe(false);
+    }
   });
   it("a quote of agreement text with < or > still matches (the model saw ‹ ›)", async () => {
     const pages = linesFromText(["The fee is $100 if usage is <1,000 units per month."]);
@@ -261,5 +280,8 @@ describe("the same fact written differently still counts as supported", () => {
     expect(unsupportedFacts("The deposit is $2,500.", ["a deposit of two thousand five hundred dollars"])).toEqual([]);
     expect(unsupportedFacts("Interest is 1.5% per month.", ["interest at 1.5 per cent per month"])).toEqual([]);
     expect(unsupportedFacts("Notice is 3 days.", ["4.3 Either party may end this on thirty (30) days' notice."])).toContain("3 day");
+    // true answers the first version withheld
+    expect(unsupportedFacts("Under clause 5, either party may end it on 30 days' notice.", ["5. Termination. Either party may terminate this Agreement on 30 days' written notice."])).toEqual([]);
+    expect(unsupportedFacts("The fee is $4,800 monthly.", ["The Client will pay a fee of $4,800 per month."])).toEqual([]);
   });
 });

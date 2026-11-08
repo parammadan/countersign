@@ -5,11 +5,11 @@
 //     against those passages, amounts and dates in the answer must appear in its citations, and an answer with
 //     no valid citation is withheld. The agreement and the question are data; nothing in them reaches a tool.
 import { z } from "zod";
-import { INSTRUCTION_RE, MIN_QUOTE, normalize, unsupportedTokens, unsupportedWords } from "../understand/evidence";
+import { MIN_QUOTE, normalize, unsupportedTokens, unsupportedWords } from "../understand/evidence";
 import { AnalysisError, callModel, type ModelProvider } from "../understand/model";
 import type { Finding } from "../understand/schema";
 import type { PageLines } from "../understand/text";
-import { passages, retrieve, terms, type Passage, type Scored } from "./retrieve";
+import { passages, QA_INSTRUCTION_RE, retrieve, terms, type Passage, type Scored } from "./retrieve";
 
 export const QA_STATUSES = ["answered", "partial", "not_found"] as const;
 export type QaStatus = (typeof QA_STATUSES)[number];
@@ -62,22 +62,33 @@ function digitize(s: string): string {
     return String(total + cur);
   });
 }
-// clause numbers ("2. Term.", "4.1 Fees") aren't facts: "within 2 days" can't lean on clause 2
+// clause numbers ("2. Term.", "4.1 Fees"): stripped from the passages before number/unit pairs are read, so
+// "within 2 days" can't lean on clause 2; never stripped from the answer
 const stripClauses = (raw: string) => raw.replace(/(^|\s)\d{1,3}(?:\.\d{1,3})*\.?(?=\s+[A-Z(“"])/g, "$1");
-const prep = (raw: string) => digitize(normalize(stripClauses(raw)));
+// digits of any script as ASCII ("٢" -> "2"); NFKC already folds fullwidth and mathematical digits
+const asciiDigits = (s: string) =>
+  s.replace(/\p{Nd}/gu, (d) => {
+    let cp = d.codePointAt(0)!;
+    let k = 0;
+    while (k < 60 && /\p{Nd}/u.test(String.fromCodePoint(cp - 1))) { cp--; k++; }
+    return String((d.codePointAt(0)! - cp) % 10);
+  });
+// bounded: answers and passages are short, and the number patterns are kept away from pathological input
+const MAX_FACT_TEXT = 6000;
+const prep = (raw: string) => digitize(asciiDigits(normalize(raw.slice(0, MAX_FACT_TEXT))));
 /** Every number in a text, digits or words ("thirty (30)", "two thousand five hundred", "3rd"), as canonical strings. */
 export function numbersIn(text: string): Set<string> {
   return new Set([...prep(text).matchAll(/\d[\d,]*(?:\.\d+)?/g)].map((m) => String(Number(m[0].replace(/,/g, "")))));
 }
-const UNIT = /(\d[\d,]*(?:\.\d+)?)\s*\)?\s*(?:\(\s*\d[\d,]*\s*\)\s*)?(?:(?:business|calendar|working)\s+)?(hours?|days?|weeks?|months?|years?|%|percent|per\s?cent)/g;
+const UNIT = /(\d[\d,]*(?:\.\d+)?)\s*\)?\s*(?:\(\s*\d[\d,]*\s*\)\s*)?(?:(?:business|calendar|working)\s+)?(hours?|days?|weeks?|months?|years?|percent|per\s?cent|%)(?![a-z])/g;
 /** Number-with-unit pairs ("20 days", "thirty (30) days", "5%"), so "2 days" can't lean on "February 2". */
-function unitPairs(text: string): Set<string> {
-  return new Set([...prep(text).matchAll(UNIT)].map((m) => `${Number(m[1].replace(/,/g, ""))}:${m[2].startsWith("p") || m[2] === "%" ? "%" : m[2].replace(/s$/, "")}`));
+function unitPairs(prepped: string): Set<string> {
+  return new Set([...prepped.matchAll(UNIT)].map((m) => `${Number(m[1].replace(/,/g, ""))}:${m[2].startsWith("p") || m[2] === "%" ? "%" : m[2].replace(/s$/, "")}`));
 }
 const MONTH_RE = /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/g;
 const PERIOD: [RegExp, string][] = [[/\b(hours?|hourly)\b/, "hour"], [/\b(days?|daily)\b/, "day"], [/\b(weeks?|weekly)\b/, "week"], [/\b(months?|monthly)\b/, "month"], [/\b(quarters?|quarterly)\b/, "quarter"], [/\b(years?|yearly|annual|annually|annum)\b/, "year"]];
 const NEGATION = /\b(no|not|nothing|never|none|neither|nor|without|waived?|free|zero)\b/g;
-const COMMON_CAPS = new Set(["the", "this", "that", "these", "it", "if", "either", "each", "both", "there", "a", "an", "i", "under", "no", "yes"]);
+const COMMON_CAPS = new Set(["the", "this", "that", "these", "those", "it", "its", "if", "either", "each", "both", "there", "a", "an", "i", "under", "no", "yes", "only", "all", "any", "after", "before", "when", "within", "from", "for", "per", "they", "their", "however", "also", "but", "and", "or", "in", "on", "at", "by", "to", "with", "as", "unless", "until", "once", "while", "where", "which", "who", "what", "you", "your", "we"]);
 
 /** Facts in an answer that none of its quotes contain: numbers, months, periods, names, negations. */
 export function unsupportedFacts(answer: string, quotes: string[]): string[] {
@@ -86,20 +97,20 @@ export function unsupportedFacts(answer: string, quotes: string[]): string[] {
   const support = quotes.join(" \n ");
   const have = numbersIn(support);
   for (const n of numbersIn(answer)) if (!have.has(n)) out.push(n);
-  const pairs = unitPairs(support);
-  for (const pr of unitPairs(answer)) if (!pairs.has(pr)) out.push(pr.replace(":", " ").replace(" %", "%"));
+  const pairs = unitPairs(prep(stripClauses(support)));
+  for (const pr of unitPairs(prep(answer))) if (!pairs.has(pr)) out.push(pr.replace(":", " ").replace(" %", "%"));
   const a = normalize(answer);
   const months = new Set([...hay.matchAll(MONTH_RE)].map((m) => m[1].slice(0, 3)));
   for (const m of a.matchAll(MONTH_RE)) if (!months.has(m[1].slice(0, 3))) out.push(m[1]);
   for (const [re, name] of PERIOD) if (re.test(a) && !re.test(hay)) out.push(`per ${name}`);
   const words = new Set(hay.split(/[^\p{L}\p{N}]+/u));
   for (const m of a.matchAll(NEGATION)) if (!words.has(m[1])) out.push(`"${m[1]}"`);
-  // names: capitalised words that don't start a sentence must be in the quotes
-  for (const m of answer.normalize("NFKC").matchAll(/(?<![.!?:]\s|^)\b([A-Z][\p{L}'’-]+)/gu)) {
+  // names: every capitalised word must be in the quotes, unless it's a common word that starts sentences
+  for (const m of answer.normalize("NFKC").slice(0, MAX_FACT_TEXT).matchAll(/\b([A-Z][\p{L}'’-]+)/gu)) {
     const w = normalize(m[1]);
     if (!COMMON_CAPS.has(w) && !words.has(w)) out.push(m[1]);
   }
-  return [...new Set([...out, ...unsupportedTokens(answer, quotes.map(prep))])];
+  return [...new Set([...out, ...unsupportedTokens(answer.slice(0, MAX_FACT_TEXT), quotes.map(prep))])];
 }
 /** A passage addresses the question only if it scores at least this and mentions half the question's concepts. */
 export const MIN_SCORE = 1.0;
@@ -216,7 +227,7 @@ export async function answerWithModel(provider: ModelProvider, question: string,
       continue;
     }
     // the whole passage is judged, not just the fragment quoted from it
-    if (INSTRUCTION_RE.test(normalize(p.text))) {
+    if (QA_INSTRUCTION_RE.test(normalize(p.text))) {
       planted++;
       continue;
     }

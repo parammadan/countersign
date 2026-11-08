@@ -3,6 +3,22 @@
 // vocabulary of agreement terms, so "can the client end this early?" finds the termination clause. No embeddings,
 // no network: deterministic and cheap, and the same passages feed the extractive answer and a model.
 import { INSTRUCTION_RE, normalize } from "../understand/evidence";
+
+// Q&A sets aside more than M2.1 flags: text written to steer an answering assistant. Each form needs an
+// instruction verb or a direct address, so ordinary clauses ("If asked by the Client, the Consultant shall
+// provide...", "Claude, the project lead, will attend") stay usable. M2.1 keeps its own pattern unchanged.
+const ANSWER_VERB = "(?:answer|say|state|report|reply|respond|record|confirm)";
+const QA_EXTRA = [
+  String.raw`\b(?:ai|ai[ -](?:assistants?|models?|reviewers?|readers?|tools?)|assistants?|llms?|chatbots?|language models?|automated (?:readers?|reviewers?|tools?|systems?))\s*[:–—-]\s*(?:please\s+)?(?:record|report|mark|state|say|treat|ignore|confirm|note|answer|reply)\b`,
+  String.raw`\bif (?:you are |you're )?asked\b[^.]{0,80}?\b${ANSWER_VERB}\b`,
+  String.raw`\bwhen (?:summari[sz]ing|answering questions about) (?:this|the)\b`,
+  String.raw`\b(?:attention|notes? (?:to|for))\b[^.]{0,30}?\b(?:language models?|llms?|chatbots?|ai)\b`,
+  String.raw`\b(?:claude|chatgpt|gpt-?\d\w*|gemini|copilot)\s*,\s*(?:please|you (?:must|should|shall))\b`,
+  String.raw`\b(?:ai )?assistants? (?:reading|processing|reviewing) (?:this|the)\b[^.]{0,40}?\b(?:must|should|shall)\b`,
+  String.raw`^\s*(?:q|question|a|answer)\s*:\s`,
+  String.raw`\b${ANSWER_VERB}\s+that\s+(?:the\s+)?(?:fees?|client|customer|agreement|amount|payment|price|signatures?)\b`,
+].join("|");
+export const QA_INSTRUCTION_RE = new RegExp(`${INSTRUCTION_RE.source}|${QA_EXTRA}`, "i");
 import { pageText, type PageLines } from "../understand/text";
 
 export type Passage = { id: string; page: number; text: string };
@@ -49,14 +65,14 @@ export function passages(pages: PageLines[]): { passages: Passage[]; excluded: P
     for (let i = 0; i < sentences.length; i++) {
       // text addressed to software is never evidence; it's set aside on its own, so the clause next to it
       // stays usable, and the answer can mention that it was ignored
-      if (INSTRUCTION_RE.test(normalize(sentences[i]))) {
+      if (QA_INSTRUCTION_RE.test(normalize(sentences[i]))) {
         excluded.push({ id: `p${p.page}-x${i}`, page: p.page, text: sentences[i].slice(0, 400) });
         continue;
       }
       let text = sentences[i];
       // short sentences ("2. Term.") join the next one so the passage carries its meaning; never across a
       // sentence that's set aside, so a passage stays one verbatim run
-      while (text.length < 120 && i + 1 < sentences.length && !INSTRUCTION_RE.test(normalize(sentences[i + 1])) && (text + " " + sentences[i + 1]).length <= 400) text += " " + sentences[++i];
+      while (text.length < 120 && i + 1 < sentences.length && !QA_INSTRUCTION_RE.test(normalize(sentences[i + 1])) && (text + " " + sentences[i + 1]).length <= 400) text += " " + sentences[++i];
       out.push({ id: `p${p.page}-${++n}`, page: p.page, text: text.slice(0, 400) });
     }
   }
