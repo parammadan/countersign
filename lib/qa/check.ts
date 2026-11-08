@@ -124,7 +124,7 @@ export function segments(text: string): string[] {
 /** Answer text split finer, into clauses, so "invoices are due in 30 days and late fees are 2%" is two claims. */
 export function clauses(text: string): string[] {
   // "and" splits two claims, not a range of numbers ("Lease Years 3 and 4")
-  return stripPageRefs(text.slice(0, MAX_TEXT)).split(/(?<=[.!?])\s+|;\s*|\n+|,?\s+(?:and|but|while|whereas|plus)\s+(?!\d)|,\s+(?:so|therefore|thus|which means|meaning|hence)\s+/i).map((s) => s.trim()).filter(Boolean);
+  return stripPageRefs(text.slice(0, MAX_TEXT)).split(/(?<=[.!?])\s+|;\s*|\n+|,?\s+(?:and|but|while|whereas|plus)\s+(?!\d)|,\s+(?:so|therefore|thus|which means|meaning|hence)\s+|\s+(?:so|therefore|thus|hence)\s+(?!that\b|on\b|as\b|long\b|far\b|much\b|many\b|forth\b)/i).map((s) => s.trim()).filter(Boolean);
 }
 
 type Seg = { t: string; a: Set<string>; v: Value[] };

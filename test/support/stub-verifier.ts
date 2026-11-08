@@ -75,7 +75,8 @@ export const approveAll = (calls: ModelRequest[] = []): ModelProvider => ({
       claims: claimsOf(req).map((span) => {
         const claim = /^(?:yes|no)\b/i.test(span) ? `${span} (in answer to: ${questionOf(req)})` : span;
         const evidence = evidenceFor(req, span);
-        const aside = ABOUT_ASIDE.test(span) && evidence.some((e) => /-n\d/.test(e.passage));
+        const unofficial = new Set([...(req.context ?? "").matchAll(/<passage id="(p[^"]+)" page="\d+" binding="false">/g)].map((m) => m[1]));
+        const aside = ABOUT_ASIDE.test(span) && evidence.some((e) => unofficial.has(e.passage));
         return { span, claim, kind: aside ? "context" : "term", material: true, verdict: "supported", evidence, reason: "stub" };
       }),
     };

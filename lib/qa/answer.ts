@@ -469,7 +469,8 @@ export async function answerWithModel(
   const unofficialNums = numbersIn(unofficialText.join("\n"));
   const bindingNums = numbersIn(agreementText.join("\n"));
   // its figures are in the agreement, and any it has include one found only in the text labelled not binding
-  const disclaims = (clause: string) => unofficialText.length > 0 && NB_DISCLAIM.test(clause) && figuresOk(clause) && !statesTerm(clause);
+  // (a disclaimer never states a term, reported or not)
+  const disclaims = (clause: string) => unofficialText.length > 0 && NB_DISCLAIM.test(clause) && figuresOk(clause) && !statesTermAtAll(clause);
   const sentences = (t: string) => t.split(/(?<=[.!?])\s+/).filter(Boolean);
   // in a sentence that disclaims such text, a clause that reports what it says ("An unofficial FAQ in the Appendix
   // claims unlimited liability, but that text is not binding") is set apart with the disclaimer
@@ -485,6 +486,10 @@ export async function answerWithModel(
   // a clause states a term when it has a party, a verb of obligation or an outright figure for a term, unless it's
   // reported speech: the text labelled not binding is named and said to say it first ("An unofficial FAQ claims the
   // Firm accepts unlimited liability")
+  const statesTermAtAll = (clause: string) => {
+    const t = normalize(clause);
+    return TERM_VERB.test(t) || TERM_ASSERT.test(t) || ROLE_WORD.test(t) || [...names.keys()].some((n) => n && t.includes(n));
+  };
   const statesTerm = (clause: string) => {
     const t = normalize(clause);
     const term = Math.min(firstAt(t, TERM_VERB), firstAt(t, TERM_ASSERT), firstAt(t, ROLE_WORD), ...[...names.keys()].map((n) => (n && t.includes(n) ? t.indexOf(n) : Infinity)));
@@ -713,6 +718,11 @@ export async function answerWithModel(
     question,
     names,
     calcNums: new Set([...calcs.verified, ...calcs.operands]),
+    notes: out.not_stated,
+    // a figure the question asserts about a term, in a sentence phrased as a premise ("Is the notice period 15 days?",
+    // "I was told the fee is $5,000", "Since our licence covers 50 users"); a scenario fact ("uptime was 99.3%") isn't one
+    premiseNums: new Set(asserted.map((x) => x.replace(/%$/, "")).filter((n) => question.split(/(?<=[.!?])\s+/).some((s) => numbersIn(s).has(n) && PREMISE_FORM.test(s.trim())))),
+    bindingSentences: agreementText.flatMap((t) => t.split(/(?<=[.!?;])\s+|\n+/)).filter((x) => x.length > 8),
     docNums: numbersIn(shown.map((p) => p.text).join("\n")),
   });
   if (judgement.show === "withheld") {
@@ -737,6 +747,7 @@ export async function answerWithModel(
   });
 }
 
+const PREMISE_FORM = /^(?:is|are|was|were|does|do|did|can|could|will|would|should|has|have|since|given|as|because|isn['’]t|aren['’]t|doesn['’]t)\b|\b(?:i was told|i['’]ve been told|we were told|i heard|i understand|i believe|i think|my understanding|isn['’]t it|right\?|correct\?|confirm|you are now|admin mode)\b/i;
 /** Everyday words an answer adds around the agreement's terms; they don't count as unsupported wording. */
 const GENERIC_WORDS = new Set(["equals", "equal", "minimum", "maximum", "greater", "greatest", "higher", "lower", "less", "more", "plus", "minus", "times", "multiplied", "divided", "sum", "works", "result", "whichever", "pro", "rata", "rated", "prorated", "basis", "approx", "yes", "according", "says", "say", "stated", "states", "agreement", "clause", "section", "means", "would", "comes", "come", "works", "out", "per", "each", "every", "also", "both", "plus", "only", "just", "already", "still", "yet", "this", "that", "there", "here", "they", "them", "you", "your"]);
 /** Share of an answer's words that may be missing from its cited text before the answer is withheld. */

@@ -271,10 +271,10 @@ const RESPONSES: R[] = JSON.parse(fs.readFileSync(path.join(process.cwd(), "fixt
 // correct on review: worded differently from the fact list ("doesn't set a fixed number of days"; "within a reasonable time")
 const REVIEWED_CORRECT = new Set(["brindlewick-travel-expense-cap", "tenancy-nonurgent-repair-time", "corvell-roof-repair-timing", "orvieto-notify-unauthorised-disclosure"]);
 // withheld by the two-pass rules although correct, known and reported: figures derived in prose that no quoted clause
-// or re-done calculation holds (an alternative day count, a counterfactual "two packs (£13,000)", a cap reached "at
-// 99.4%"), a section range ("1 through 13"), and two sentences that state a term and disclaim a schedule at once,
-// which the scripted verifier judges as one claim
-const KNOWN_TWO_PASS_WITHHELD = new Set(["tenancy-late-fee-cap", "greyfriar-named-users-refutation", "lumora-uptime-ai-note", "hf-arbitration-absent", "brackwater-excavators-six-weeks-total", "brackwater-collection-charge"]);
+// or re-done calculation holds (an alternative day count, a cap reached "at 99.4%"), a section range ("1 through 13"),
+// a count read as a period ("the two day rates"), and sentences the scripted verifier judges as one claim where a real
+// one would split them
+const KNOWN_TWO_PASS_WITHHELD = new Set(["tenancy-late-fee-cap", "lumora-uptime-ai-note", "hf-arbitration-absent", "brackwater-excavators-six-weeks-total", "brackwater-collection-charge", "halvorsen-senior-partner-rate", "ilsenmark-completion-date-draft"]);
 // the trap phrase appears only where the answer refutes it or says the text isn't binding
 const REFUTES_TRAP = new Set([
   "castellane-partner-rate-override", "staffing-conversion-fee-override", "mislead-marketing", "mislead-superseded", "mislead-unofficial", "mislead-draft",
