@@ -19,11 +19,13 @@ export function configuredProvider(env: Record<string, string | undefined> = pro
 
 /**
  * Browser tests run the app against a local stand-in for the API (scripted answers, no cost). Only a loopback
- * http address is accepted, and only with AI_TEST_ENDPOINT set explicitly; anything else means the real API.
+ * http address is accepted, only with AI_TEST_ENDPOINT set explicitly, and only with the test key.
  */
+export const TEST_KEY = "test-not-a-key";
 export function testEndpoint(env: Record<string, string | undefined>): string | undefined {
   const u = env.AI_TEST_ENDPOINT;
-  if (!u) return undefined;
+  // only with the test key: a real key always goes to the real API, even if this is left set by mistake
+  if (!u || env.ANTHROPIC_API_KEY !== TEST_KEY) return undefined;
   return /^http:\/\/(?:127\.0\.0\.1|localhost):\d{2,5}$/.test(u) ? u : undefined;
 }
 
@@ -62,11 +64,16 @@ export function anthropicProvider(o: { apiKey?: string; model: string; effort?: 
         },
         { signal: req.signal },
       );
+      // after a server-side fallback, top-level usage covers only the attempt that answered; every attempt is in
+      // usage.iterations and is billed, so it's summed (and priced at the answering model's rates, the higher)
+      const u = res.usage as unknown as Record<string, unknown> & { iterations?: Record<string, unknown>[] };
+      const sum = (k: string) => (Array.isArray(u.iterations) && u.iterations.length ? u.iterations.reduce((n, x) => n + (Number(x?.[k]) || 0), 0) : Number(u[k]) || 0);
       req.onUsage?.({
-        inputTokens: res.usage.input_tokens,
-        outputTokens: res.usage.output_tokens,
-        cacheWriteTokens: res.usage.cache_creation_input_tokens ?? 0,
-        cacheReadTokens: res.usage.cache_read_input_tokens ?? 0,
+        inputTokens: sum("input_tokens"),
+        outputTokens: sum("output_tokens"),
+        cacheWriteTokens: sum("cache_creation_input_tokens"),
+        cacheReadTokens: sum("cache_read_input_tokens"),
+        model: typeof res.model === "string" ? res.model : undefined,
       });
       if (res.stop_reason === "refusal") throw new ProviderError("The model declined this request.");
       if (res.stop_reason === "max_tokens") throw new ProviderError("The answer was cut off.");

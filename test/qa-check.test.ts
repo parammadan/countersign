@@ -63,13 +63,15 @@ describe("arithmetic is re-done, from the agreement's and the question's numbers
     expect(evaluate("process.exit()")).toBeNull();
     expect(evaluate("1/0")).toBeNull();
   });
-  it("accepts a right result from allowed numbers, rejects a wrong result or an invented operand", () => {
-    const allowed = new Set(["4000", "1.5"]);
-    expect(checkCalculations([{ expression: "4000 * 1.5%", result: "$60" }], allowed)).toMatchObject({ failed: [] });
-    expect(checkCalculations([{ expression: "4000 * 1.5%", result: "$600" }], allowed).failed).toHaveLength(1);
-    expect(checkCalculations([{ expression: "4000 * 2%", result: "80" }], allowed).failed).toHaveLength(1);
-    // a verified result can feed the next step
-    expect(checkCalculations([{ expression: "4000 * 1.5%", result: "60" }, { expression: "60 * 3", result: "180" }], new Set([...allowed, "3"])).failed).toEqual([]);
+  it("accepts a right result from the agreement's figures, rejects a wrong result, an invented operand or a wordy result", () => {
+    const sup = ["2. Late payment. Overdue amounts accrue interest at 1.5% per month."];
+    const q = "What interest is due if a $4,000 invoice is a month late?";
+    expect(checkCalculations([{ expression: "4000 * 1.5%", result: "$60" }], sup, q, "interest")).toMatchObject({ failed: [] });
+    expect(checkCalculations([{ expression: "4000 * 1.5%", result: "$600" }], sup, q, "interest").failed).toHaveLength(1);
+    expect(checkCalculations([{ expression: "4000 * 2%", result: "80" }], sup, q, "interest").failed).toHaveLength(1);
+    expect(checkCalculations([{ expression: "4000 * 1.5%", result: "60 plus a $900 admin fee" }], sup, q, "interest").failed).toHaveLength(1);
+    // a verified result can feed the next step; calendar constants are allowed
+    expect(checkCalculations([{ expression: "4000 * 1.5%", result: "60" }, { expression: "60 * 12", result: "720" }], sup, q, "interest").failed).toEqual([]);
   });
 });
 

@@ -203,6 +203,20 @@ describe("Anthropic adapter (no network: mocked client)", () => {
     await expect(anthropicProvider({ model: "m", client: mock(ok("Sure! Here you go")).client }).complete(req())).rejects.toThrow("The answer wasn't valid JSON.");
   });
 
+  it("after a server-side fallback, every attempt's tokens are counted and the answering model is reported", async () => {
+    const res = { stop_reason: "end_turn", model: "claude-opus-5", content: [{ type: "fallback", from: { model: "claude-opus-5-5" }, to: { model: "claude-opus-5" } }, { type: "text", text: '{"a":1}' }], usage: { input_tokens: 500, output_tokens: 40, iterations: [{ type: "message", input_tokens: 500, output_tokens: 10 }, { type: "fallback_message", input_tokens: 500, output_tokens: 40 }] } };
+    let usage: unknown;
+    await anthropicProvider({ model: "claude-opus-5-5", client: mock(res).client }).complete({ ...req(), onUsage: (u) => (usage = u) });
+    expect(usage).toEqual({ inputTokens: 1000, outputTokens: 50, cacheWriteTokens: 0, cacheReadTokens: 0, model: "claude-opus-5" });
+  });
+
+  it("the test endpoint is used only with the test key; a real key always goes to the real API", async () => {
+    const { testEndpoint } = await import("@/lib/ai/anthropic");
+    expect(testEndpoint({ AI_TEST_ENDPOINT: "http://127.0.0.1:2527", ANTHROPIC_API_KEY: "test-not-a-key" })).toBe("http://127.0.0.1:2527");
+    expect(testEndpoint({ AI_TEST_ENDPOINT: "http://127.0.0.1:2527", ANTHROPIC_API_KEY: "sk-real" })).toBeUndefined();
+    expect(testEndpoint({ AI_TEST_ENDPOINT: "http://evil.example:80", ANTHROPIC_API_KEY: "test-not-a-key" })).toBeUndefined();
+  });
+
   it("strips schema limits structured outputs doesn't accept (they're enforced afterwards by zod)", () => {
     expect(toProviderSchema(req().schema)).toEqual({ type: "object", additionalProperties: false, required: ["a"], properties: { a: { anyOf: [{ type: "string" }, { type: "null" }] }, b: { type: "array", items: { type: "string" } } } });
   });

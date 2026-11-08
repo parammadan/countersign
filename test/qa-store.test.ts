@@ -188,4 +188,39 @@ describe("questions about an agreement", () => {
     expect(Q.aiDailyBudgetUsd({})).toBe(5);
     expect(Q.aiDailyBudgetUsd({ AI_DAILY_BUDGET_USD: "abc" })).toBe(5);
   });
+
+  it("a call that fails without reporting usage keeps its worst-case cost booked; a failure before any call books nothing", async () => {
+    const { worstCaseMicroUsd } = await import("../lib/ai/pricing");
+    const { QA_LIMITS } = await import("../lib/qa/answer");
+    const worst = worstCaseMicroUsd("claude-opus-5-5", Math.ceil(QA_LIMITS.maxDocumentChars / 3) + 4000, QA_LIMITS.maxOutputTokens);
+    const silent: ModelProvider = { name: "x", model: "claude-opus-5-5", complete: async () => { throw new Error("socket hang up"); } };
+    db.run("DELETE FROM qa_answers WHERE workspace_id = 'ws_a'");
+    await Q.askQuestion("ws_a", vid, { id: "u_n", email: "n@example.com" }, "What are the payment terms?", silent);
+    expect(db.one<{ c: number; mode: string }>("SELECT cost_microusd c, mode FROM qa_answers WHERE asked_by = 'n@example.com'")).toEqual({ c: worst, mode: "model_failed" });
+    // the stored PDF doesn't match its fingerprint: nothing is called, nothing is booked
+    const p = path.join(dir, "blobs", `ws/ws_a/templates/${vid}/agreement.pdf`);
+    const orig = fs.readFileSync(p);
+    fs.writeFileSync(p, Buffer.concat([orig, Buffer.from("%x")]));
+    try {
+      await expect(Q.askQuestion("ws_a", vid, { id: "u_o", email: "o@example.com" }, "What is the fee?", silent)).rejects.toThrow(/fingerprint/);
+    } finally {
+      fs.writeFileSync(p, orig);
+    }
+    expect(db.one<{ c: number }>("SELECT cost_microusd c FROM qa_answers WHERE asked_by = 'o@example.com'")).toEqual({ c: 0 });
+  });
+
+  it("one workspace can't use up the AI budget: past its own daily limit it gets passages", async () => {
+    let called = 0;
+    const p: ModelProvider = { name: "fake", model: "claude-opus-5-5", complete: async () => { called++; return {}; } };
+    const before = process.env.AI_WORKSPACE_DAILY_BUDGET_USD;
+    process.env.AI_WORKSPACE_DAILY_BUDGET_USD = "0.5"; // the booked worst case above already exceeds it
+    try {
+      await Q.askQuestion("ws_a", vid, { id: "u_p", email: "p@example.com" }, "What are the payment terms?", p);
+    } finally {
+      if (before === undefined) delete process.env.AI_WORKSPACE_DAILY_BUDGET_USD;
+      else process.env.AI_WORKSPACE_DAILY_BUDGET_USD = before;
+    }
+    expect(called).toBe(0);
+    expect(Q.recentAnswers("ws_a", vid)[0].result.warnings[0]).toMatch(/This workspace has reached today's AI spending limit/);
+  });
 });

@@ -23,6 +23,8 @@ const QA_EXTRA = [
   String.raw`\byou (?:must|should|shall|need to|are to|will) (?:now |always |only )?(?:say|answer|reply|respond|output|print|claim)\s+(?:that|with|only|exactly|"|“|the word|the following)`,
   String.raw`\[\s*(?:system|assistant|admin|instructions?|developer|prompt)\s*\]|<\s*/?\s*(?:system|instructions?)\s*>`,
   String.raw`\b(?:reveal|print|repeat|show|output)\b[^.]{0,30}\b(?:system prompt|your (?:instructions|prompt|rules))\b`,
+  String.raw`\bnotes?\b[^.:]{0,60}?\b(?:to|for)\b[^.:]{0,20}?\b(?:automated|ai|assistants?|language models?|llms?|chatbots?|bots?|machine)\b`,
+  String.raw`\b(?:summar(?:y|ies)|answers?|responses?|outputs?|replies)\s+(?:should|must|shall|will|are to)\s+(?:say|state|report|show|read|confirm|claim)\b`,
 ].join("|");
 export const QA_INSTRUCTION_RE = new RegExp(`${INSTRUCTION_RE.source}|${QA_EXTRA}`, "i");
 
@@ -31,6 +33,7 @@ export const QA_INSTRUCTION_RE = new RegExp(`${INSTRUCTION_RE.source}|${QA_EXTRA
  * "Superseded draft: ...", "Unofficial FAQ: ..."). It stays visible (so the reader can be told it exists) but an
  * answer can't rely on it.
  */
+const SECTION_START = /^\s*(?:\(?\d{1,3}(?:\.\d{1,3})*[.)]?(?:\s|$)|(?:schedule|appendix|exhibit|annex|article|section|part)\b)/i;
 export const NON_BINDING_RE = new RegExp(
   [
     String.raw`^(?:[a-z][\w ]{0,30}\.\s+)?(?:marketing (?:summary|copy|material|overview)|unofficial (?:faq|summary|notes?|guide|overview)|superseded (?:drafts?|versions?|terms)|draft (?:summary|version|terms|overview)|faq|sales (?:summary|sheet))\b`,
@@ -81,18 +84,27 @@ export function passages(pages: PageLines[]): { passages: Passage[]; excluded: P
   for (const p of pages) {
     // every fragment is kept (a clause number like "2." too), so a passage is always a verbatim run of the page
     const sentences = pageText(p).split(/(?<=[.;!?])\s+(?=[A-Z0-9("“[])/).map((s) => s.trim()).filter(Boolean);
+    // set aside, sentence by sentence: text addressed to software ("x"), and text the agreement labels as not part
+    // of its terms ("n"), which runs on until the next numbered clause or schedule heading
+    const aside: ("x" | "n" | null)[] = [];
+    let unofficial = false;
+    for (const t of sentences) {
+      const n = normalize(t);
+      if (NON_BINDING_RE.test(n)) unofficial = true;
+      else if (unofficial && SECTION_START.test(t)) unofficial = false;
+      aside.push(QA_INSTRUCTION_RE.test(n) ? "x" : unofficial ? "n" : null);
+    }
     let n = 0;
     for (let i = 0; i < sentences.length; i++) {
-      // text addressed to software is never evidence; it's set aside on its own, so the clause next to it
-      // stays usable, and the answer can mention that it was ignored
-      if (QA_INSTRUCTION_RE.test(normalize(sentences[i]))) {
-        excluded.push({ id: `p${p.page}-x${i}`, page: p.page, text: sentences[i].slice(0, 400) });
+      // never evidence; set aside on its own, so the clause next to it stays usable, and the answer can mention it
+      if (aside[i]) {
+        excluded.push({ id: `p${p.page}-${aside[i]}${i}`, page: p.page, text: sentences[i].slice(0, 400) });
         continue;
       }
       let text = sentences[i];
       // short sentences ("2. Term.") join the next one so the passage carries its meaning; never across a
       // sentence that's set aside, so a passage stays one verbatim run
-      while (text.length < 120 && i + 1 < sentences.length && !QA_INSTRUCTION_RE.test(normalize(sentences[i + 1])) && (text + " " + sentences[i + 1]).length <= 400) text += " " + sentences[++i];
+      while (text.length < 120 && i + 1 < sentences.length && !aside[i + 1] && (text + " " + sentences[i + 1]).length <= 400) text += " " + sentences[++i];
       out.push({ id: `p${p.page}-${++n}`, page: p.page, text: text.slice(0, 400) });
     }
   }
@@ -148,3 +160,4 @@ export function retrieve(question: string, all: Passage[], o: RetrieveOptions = 
   }
   return out;
 }
+

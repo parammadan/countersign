@@ -6,13 +6,15 @@ type Price = { input: number; output: number; cacheWrite: number; cacheRead: num
 // Claude Opus 5.5: $4 input, $20 output, cache writes 1.25x input (5-minute cache), cache reads $0.20
 const PRICES: Record<string, Price> = {
   "claude-opus-5-5": { input: 4, output: 20, cacheWrite: 5, cacheRead: 0.2 },
+  // a server-side fallback can answer on Opus 5 ($5 / $25)
+  "claude-opus-5": { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
 };
 /** Unknown models are costed at the most expensive configured price, so a budget is never undercounted. */
 const FALLBACK: Price = Object.values(PRICES).reduce((a, p) => ({ input: Math.max(a.input, p.input), output: Math.max(a.output, p.output), cacheWrite: Math.max(a.cacheWrite, p.cacheWrite), cacheRead: Math.max(a.cacheRead, p.cacheRead) }));
 
 export function costMicroUsd(model: string, u: Usage | undefined): number {
   if (!u) return 0;
-  const p = PRICES[model] ?? FALLBACK;
+  const p = PRICES[u.model ?? model] ?? FALLBACK;
   return Math.ceil(u.inputTokens * p.input + u.outputTokens * p.output + (u.cacheWriteTokens ?? 0) * p.cacheWrite + (u.cacheReadTokens ?? 0) * p.cacheRead);
 }
 

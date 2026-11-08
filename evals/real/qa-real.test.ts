@@ -57,7 +57,8 @@ function budgeted(inner: ModelProvider, raw: { out?: unknown; costMicro?: number
       } finally {
         reserved -= worst;
         raw.ms = Date.now() - t0;
-        raw.costMicro = costMicroUsd(inner.model, usage);
+        // a call that failed or timed out without reporting usage may still be billed: book its worst case
+        raw.costMicro = usage ? costMicroUsd(inner.model, usage) : worst;
         const now = readLedger();
         writeLedger({ ...now, spentMicro: now.spentMicro + raw.costMicro, calls: now.calls + 1 });
       }

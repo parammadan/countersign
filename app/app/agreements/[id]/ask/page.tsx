@@ -32,6 +32,20 @@ const EXAMPLES = [
 ];
 const THREAD_ID = /^qa_[A-Za-z0-9_-]{6,50}$/;
 
+function locate(context: string, quote: string): { at: number; len: number } | null {
+  const exact = context.indexOf(quote);
+  if (exact >= 0) return { at: exact, len: quote.length };
+  const pattern = quote
+    .trim()
+    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    .replace(/\s+/g, "\\s+")
+    .replace(/["“”„]/g, "[\"“”„]")
+    .replace(/['‘’]/g, "['‘’]")
+    .replace(/[-‐‑‒–—]/g, "[-‐‑‒–—]");
+  const m = new RegExp(pattern, "i").exec(context);
+  return m ? { at: m.index, len: m[0].length } : null;
+}
+
 /** One passage with every quote taken from it highlighted, so a fragment can't hide its context. */
 function Source({ context, quotes, page }: { context?: string; quotes: string[]; page: number }) {
   if (!context) return (
@@ -40,8 +54,9 @@ function Source({ context, quotes, page }: { context?: string; quotes: string[];
       <figcaption className="mt-0.5 text-xs text-muted">Page {page}</figcaption>
     </figure>
   );
-  // non-overlapping spans of the quotes in the passage, in order
-  const spans = quotes.map((q) => ({ at: context.indexOf(q), len: q.length })).filter((x) => x.at >= 0).sort((x, y) => x.at - y.at);
+  // non-overlapping spans of the quotes in the passage, in order; matched as the checks match them (any case,
+  // straight or curly quotes, any spacing), so the agreement's own words are what's highlighted
+  const spans = quotes.map((q) => locate(context, q)).filter((x): x is { at: number; len: number } => x !== null).sort((x, y) => x.at - y.at);
   const parts: { text: string; mark: boolean }[] = [];
   let pos = 0;
   for (const sp of spans) {
@@ -50,12 +65,12 @@ function Source({ context, quotes, page }: { context?: string; quotes: string[];
     pos = sp.at + sp.len;
   }
   parts.push({ text: context.slice(pos), mark: false });
-  const missing = quotes.filter((q) => context.indexOf(q) < 0);
+  const missing = quotes.filter((q) => locate(context, q) === null);
   return (
     <figure className="border-l-2 border-brand/40 pl-3 text-[13px] leading-relaxed text-ink-2">
       <blockquote className="break-words">
         “{parts.map((p, i) => (p.mark ? <mark key={i} className="rounded bg-brand-soft px-0.5 text-ink">{p.text}</mark> : <span key={i}>{p.text}</span>))}”
-        {missing.map((q) => <span key={q} className="mt-1 block">Quoted: “{q}”</span>)}
+        {missing.map((q, i) => <span key={i} className="mt-1 block">Quoted: “{q}”</span>)}
       </blockquote>
       <figcaption className="mt-0.5 text-xs text-muted">Page {page}</figcaption>
     </figure>
@@ -113,12 +128,12 @@ function Turn({ h }: { h: QaEntry }) {
         {r.notStated && r.notStated.length > 0 && (
           <section className="mt-3" aria-label="Not stated in the agreement">
             <h3 className="text-xs font-semibold tracking-wide text-muted uppercase">Not stated in the agreement</h3>
-            <ul className="mt-1 list-disc pl-5 text-sm text-ink-2">{r.notStated.map((n) => <li key={n}>{n}</li>)}</ul>
+            <ul className="mt-1 list-disc pl-5 text-sm text-ink-2">{r.notStated.map((n, i) => <li key={i}>{n}</li>)}</ul>
           </section>
         )}
         {r.warnings.length > 0 && (
           <ul className="mt-3 space-y-1 text-xs text-warn" aria-label="Notes">
-            {r.warnings.map((w) => <li key={w} className="flex gap-1.5"><Icon name="alert" size={14} className="mt-[1px] shrink-0" aria-hidden />{w}</li>)}
+            {r.warnings.map((w, i) => <li key={i} className="flex gap-1.5"><Icon name="alert" size={14} className="mt-[1px] shrink-0" aria-hidden />{w}</li>)}
           </ul>
         )}
         {r.citations.length > 0 && (
