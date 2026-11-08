@@ -222,11 +222,83 @@ const continuation = (x: string) => x.split(/\s+/).filter(Boolean).length <= 6 &
 // "does not give either party a right", "does not provide the Client any option": a negated right or duty is a term
 const NEGATED_RIGHT = /\b(?:give|gives|given|provide|provides|provided|grant|grants|granted|confer|confers|conferred|allow|allows|allowed)\b\s+(?:(?:either|any|the|a|an|each|both|its|no)\s+)*(?:(?:client|provider|consultant|firm|company|customer|supplier|contractor|vendor|agency|licensor|licensee|landlord|tenant|buyer|seller|employer|employee|party|parties|hirer|lessor|lessee|recipient|discloser)s?\b|[a-z]+\s+(?:right|rights|power|option|obligation|duty|entitlement|discretion)\b|(?:right|rights|power|option|options|obligation|duty|duties|entitlement|discretion)\b)/i;
 /** Every clause of the claim is an absence, or a bare list item continuing one: a term anywhere in it isn't exempt. */
-function allAbsence(claim: string): boolean {
+function allAbsence(claim: string, ctx: JudgeContext): boolean {
   if (NEGATED_RIGHT.test(normalize(claim))) return false;
-  const cs = units(claim);
-  if (!cs.length || !ABSENCE_MARK.test(cs[0])) return false;
-  return cs.every((x) => ABSENCE_MARK.test(x) || continuation(x));
+  // split only where a new "does not …" clause starts ("…, and does not define…", "…and so does not specify…"), so a
+  // list stays inside its noun phrase
+  const t = opener(normalize(claim).replace(/\s*\([^)]*\)\s*/g, " ").replace(/[.!?]+\s*$/, "").trim());
+  const parts = t
+    .split(new RegExp(`\\s*;\\s*|,?\\s+(?:and\\s+|but\\s+)?(?:so\\s+|therefore\\s+|thus\\s+|hence\\s+|also\\s+)?(?=(?:it\\s+|the\\s+agreement\\s+|this\\s+agreement\\s+)?(?:${NEG}|nor)\\b)(?<=\\b(?:and|but|so|therefore|thus|hence|also)\\s+)|,?\\s+nor\\s+`, "i"))
+    .map((x) => x.trim())
+    .filter(Boolean);
+  if (!parts.length) return false;
+  return parts.every((x, i) => {
+    const object = absenceObject(i === 0 ? x : x.replace(new RegExp(`^(?:it\\s+|the\\s+agreement\\s+|this\\s+agreement\\s+)?(?=(?:${NEG})\\b)`, "i"), "the agreement "));
+    return object !== null && okObject(object, ctx);
+  });
+}
+const ADVERB = "(?:also|even|expressly|specifically|explicitly|directly|otherwise|actually|elsewhere|clearly|separately)";
+const ABSENCE_FORMS = [
+  new RegExp(`^(?:${TEXT_SUBJECT})\\s+(?:${ADVERB}\\s+)?(?:${NEG})\\s+(?:${ADVERB}\\s+)?(?:${TEXT_VERB})\\b(.*)$`, "i"),
+  new RegExp(`^(?:nothing in (?:the|this|it)(?: [a-z'’]+){0,3}|none of (?:the |its )?(?:[a-z'’]+ ){0,2}(?:clauses|terms|passages|provisions|sections)|no (?:other )?(?:clause|provision|term|passage|section|part)(?: of the agreement)?)\\s+(?:${ADVERB}\\s+)?(?:${TEXT_VERB})\\b(.*)$`, "i"),
+  new RegExp(`^(?:${TEXT_SUBJECT})\\s+(?:${TEXT_VERB})\\s+no\\b(.*)$`, "i"),
+  new RegExp(`^(?:${TEXT_SUBJECT})\\s+(?:is|are)\\s+silent\\b(.*)$`, "i"),
+];
+/** The object of an absence ("…does not say <object>"), or null when the clause isn't one. */
+function absenceObject(unit: string): string | null {
+  for (const re of ABSENCE_FORMS) {
+    const m = re.exec(unit);
+    if (m) return m[1].trim();
+  }
+  return null;
+}
+// a reason or consequence attached to the absence ("…, as the liability is unlimited", "…because fees are refunded"),
+// never "what counts as early"
+const CONNECTOR = /\b(?:because|since|given that|so that|therefore|hence|thus|which means|meaning|whereas|although|though|instead|rather|except|unless)\b|,\s*(?:as|so|but|while|yet)\b|\bas\s+(?:the|it|they|there|this|its|their|either|each|both|no|all)\b|[;:]/i;
+const RIGHT_NOUN = /\b(?:right|rights|power|powers|option|options|obligation|obligations|duty|duties|entitlement|entitlements|discretion)\b/i;
+const ROLE_WORD = /\b(?:client|provider|consultant|firm|company|customer|supplier|contractor|vendor|agency|licensor|licensee|landlord|tenant|buyer|seller|employer|employee|party|parties|hirer|lessor|lessee|recipient|discloser|either|each)\b/i;
+const MODAL = /\b(?:may|shall|must|can|will|is entitled|are entitled|has the right|have the right|is required|are required)\b/i;
+/** Whether the binding text gives the right or duty the object names: its words and parties, with a modal. */
+function rightGiven(object: string, ctx: JudgeContext): boolean {
+  const ws = content(object).filter((w) => !RIGHT_NOUN.test(w) && !ABSENCE_WORDS.has(w) && !["specific", "particular", "such"].includes(w));
+  if (!ws.length) return true;
+  return (ctx.bindingSentences ?? []).some((x) => {
+    if (!MODAL.test(x)) return false;
+    const xs = content(x);
+    const stems = new Set(xs.map(stemWord));
+    const groups = new Set(xs.map((w) => GROUP_OF.get(w)).filter((g) => g !== undefined));
+    return ws.every((w) => stems.has(stemWord(w)) || (GROUP_OF.has(w) && groups.has(GROUP_OF.get(w)!)));
+  });
+}
+/** What an absence may say is missing: a thing or a question, with no reason, no new clause and no right it does give. */
+/** Who may be the subject of a clause: a role, a defined party, or a pronoun. */
+function whoOf(ctx: JudgeContext): string {
+  const names = [...ctx.names.keys()].filter(Boolean).map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  return `(?:${[ROLE_WORD.source.slice(5, -3), ...names, "it", "they", "there"].join("|")})`;
+}
+const WH = /^(?:on\s+|about\s+|regarding\s+)?(?:whether|when|how|what|who|whom|which|if|where|why)\b/i;
+const FINITE = "(?:is|are|was|were|be|must|shall|may|will|can|pays?|owes?|has|have|applies|apply|gets?|receives?|bears?|keeps?|accepts?)";
+function okObject(object: string, ctx: JudgeContext): boolean {
+  const o = object.trim();
+  if (/^that\b/i.test(o)) return false;
+  // a question ("whether the Firm can terminate without notice") asserts nothing: only a reason or consequence, a new
+  // clause after a comma, or a right the binding text does give rule it out
+  if (WH.test(o)) {
+    if (/\b(?:because|since|therefore|hence|thus|which means)\b|,\s*(?:as|yet)\b|,\s*so\b(?!\s+that)|[;:]/i.test(o)) return false;
+    if (new RegExp(`,\\s*(?:and|but)\\s+(?!(?:whether|when|how|what|who|whom|which|if|where|why)\\b)(?:[a-z'’-]+\\s+){0,6}?${FINITE}\\b`, "i").test(o)) return false;
+    if (new RegExp(`,\\s*(?:and|or|but)\\s+(?:the\\s+|either\\s+|each\\s+|both\\s+|any\\s+)?${whoOf(ctx)}s?\\b(?!['’])\\s+(?!(?:or|and|to|from|of|for|in|on|with)\\b)[a-z]+`, "i").test(o)) return false;
+    return !(RIGHT_NOUN.test(o) && rightGiven(o, ctx));
+  }
+  if (CONNECTOR.test(o) || NEGATION.test(o)) return false;
+  // a new clause after "and/or/but" with its own subject ("…, and either party withdraws freely")
+  const who = whoOf(ctx);
+  if (new RegExp(`\\b(?:and|or|but)\\s+(?:the\\s+|either\\s+|each\\s+|both\\s+|any\\s+)?${who}s?\\b(?!['’])\\s+(?!(?:or|and|to|from|of|for|in|on|with)\\b)[a-z]+`, "i").test(o)) return false;
+  // …or with a verb of its own ("…, and fees already paid are refundable"); "and how they are billed" is a question
+  if (/\b(?:and|but)\s+(?!(?:whether|when|how|what|who|whom|which|if|where|why)\b)(?:[a-z'’-]+\s+){0,6}?(?:is|are|was|were|be|must|shall|may|will|can|pays?|owes?|has|have|applies|apply|gets?|receives?|bears?|keeps?|accepts?)\b/i.test(o)) return false;
+  // a figure stated with a verb of obligation is a term, wherever it is ("a deadline the Client pays within 10 days")
+  if (/\d/.test(o) && TERM_VERB.test(o) && !/^(?:on\s+|about\s+)?(?:whether|when|how|what|who|whom|which|if|where|why)\b/i.test(o)) return false;
+  if (RIGHT_NOUN.test(o) && rightGiven(o, ctx)) return false;
+  return true;
 }
 // a disclaimer clause: says the text isn't binding or doesn't change the terms, or reports what it says
 const DISCLAIM_CLAUSE = /\b(?:not binding|non-binding|nonbinding|not legally binding|not part of|isn['’]?t part of|does not form part|doesn['’]t form part|forms? no part|no contractual effect|no legal effect|has no effect|superseded|withdrawn|for information only|not one of (?:the |its )?(?:agreement['’]s )?terms|not a term|does not change|doesn['’]t change|does not alter|doesn['’]t alter|does not override|doesn['’]t override|does not affect|doesn['’]t affect|does not apply|doesn['’]t apply|not used|is labell?ed|is marked)\b/i;
@@ -541,7 +613,7 @@ export function judge(claims: VerifiedClaim[], ctx: JudgeContext): Judgement {
     // not say whether the $1,000 retainer is credited against the $6,800 fee"; not "…whether the 15 days' notice to
     // terminate…" when 15 days is the invoice period)
     const absence =
-      allAbsence(c.claim) && (!c.evidence.length || c.evidenceChecked) && !saidAfterAll(c.claim, ctx) &&
+      allAbsence(c.claim, ctx) && (!c.evidence.length || c.evidenceChecked) && !saidAfterAll(c.claim, ctx) &&
       [...claimNums].every((n) => !ctx.flaggedNums?.has(n) && (ctx.bindingSentences ?? []).some((x) => backsFigure(c.claim, x, n, ctx)));
     const scenario = c.kind === "scenario" && !c.evidence.length && USER_ATTRIB.test(c.claim) && subset(claimNums, userNums) && !OBLIGATION.test(c.claim) && !partiesIn(c.claim, ctx.names).size;
     // a disclaimer of text labelled not binding states no term itself, or only reports what that text says ("An
