@@ -58,7 +58,10 @@ export default async function Page({ params, searchParams }: { params: Promise<{
             Suggestions from reading <span className="text-ink-2">{version.source_name}</span>, each with the text it&apos;s based on. They&apos;re not legal advice and can be wrong: confirm what&apos;s right and dismiss what isn&apos;t. Nothing here changes the agreement or its fields.
           </p>
         </div>
-        {admin && view && <div className="shrink-0">{readForm("Read again", "secondary")}</div>}
+        <div className="flex shrink-0 gap-2">
+          <Link href={`/app/agreements/${version.id}/ask`} className="inline-flex h-9 items-center rounded-lg border border-line-strong bg-white px-3.5 text-sm font-medium text-ink shadow-1 hover:bg-subtle">Ask a question</Link>
+          {admin && view && readForm("Read again", "secondary")}
+        </div>
       </div>
 
       {q.error && <div className="mb-4"><Notice tone="error">{Object.hasOwn(ERRORS, q.error) ? ERRORS[q.error] : ERRORS.failed}</Notice></div>}

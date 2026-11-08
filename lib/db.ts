@@ -239,6 +239,23 @@ const MIGRATIONS: string[] = [
     PRIMARY KEY (analysis_id, finding_id)
   );
   `,
+  // M2.2 questions about an agreement: the question, the checked answer with its citations, and token usage
+  `
+  CREATE TABLE qa_answers (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+    template_version_id TEXT NOT NULL REFERENCES template_versions(id),
+    question TEXT NOT NULL,
+    result_json TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    asked_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX qa_answers_version ON qa_answers(workspace_id, template_version_id, created_at);
+  CREATE INDEX qa_answers_day ON qa_answers(workspace_id, created_at);
+  `,
 ];
 
 function open(): DatabaseSync {

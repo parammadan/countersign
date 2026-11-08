@@ -15,6 +15,7 @@
     "test:detect": "FIXTURE_DIR=fixtures/agreements vitest run test/detect.test.ts && FIXTURE_DIR=fixtures/holdout vitest run test/detect.test.ts && FIXTURE_DIR=fixtures/final vitest run test/detect.test.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.6.0",
     "@types/nodemailer": "^8.0.2",
     "next": "16.4.5",
     "nodemailer": "^7.0.10",
