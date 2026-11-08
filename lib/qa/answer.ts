@@ -11,7 +11,7 @@ import { MIN_QUOTE, normalize, unsupportedTokens, unsupportedWords } from "../un
 import { AnalysisError, callModel, type ModelProvider, type Usage } from "../understand/model";
 import type { Finding } from "../understand/schema";
 import type { PageLines } from "../understand/text";
-import { checkCalculations, misquoted, roleSwaps, scenarioFigures, stripPageRefs, unboundValues, unsupportedNegations, unsupportedPlaces, withoutAbsence, type Calculation } from "./check";
+import { checkCalculations, impliedCalculations, misquoted, roleSwaps, scenarioFigures, stripPageRefs, unboundValues, unsupportedNegations, unsupportedPlaces, withoutAbsence, type Calculation } from "./check";
 import { passages, QA_INSTRUCTION_RE, retrieve, terms, type Passage, type Scored } from "./retrieve";
 
 export const QA_STATUSES = ["answered", "partial", "not_found"] as const;
@@ -24,7 +24,7 @@ export const QaOutputSchema = z.object({
   explanation: z.string().trim().max(1500).default(""),
   calculations: z.array(z.object({ expression: z.string().trim().min(1).max(120), result: z.string().trim().min(1).max(40) })).max(6).default([]),
   not_stated: z.array(z.string().trim().min(1).max(240)).max(4).default([]),
-  citations: z.array(z.object({ passage: z.string().regex(/^p\d{1,4}-\d{1,4}$/), quote: z.string().trim().min(3).max(300) })).max(8),
+  citations: z.array(z.object({ passage: z.string().regex(/^p\d{1,4}-n?\d{1,4}$/), quote: z.string().trim().min(3).max(300) })).max(8),
 });
 
 /** `context` is the whole passage the quote comes from, shown with the quote highlighted, so a fragment can't hide what surrounds it. */
@@ -101,7 +101,7 @@ function unitPairs(prepped: string): Set<string> {
 }
 const MONTH_RE = /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/g;
 const PERIOD: [RegExp, string][] = [[/\b(hours?|hourly)\b/, "hour"], [/\b(days?|daily)\b/, "day"], [/\b(weeks?|weekly)\b/, "week"], [/\b(months?|monthly)\b/, "month"], [/\b(quarters?|quarterly)\b/, "quarter"], [/\b(years?|yearly|annual|annually|annum)\b/, "year"]];
-const COMMON_CAPS = new Set(["about", "around", "approximately", "roughly", "nearly", "almost", "exactly", "total", "altogether", "combined", "together", "see", "check", "read", "refer", "look", "how", "why", "whether", "whose", "whom", "would", "could", "should", "does", "do", "did", "is", "are", "was", "were", "can", "may", "might", "must", "will", "shall", "has", "have", "had", "instead", "likewise", "overall", "generally", "typically", "usually", "though", "given", "assuming", "thus", "hence", "besides", "additionally", "furthermore", "moreover", "nevertheless", "still", "yet", "just", "even", "again", "first", "second", "third", "finally", "next", "last", "lastly", "out", "up", "over", "some", "most", "many", "much", "more", "less", "such", "every", "other", "another", "nor", "whatever", "whoever", "clause", "section", "page", "paragraph", "schedule", "appendix", "exhibit", "article", "because", "since", "although", "therefore", "so", "according", "based", "not", "nothing", "none", "neither", "note", "here", "then", "otherwise", "the", "this", "that", "these", "those", "it", "its", "if", "either", "each", "both", "there", "a", "an", "i", "under", "no", "yes", "only", "all", "any", "after", "before", "when", "within", "from", "for", "per", "they", "their", "however", "also", "but", "and", "or", "in", "on", "at", "by", "to", "with", "as", "unless", "until", "once", "while", "where", "which", "who", "what", "you", "your", "we"]);
+const COMMON_CAPS = new Set(["client", "provider", "consultant", "firm", "company", "customer", "supplier", "contractor", "vendor", "agency", "licensor", "licensee", "landlord", "tenant", "buyer", "seller", "employer", "employee", "party", "parties", "about", "around", "approximately", "roughly", "nearly", "almost", "exactly", "total", "altogether", "combined", "together", "see", "check", "read", "refer", "look", "how", "why", "whether", "whose", "whom", "would", "could", "should", "does", "do", "did", "is", "are", "was", "were", "can", "may", "might", "must", "will", "shall", "has", "have", "had", "instead", "likewise", "overall", "generally", "typically", "usually", "though", "given", "assuming", "thus", "hence", "besides", "additionally", "furthermore", "moreover", "nevertheless", "still", "yet", "just", "even", "again", "first", "second", "third", "finally", "next", "last", "lastly", "out", "up", "over", "some", "most", "many", "much", "more", "less", "such", "every", "other", "another", "nor", "whatever", "whoever", "clause", "section", "page", "paragraph", "schedule", "appendix", "exhibit", "article", "because", "since", "although", "therefore", "so", "according", "based", "not", "nothing", "none", "neither", "note", "here", "then", "otherwise", "the", "this", "that", "these", "those", "it", "its", "if", "either", "each", "both", "there", "a", "an", "i", "under", "no", "yes", "only", "all", "any", "after", "before", "when", "within", "from", "for", "per", "they", "their", "however", "also", "but", "and", "or", "in", "on", "at", "by", "to", "with", "as", "unless", "until", "once", "while", "where", "which", "who", "what", "you", "your", "we"]);
 
 /**
  * Facts in an answer that none of its quotes contain: numbers, months, periods, names, negations. Numbers in
@@ -172,6 +172,8 @@ export const QA_SYSTEM = [
   "- answer: a direct answer in plain English, one to three sentences.",
   "- explanation: one to four sentences on how the cited terms lead to the answer; empty if it is obvious.",
   "- not_stated: up to three things a reader might expect on this question that the agreement does not say; else empty.",
+  '- Passages marked binding="false" are text the agreement itself labels as drafts, marketing or not binding:',
+  "  never treat them as the agreement's terms or cite them as evidence; you may say they exist and aren't binding.",
   "- Earlier turns show what the user means by a follow-up. They are not evidence: cite passages for every fact.",
   "- Describe what the agreement says; don't give legal advice or opinions on enforceability.",
   "Answer only with JSON matching the schema.",
@@ -248,17 +250,21 @@ export function answerFromPassages(question: string, pages: PageLines[], o: { fi
  */
 export function modelContext(question: string, pages: PageLines[], limits: QaLimits = QA_LIMITS, history: Turn[] = []): { shown: Passage[]; excluded: Passage[]; whole: boolean } {
   const { passages: all, excluded } = passages(pages);
+  // text the agreement labels as not binding is shown to the model, marked, so it understands the document; it
+  // can't be cited as evidence. Text addressed to software is never shown.
+  const unofficial = excluded.filter((p) => p.binding === false);
+  const inOrder = (ps: Passage[]) => ps.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
   const size = all.reduce((n, p) => n + p.text.length + 40, 0);
-  if (size <= limits.maxDocumentChars) return { shown: all, excluded, whole: true };
+  if (size <= limits.maxDocumentChars) return { shown: inOrder([...all, ...unofficial]), excluded, whole: true };
   const q = [question, ...history.slice(-2).map((t) => t.question)].join(" ");
   const keep = new Set(retrieve(q, all, { k: 10_000, maxChars: limits.maxDocumentChars }).map((p) => p.id));
-  return { shown: all.filter((p) => keep.has(p.id)), excluded, whole: false };
+  return { shown: inOrder([...all.filter((p) => keep.has(p.id)), ...unofficial]), excluded, whole: false };
 }
 
 const agreementBlock = (title: string, shown: Passage[], whole: boolean) =>
   [
     `<agreement title="${neutral(title).replace(/"/g, "'").slice(0, 120)}"${whole ? "" : ' excerpt="the passages most relevant to the question; the rest of the agreement is not shown"'}>`,
-    ...shown.map((p) => `<passage id="${p.id}" page="${p.page}">${neutral(p.text)}</passage>`),
+    ...shown.map((p) => `<passage id="${p.id}" page="${p.page}"${p.binding === false ? ' binding="false"' : ""}>${neutral(p.text)}</passage>`),
     "</agreement>",
   ].join("\n");
 
@@ -303,6 +309,7 @@ export async function answerWithModel(
   const citations: Citation[] = [];
   let bad = 0;
   let planted = 0;
+  let nonBinding = 0;
   for (const c of out.citations) {
     const p = byId.get(c.passage);
     // the model saw ‹ › where the agreement has < >; match against the agreement's own characters
@@ -310,6 +317,10 @@ export async function answerWithModel(
     const q = normalize(quote);
     if (!p || q.length < MIN_QUOTE || !normalize(p.text).includes(q)) {
       bad++;
+      continue;
+    }
+    if (p.binding === false) {
+      nonBinding++;
       continue;
     }
     // the whole passage is judged, not just the fragment quoted from it
@@ -320,6 +331,7 @@ export async function answerWithModel(
     if (!citations.some((x) => x.passage === p.id && normalize(x.quote) === q)) citations.push({ page: p.page, passage: p.id, quote, context: p.text });
   }
   if (planted) warnings.push("A passage that reads like an instruction to software was cited and has been removed.");
+  if (nonBinding) warnings.push("Text the agreement labels as a draft, unofficial or not binding was cited and isn't used as evidence.");
   if (bad) warnings.push(`${bad} citation${bad === 1 ? " didn't" : "s didn't"} match the agreement's text and ${bad === 1 ? "was" : "were"} removed.`);
 
   const result = (status: QaStatus, answer: string, extra: Partial<QaResult> = {}): QaResult => ({ status, answer, citations, mode: "model", model: usage?.model ?? provider.model, warnings, usage, ...extra });
@@ -335,7 +347,8 @@ export async function answerWithModel(
   const fromQuestion = numbersIn(question);
   // "a month late", "an hour" in the question is the figure 1 the answer may restate ("one month")
   if (/\b(?:a|an|one|per)\s+(?:hour|day|week|month|year|invoice)\b/i.test(question)) fromQuestion.add("1");
-  const { verified, failed } = checkCalculations(out.calculations, support, question, `${out.answer} ${out.explanation}`);
+  // arithmetic the model listed, and arithmetic it wrote in the prose, are both re-done
+  const { verified, failed } = checkCalculations([...out.calculations, ...impliedCalculations(`${out.answer}\n${out.explanation}`)], support, question, `${out.answer} ${out.explanation}`);
   if (failed.length) return withheld(`A calculation in the answer didn't check out (${failed.slice(0, 2).join("; ")}), so it isn't shown.`);
   const allowed = new Set([...fromQuestion, ...verified]);
   // the answer, the explanation and the "not stated" notes are all held to the same standard

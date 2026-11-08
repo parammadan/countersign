@@ -27,6 +27,8 @@ const QA_EXTRA = [
   String.raw`\b(?:summar(?:y|ies)|answers?|responses?|outputs?|replies)\b[^.]{0,50}?\b(?:should|must|shall|are to)\s+(?:say|state|report|show|read|confirm|claim|list|give|describe)\b`,
   String.raw`\b(?:automated|ai|machine)\s+(?:summar\w*|review\w*|readers?|tools?|systems?|assistants?)\b[^.]{0,60}?\b(?:should|must|shall|are to)\b`,
   String.raw`\b(?:reviewer|reader|assistant|summari[sz]er)\s+(?:guidance|instructions?|notes?)\s*:`,
+  String.raw`\binstructions?\s+(?:for|to)\s+(?:any\s+|the\s+|all\s+)?(?:ai|automated|assistants?|bots?|tools?|language models?|llms?|chatbots?)\b`,
+  String.raw`\b(?:for|to)\s+(?:any|all|the|every)\s+(?:ai|assistants?|bots?|language models?|llms?|chatbots?|automated \w+)\b[^.]{0,30}?\b(?:reading|processing|reviewing|summari[sz]ing|parsing)\b`,
 ].join("|");
 export const QA_INSTRUCTION_RE = new RegExp(`${INSTRUCTION_RE.source}|${QA_EXTRA}`, "i");
 
@@ -36,20 +38,21 @@ export const QA_INSTRUCTION_RE = new RegExp(`${INSTRUCTION_RE.source}|${QA_EXTRA
  * heading or capitalised heading, across pages; a parenthetical label ("(non-binding)") covers only its own sentence.
  * Neither is evidence; the reader is told it was set aside.
  */
-const SECTION_START = /^\s*(?:\(?\d{1,3}(?:\.\d{1,3})*[.)]?(?:\s|$)|(?:schedule|appendix|exhibit|annex|article|section|part)\b|[A-Z][A-Z &,'-]{3,60}[.:]?$)/;
+const HEADING_START = /^\s*(?:(?:schedule|appendix|exhibit|annex|article|section|part)\b|[A-Z][A-Z &,'-]{3,60}[.:]?$)/i;
 export const NON_BINDING_SECTION_RE = /^(?:[a-z][\w ]{0,30}\.\s+)?(?:marketing (?:summary|copy|material|overview)|unofficial (?:faq|summary|notes?|guide|overview)|superseded (?:drafts?|versions?|terms)|draft (?:summary|version|terms|overview)|faq|sales (?:summary|sheet))\b/i;
 export const NON_BINDING_SENTENCE_RE = /\((?:not (?:legally )?binding|non-binding|unofficial|superseded|draft only|for discussion only)\)/i;
 export const NON_BINDING_RE = new RegExp(`${NON_BINDING_SECTION_RE.source}|${NON_BINDING_SENTENCE_RE.source}`, "i");
 import { pageText, type PageLines } from "../understand/text";
 
-export type Passage = { id: string; page: number; text: string };
+/** `seq`: position in the document. `binding: false`: text the agreement labels as not part of its terms. */
+export type Passage = { id: string; page: number; text: string; seq?: number; binding?: false };
 export type Scored = Passage & { score: number; coverage: number };
 
 const STOP = new Set("a an and are as at be by can could do does for from has have how i if in is it its may me my of on or our shall should so than that the their them then there these this to under up us was we were what when where which who will with would you your about any each other into than this also".split(" "));
 
 // groups of words that mean the same thing in an agreement; a question word pulls in its whole group
 const GROUPS: string[][] = [
-  ["pay", "payment", "payments", "paid", "fee", "fees", "invoice", "invoices", "payable", "price", "cost", "costs", "charge", "charges", "rate", "deposit", "retainer", "compensation", "amount", "owe", "owes", "due"],
+  ["pay", "payment", "payments", "paid", "fee", "fees", "invoice", "invoices", "payable", "price", "cost", "costs", "charge", "charges", "rate", "deposit", "retainer", "compensation", "amount", "owe", "owes", "owed", "owing", "due"],
   ["terminate", "terminates", "termination", "cancel", "cancellation", "end", "ends", "ending", "early", "notice", "expire", "expires", "expiry", "withdraw", "quit", "exit"],
   ["obligation", "obligations", "duty", "duties", "responsible", "responsibility", "must", "shall", "agrees", "required", "requirements", "deliver", "provide"],
   ["party", "parties", "between", "client", "customer", "provider", "consultant", "contractor", "supplier", "vendor", "agency", "who"],
@@ -81,30 +84,40 @@ export function passages(pages: PageLines[]): { passages: Passage[]; excluded: P
   const out: Passage[] = [];
   const excluded: Passage[] = [];
   let unofficial = false;
+  let lastClause = 0;
+  let seq = 0;
   for (const p of pages) {
     // every fragment is kept (a clause number like "2." too), so a passage is always a verbatim run of the page
     const sentences = pageText(p).split(/(?<=[.;!?])\s+(?=[A-Z0-9("“[])/).map((s) => s.trim()).filter(Boolean);
     // set aside, sentence by sentence: text addressed to software ("x"), and text the agreement labels as not part
-    // of its terms ("n"), which runs on until the next numbered clause or schedule heading
+    // of its terms ("n"). A heading-like label ("Superseded draft terms (withdrawn).", "Marketing summary: ...")
+    // opens a section that runs, across pages, to the next schedule or ALL-CAPS heading or the next main clause
+    // (a number above the agreement's last clause; items numbered from 1 again belong to the section).
     const aside: ("x" | "n" | null)[] = [];
+    let prev = "";
     for (const t of sentences) {
       const n = normalize(t);
-      if (NON_BINDING_SECTION_RE.test(n)) unofficial = true;
-      else if (unofficial && SECTION_START.test(t)) unofficial = false;
+      const num = Number((/^\s*\(?(\d{1,3})(?:\.\d{1,3})*[.)]?(?:\s|$)/.exec(t) ?? [])[1] ?? NaN);
+      // the label is a heading: short, ends in a colon, or comes right after a heading ("Schedule C.")
+      const headingLike = t.split(/\s+/).length <= 8 || /:/.test(t) || (prev !== "" && (HEADING_START.test(prev) || prev.split(/\s+/).length <= 3));
+      prev = t;
+      if (NON_BINDING_SECTION_RE.test(n) && headingLike) unofficial = true;
+      else if (unofficial && (HEADING_START.test(t) || (num > lastClause && num > 0))) unofficial = false;
+      if (!unofficial && num > 0) lastClause = Math.max(lastClause, num);
       aside.push(QA_INSTRUCTION_RE.test(n) ? "x" : unofficial || NON_BINDING_SENTENCE_RE.test(n) ? "n" : null);
     }
     let n = 0;
     for (let i = 0; i < sentences.length; i++) {
       // never evidence; set aside on its own, so the clause next to it stays usable, and the answer can mention it
       if (aside[i]) {
-        excluded.push({ id: `p${p.page}-${aside[i]}${i}`, page: p.page, text: sentences[i].slice(0, 400) });
+        excluded.push({ id: `p${p.page}-${aside[i]}${i}`, page: p.page, text: sentences[i].slice(0, 400), seq: seq++, ...(aside[i] === "n" ? { binding: false as const } : {}) });
         continue;
       }
       let text = sentences[i];
       // short sentences ("2. Term.") join the next one so the passage carries its meaning; never across a
       // sentence that's set aside, so a passage stays one verbatim run
       while (text.length < 120 && i + 1 < sentences.length && !aside[i + 1] && (text + " " + sentences[i + 1]).length <= 400) text += " " + sentences[++i];
-      out.push({ id: `p${p.page}-${++n}`, page: p.page, text: text.slice(0, 400) });
+      out.push({ id: `p${p.page}-${++n}`, page: p.page, text: text.slice(0, 400), seq: seq++ });
     }
   }
   return { passages: out, excluded };

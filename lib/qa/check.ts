@@ -160,7 +160,7 @@ export function unboundValues(answer: string, support: string[], question = "", 
     const statedHere = new Set(stated.map((x) => x.n));
     // a scenario figure from the question ("if a $3,200 invoice is late") may be used where the answer is itself
     // conditional ("on a $3,200 invoice, ..."); stated as a fact it's checked like any other figure
-    const conditional = /\b(?:if|assuming|suppos\w*|on an?|for an?|with an?|of an?|in that case|in your example)\b/i.test(c);
+    const conditional = /\b(?:if|assuming|suppos\w*|on an?|in that case|in your example|in this scenario)\b/i.test(c);
     for (const v of stated) {
       if (skip.has(v.n) || (conditional && scenario.has(v.n))) continue;
       const withValue = segs.filter((s) => s.v.some((x) => x.n === v.n && compatible(x.kind, v.kind)));
@@ -223,12 +223,18 @@ export function partyRoles(text: string): Map<string, string> {
   const out = new Map<string, string>();
   // the name is the run of capitalised words (and "&", "of", company suffixes) right before the label, so a title
   // like "CONSULTING AGREEMENT between ..." isn't taken as part of it
-  for (const m of text.matchAll(/((?:[A-Z][\w&.'’-]*|&|of|and)(?:,?\s+(?:[A-Z][\w&.'’-]*|&|of|and))*)\s*,?\s*\(\s*(?:the\s+|each\s+a\s+)?["“']?([A-Z][a-z]+)["”']?\s*\)/g)) {
-    const role = m[2].toLowerCase();
-    const words = m[1].split(/\s+/);
-    // drop a leading all-caps title ("CONSULTING AGREEMENT") or connective
-    while (words.length > 1 && (/^[A-Z]{2,}$/.test(words[0]) || /^(?:and|of|between|by|with)$/i.test(words[0]))) words.shift();
-    if (ROLES.includes(role)) out.set(normalize(words.join(" ")).replace(/[,.]+$/, ""), role);
+  const label = String.raw`\(\s*(?:the\s+|each\s+a\s+|hereinafter\s+(?:called\s+|referred\s+to\s+as\s+)?(?:the\s+)?)?["“']?([A-Z][a-z]+)["”']?\s*\)`;
+  const name = String.raw`((?:[A-Z][\w&.'’-]*|&|of|and)(?:,?\s+(?:[A-Z][\w&.'’-]*|&|of|and))*)`;
+  // 'Harrow Example Ltd ("Provider")', 'Harrow Example Ltd, a Delaware corporation (the "Provider")'
+  for (const re of [new RegExp(`${name}\\s*,?\\s*${label}`, "g"), new RegExp(`${name}\\s*,\\s*an?\\s+[^()]{3,80}?${label}`, "g")]) {
+    for (const m of text.matchAll(re)) {
+      const role = m[2].toLowerCase();
+      const words = m[1].split(/\s+/);
+      // drop a leading all-caps title ("CONSULTING AGREEMENT") or connective, unless the whole name is in capitals
+      const allCaps = words.every((w) => !/[a-z]/.test(w));
+      while (words.length > 1 && ((!allCaps && /^[A-Z]{2,}$/.test(words[0])) || /^(?:and|of|between|by|with)$/i.test(words[0]))) words.shift();
+      if (ROLES.includes(role)) out.set(normalize(words.join(" ")).replace(/[,.]+$/, ""), role);
+    }
   }
   return out;
 }
@@ -322,6 +328,8 @@ export function evaluate(expr: string): number | null {
 /** Calendar and unit constants a calculation may use without a quote (months in a year, days in a year, ...). */
 /** Calendar constants, allowed only when the question or answer talks about that period. */
 const CONSTANTS: [string, RegExp][] = [
+  ["3", /\bquarter(?:s|ly)?\b/],
+  ["4", /\bquarter(?:s|ly)?\b/],
   ["12", /\b(?:year|years|yearly|annual|annually|annum|12 months|twelve months)\b/],
   ["52", /\b(?:year|yearly|annual|annually|weeks?|weekly)\b/],
   ["365", /\b(?:year|yearly|annual|annually|days?|daily)\b/],
@@ -362,7 +370,10 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
     const operands = [...c.expression.replace(/[×x÷]/g, " ").matchAll(OPERAND)].map((m) => ({ n: String(Number(m[2].replace(/,/g, ""))), kind: (m[1] ? "money" : m[3] ? "percent" : null) as Kind | null }));
     const hundredOk = operands.some((o) => o.n !== "100" && percents.has(o.n));
     const known = (o: { n: string; kind: Kind | null }) =>
-      verified.has(o.n) || fromQuestion.has(o.n) || (o.kind === null && (constant(o.n) || (o.n === "100" && hundredOk))) || fromAgreement(o.n, o.kind === "percent" ? "percent" : o.kind);
+      verified.has(o.n) ||
+      fromQuestion.has(o.n) ||
+      (o.kind === null && (constant(o.n) || (o.n === "100" && hundredOk) || (Number(o.n) < 1 && percents.has(String(+(Number(o.n) * 100).toFixed(6)))))) ||
+      fromAgreement(o.n, o.kind === "percent" ? "percent" : o.kind);
     const stated = Number(c.result.replace(/[$£€,%\s]/g, ""));
     const bad = value === null || !operands.length || !operands.every(known) || !NUMERIC_RESULT.test(c.result) || !Number.isFinite(stated) || Math.abs(value - stated) > 0.005 + Math.abs(value) * 1e-9;
     if (bad) failed.push(`${c.expression} = ${c.result}`);
@@ -402,4 +413,19 @@ export function scenarioFigures(question: string): Set<string> {
     if (/\b(?:a|an|one)\s+(?:hour|day|week|month|year)\b/.test(part)) out.add("1");
   }
   return out;
+}
+
+/**
+ * Arithmetic stated in the prose rather than listed ("1.5% of $3,200, which is $48", "$3,200 x 12 = $38,400"),
+ * so it's re-done like a listed calculation instead of being withheld as an unexplained figure.
+ */
+export function impliedCalculations(text: string): Calculation[] {
+  const out: Calculation[] = [];
+  const t = text.slice(0, MAX_TEXT);
+  const NUM = String.raw`[$£€]?\s?(\d[\d,]*(?:\.\d+)?)`;
+  for (const m of t.matchAll(new RegExp(String.raw`(\d+(?:\.\d+)?)\s*%\s+of\s+${NUM}[^.;\d]{0,40}?\b(?:is|=|equals|comes to|which is|totals?|or|gives)\s+${NUM}`, "gi")))
+    out.push({ expression: `${m[2].replace(/,/g, "")} * ${m[1]}%`, result: m[3].replace(/,/g, "") });
+  for (const m of t.matchAll(new RegExp(String.raw`${NUM}\s*(?:x|×|\*|times)\s*(\d[\d,]*(?:\.\d+)?)(%?)\s*(?:=|is|equals|comes to|gives)\s+${NUM}`, "gi")))
+    out.push({ expression: `${m[1].replace(/,/g, "")} * ${m[2].replace(/,/g, "")}${m[3]}`, result: m[4].replace(/,/g, "") });
+  return out.slice(0, 6);
 }
