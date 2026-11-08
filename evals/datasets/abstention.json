@@ -1,0 +1,298 @@
+[
+  {
+    "id": "abstain-arbitration-seat",
+    "category": "abstention",
+    "question": "Where is arbitration held under the Alder Row Legal agreement?",
+    "documents": [
+      {
+        "id": "alder",
+        "pages": [
+          "Engagement Agreement. This Engagement Agreement is made between Alder Row Legal (the Firm) and Mara Ellison Test (the Client) for a tenancy dispute. The engagement begins on March 3, 2025 and continues for 12 months unless ended earlier.",
+          "Fees and payment. Fees are charged hourly at $310 per hour for all work on the tenancy dispute. The Client pays an initial retainer of $2,500 before work begins. Invoices are due net 30 days from the invoice date. Overdue balances accrue interest at 1.5% per month.",
+          "General terms. Either party may terminate this agreement by giving 30 days written notice. If the Client terminates early, an early termination fee of $400 applies. The Firm will keep the Client's information confidential for 5 years after the engagement ends. This agreement is governed by the laws of Oregon. The Firm's total liability is limited to $50,000. The Client must respond to Firm requests for documents within 5 business days."
+        ],
+        "c": {
+          "parties": "This Engagement Agreement is made between Alder Row Legal (the Firm) and Mara Ellison Test (the Client) for a tenancy dispute.",
+          "term": "The engagement begins on March 3, 2025 and continues for 12 months unless ended earlier.",
+          "fee": "Fees are charged hourly at $310 per hour for all work on the tenancy dispute.",
+          "retainer": "The Client pays an initial retainer of $2,500 before work begins.",
+          "invoice": "Invoices are due net 30 days from the invoice date.",
+          "late": "Overdue balances accrue interest at 1.5% per month.",
+          "notice": "Either party may terminate this agreement by giving 30 days written notice.",
+          "exit": "If the Client terminates early, an early termination fee of $400 applies.",
+          "conf": "The Firm will keep the Client's information confidential for 5 years after the engagement ends.",
+          "law": "This agreement is governed by the laws of Oregon.",
+          "cap": "The Firm's total liability is limited to $50,000.",
+          "obl": "The Client must respond to Firm requests for documents within 5 business days."
+        }
+      }
+    ],
+    "gold": {
+      "facts": [],
+      "distractors": [],
+      "sources": [],
+      "traps": [],
+      "status": "not_found",
+      "answer": "The agreement does not say."
+    }
+  },
+  {
+    "id": "abstain-non-compete",
+    "category": "abstention",
+    "question": "Does the Dunemoor Law Group agreement include a non-compete clause?",
+    "documents": [
+      {
+        "id": "dune",
+        "pages": [
+          "Engagement Agreement. This Engagement Agreement is made between Dunemoor Law Group (the Firm) and Wei Aldous Fakename (the Client) for a estate matter. The engagement begins on June 9, 2025 and continues for 18 months unless ended earlier.",
+          "Fees and payment. Fees are charged hourly at $275 per hour for all work on the estate matter. The Client pays an initial retainer of $3,000 before work begins. Invoices are due net 45 days from the invoice date. Overdue balances accrue interest at 1.25% per month.",
+          "General terms. Either party may terminate this agreement by giving 45 days written notice. If the Client terminates early, an early termination fee of $600 applies. The Firm will keep the Client's information confidential for 4 years after the engagement ends. This agreement is governed by the laws of Maine. The Firm's total liability is limited to $100,000. The Client must respond to Firm requests for documents within 5 business days."
+        ],
+        "c": {
+          "parties": "This Engagement Agreement is made between Dunemoor Law Group (the Firm) and Wei Aldous Fakename (the Client) for a estate matter.",
+          "term": "The engagement begins on June 9, 2025 and continues for 18 months unless ended earlier.",
+          "fee": "Fees are charged hourly at $275 per hour for all work on the estate matter.",
+          "retainer": "The Client pays an initial retainer of $3,000 before work begins.",
+          "invoice": "Invoices are due net 45 days from the invoice date.",
+          "late": "Overdue balances accrue interest at 1.25% per month.",
+          "notice": "Either party may terminate this agreement by giving 45 days written notice.",
+          "exit": "If the Client terminates early, an early termination fee of $600 applies.",
+          "conf": "The Firm will keep the Client's information confidential for 4 years after the engagement ends.",
+          "law": "This agreement is governed by the laws of Maine.",
+          "cap": "The Firm's total liability is limited to $100,000.",
+          "obl": "The Client must respond to Firm requests for documents within 5 business days."
+        }
+      }
+    ],
+    "gold": {
+      "facts": [],
+      "distractors": [],
+      "sources": [],
+      "traps": [],
+      "status": "not_found",
+      "answer": "The agreement does not say."
+    }
+  },
+  {
+    "id": "abstain-insurance",
+    "category": "abstention",
+    "question": "What professional insurance does Glenmore & Pike Test carry?",
+    "documents": [
+      {
+        "id": "glen",
+        "pages": [
+          "Engagement Agreement. This Engagement Agreement is made between Glenmore & Pike Test (the Firm) and Omar Castellan Example (the Client) for a debt negotiation. The engagement begins on September 12, 2025 and continues for 8 months unless ended earlier.",
+          "Fees and payment. Fees are charged hourly at $225 per hour for all work on the debt negotiation. The Client pays an initial retainer of $1,500 before work begins. Invoices are due net 30 days from the invoice date. Overdue balances accrue interest at 3% per month.",
+          "General terms. Either party may terminate this agreement by giving 15 days written notice. If the Client terminates early, an early termination fee of $300 applies. The Firm will keep the Client's information confidential for 1 years after the engagement ends. This agreement is governed by the laws of Iowa. The Firm's total liability is limited to $25,000. The Client must respond to Firm requests for documents within 5 business days."
+        ],
+        "c": {
+          "parties": "This Engagement Agreement is made between Glenmore & Pike Test (the Firm) and Omar Castellan Example (the Client) for a debt negotiation.",
+          "term": "The engagement begins on September 12, 2025 and continues for 8 months unless ended earlier.",
+          "fee": "Fees are charged hourly at $225 per hour for all work on the debt negotiation.",
+          "retainer": "The Client pays an initial retainer of $1,500 before work begins.",
+          "invoice": "Invoices are due net 30 days from the invoice date.",
+          "late": "Overdue balances accrue interest at 3% per month.",
+          "notice": "Either party may terminate this agreement by giving 15 days written notice.",
+          "exit": "If the Client terminates early, an early termination fee of $300 applies.",
+          "conf": "The Firm will keep the Client's information confidential for 1 years after the engagement ends.",
+          "law": "This agreement is governed by the laws of Iowa.",
+          "cap": "The Firm's total liability is limited to $25,000.",
+          "obl": "The Client must respond to Firm requests for documents within 5 business days."
+        }
+      }
+    ],
+    "gold": {
+      "facts": [],
+      "distractors": [],
+      "sources": [],
+      "traps": [],
+      "status": "not_found",
+      "answer": "The agreement does not say."
+    }
+  },
+  {
+    "id": "abstain-emergency-contact",
+    "category": "abstention",
+    "question": "Who is the Client's emergency contact under the Juniper Lane Legal Test agreement?",
+    "documents": [
+      {
+        "id": "juniper",
+        "pages": [
+          "Engagement Agreement. This Engagement Agreement is made between Juniper Lane Legal Test (the Firm) and Alba Ferreira Sample (the Client) for a partnership dissolution. The engagement begins on December 1, 2025 and continues for 20 months unless ended earlier.",
+          "Fees and payment. Fees are charged hourly at $340 per hour for all work on the partnership dissolution. The Client pays an initial retainer of $5,000 before work begins. Invoices are due net 15 days from the invoice date. Overdue balances accrue interest at 1.9% per month.",
+          "General terms. Either party may terminate this agreement by giving 75 days written notice. If the Client terminates early, an early termination fee of $750 applies. The Firm will keep the Client's information confidential for 9 years after the engagement ends. This agreement is governed by the laws of Kansas. The Firm's total liability is limited to $150,000. The Client must respond to Firm requests for documents within 5 business days."
+        ],
+        "c": {
+          "parties": "This Engagement Agreement is made between Juniper Lane Legal Test (the Firm) and Alba Ferreira Sample (the Client) for a partnership dissolution.",
+          "term": "The engagement begins on December 1, 2025 and continues for 20 months unless ended earlier.",
+          "fee": "Fees are charged hourly at $340 per hour for all work on the partnership dissolution.",
+          "retainer": "The Client pays an initial retainer of $5,000 before work begins.",
+          "invoice": "Invoices are due net 15 days from the invoice date.",
+          "late": "Overdue balances accrue interest at 1.9% per month.",
+          "notice": "Either party may terminate this agreement by giving 75 days written notice.",
+          "exit": "If the Client terminates early, an early termination fee of $750 applies.",
+          "conf": "The Firm will keep the Client's information confidential for 9 years after the engagement ends.",
+          "law": "This agreement is governed by the laws of Kansas.",
+          "cap": "The Firm's total liability is limited to $150,000.",
+          "obl": "The Client must respond to Firm requests for documents within 5 business days."
+        }
+      }
+    ],
+    "gold": {
+      "facts": [],
+      "distractors": [],
+      "sources": [],
+      "traps": [],
+      "status": "not_found",
+      "answer": "The agreement does not say."
+    }
+  },
+  {
+    "id": "abstain-renewal-price",
+    "category": "abstention",
+    "question": "What is the renewal price after the Cedar Quay Partners engagement ends?",
+    "documents": [
+      {
+        "id": "cedar",
+        "pages": [
+          "Engagement Agreement. This Engagement Agreement is made between Cedar Quay Partners (the Firm) and Priya Nandan Example (the Client) for a contract review. The engagement begins on May 1, 2025 and continues for 24 months unless ended earlier.",
+          "Fees and payment. Fees for the contract review are a monthly retainer of $1,800. The Client pays an initial retainer of $1,800 before work begins. Invoices are due net 7 days from the invoice date. Overdue balances accrue interest at 1% per month.",
+          "General terms. Either party may terminate this agreement by giving 60 days written notice. If the Client terminates early, an early termination fee of $900 applies. The Firm will keep the Client's information confidential for 7 years after the engagement ends. This agreement is governed by the laws of Texas. The Firm's total liability is limited to $75,000. The Client must respond to Firm requests for documents within 5 business days."
+        ],
+        "c": {
+          "parties": "This Engagement Agreement is made between Cedar Quay Partners (the Firm) and Priya Nandan Example (the Client) for a contract review.",
+          "term": "The engagement begins on May 1, 2025 and continues for 24 months unless ended earlier.",
+          "fee": "Fees for the contract review are a monthly retainer of $1,800.",
+          "retainer": "The Client pays an initial retainer of $1,800 before work begins.",
+          "invoice": "Invoices are due net 7 days from the invoice date.",
+          "late": "Overdue balances accrue interest at 1% per month.",
+          "notice": "Either party may terminate this agreement by giving 60 days written notice.",
+          "exit": "If the Client terminates early, an early termination fee of $900 applies.",
+          "conf": "The Firm will keep the Client's information confidential for 7 years after the engagement ends.",
+          "law": "This agreement is governed by the laws of Texas.",
+          "cap": "The Firm's total liability is limited to $75,000.",
+          "obl": "The Client must respond to Firm requests for documents within 5 business days."
+        }
+      }
+    ],
+    "gold": {
+      "facts": [],
+      "distractors": [],
+      "sources": [],
+      "traps": [],
+      "status": "not_found",
+      "answer": "The agreement does not say."
+    }
+  },
+  {
+    "id": "abstain-data-location",
+    "category": "abstention",
+    "question": "In which country is the Client's data stored under the Fernhollow Legal Test agreement?",
+    "documents": [
+      {
+        "id": "fern",
+        "pages": [
+          "Engagement Agreement. This Engagement Agreement is made between Fernhollow Legal Test (the Firm) and Lena Hartmann Sample (the Client) for a immigration filing. The engagement begins on August 4, 2025 and continues for 12 months unless ended earlier.",
+          "Fees and payment. Fees for the immigration filing are a monthly retainer of $2,400. The Client pays an initial retainer of $2,400 before work begins. Invoices are due net 10 days from the invoice date. Overdue balances accrue interest at 1.75% per month.",
+          "General terms. Either party may terminate this agreement by giving 90 days written notice. If the Client terminates early, an early termination fee of $1,200 applies. The Firm will keep the Client's information confidential for 6 years after the engagement ends. This agreement is governed by the laws of Vermont. The Firm's total liability is limited to $60,000. The Client must respond to Firm requests for documents within 5 business days."
+        ],
+        "c": {
+          "parties": "This Engagement Agreement is made between Fernhollow Legal Test (the Firm) and Lena Hartmann Sample (the Client) for a immigration filing.",
+          "term": "The engagement begins on August 4, 2025 and continues for 12 months unless ended earlier.",
+          "fee": "Fees for the immigration filing are a monthly retainer of $2,400.",
+          "retainer": "The Client pays an initial retainer of $2,400 before work begins.",
+          "invoice": "Invoices are due net 10 days from the invoice date.",
+          "late": "Overdue balances accrue interest at 1.75% per month.",
+          "notice": "Either party may terminate this agreement by giving 90 days written notice.",
+          "exit": "If the Client terminates early, an early termination fee of $1,200 applies.",
+          "conf": "The Firm will keep the Client's information confidential for 6 years after the engagement ends.",
+          "law": "This agreement is governed by the laws of Vermont.",
+          "cap": "The Firm's total liability is limited to $60,000.",
+          "obl": "The Client must respond to Firm requests for documents within 5 business days."
+        }
+      }
+    ],
+    "gold": {
+      "facts": [],
+      "distractors": [],
+      "sources": [],
+      "traps": [],
+      "status": "not_found",
+      "answer": "The agreement does not say."
+    }
+  },
+  {
+    "id": "abstain-referral-fee",
+    "category": "abstention",
+    "question": "What referral fee does Irisfield Associates Test pay?",
+    "documents": [
+      {
+        "id": "iris",
+        "pages": [
+          "Engagement Agreement. This Engagement Agreement is made between Irisfield Associates Test (the Firm) and Dmitri Vance Fakename (the Client) for a zoning appeal. The engagement begins on November 17, 2025 and continues for 6 months unless ended earlier.",
+          "Fees and payment. Fees for the zoning appeal are a monthly retainer of $3,600. The Client pays an initial retainer of $3,600 before work begins. Invoices are due net 5 days from the invoice date. Overdue balances accrue interest at 2.25% per month.",
+          "General terms. Either party may terminate this agreement by giving 20 days written notice. If the Client terminates early, an early termination fee of $500 applies. The Firm will keep the Client's information confidential for 3 years after the engagement ends. This agreement is governed by the laws of Idaho. The Firm's total liability is limited to $40,000. The Client must respond to Firm requests for documents within 5 business days."
+        ],
+        "c": {
+          "parties": "This Engagement Agreement is made between Irisfield Associates Test (the Firm) and Dmitri Vance Fakename (the Client) for a zoning appeal.",
+          "term": "The engagement begins on November 17, 2025 and continues for 6 months unless ended earlier.",
+          "fee": "Fees for the zoning appeal are a monthly retainer of $3,600.",
+          "retainer": "The Client pays an initial retainer of $3,600 before work begins.",
+          "invoice": "Invoices are due net 5 days from the invoice date.",
+          "late": "Overdue balances accrue interest at 2.25% per month.",
+          "notice": "Either party may terminate this agreement by giving 20 days written notice.",
+          "exit": "If the Client terminates early, an early termination fee of $500 applies.",
+          "conf": "The Firm will keep the Client's information confidential for 3 years after the engagement ends.",
+          "law": "This agreement is governed by the laws of Idaho.",
+          "cap": "The Firm's total liability is limited to $40,000.",
+          "obl": "The Client must respond to Firm requests for documents within 5 business days."
+        }
+      }
+    ],
+    "gold": {
+      "facts": [],
+      "distractors": [],
+      "sources": [],
+      "traps": [],
+      "status": "not_found",
+      "answer": "The agreement does not say."
+    }
+  },
+  {
+    "id": "abstain-jury-waiver",
+    "category": "abstention",
+    "question": "Does the Birchwood Advisory Test agreement waive the right to a jury trial?",
+    "documents": [
+      {
+        "id": "birch",
+        "pages": [
+          "Engagement Agreement. This Engagement Agreement is made between Birchwood Advisory Test (the Firm) and Tomas Reyes Sample (the Client) for a employment claim. The engagement begins on April 15, 2025 and continues for 6 months unless ended earlier.",
+          "Fees and payment. Fees for the employment claim are a fixed fee of $6,800. The Client pays an initial retainer of $1,000 before work begins. Invoices are due net 14 days from the invoice date. Overdue balances accrue interest at 2% per month.",
+          "General terms. Either party may terminate this agreement by giving 14 days written notice. If the Client terminates early, an early termination fee of $250 applies. The Firm will keep the Client's information confidential for 3 years after the engagement ends. This agreement is governed by the laws of Ohio. The Firm's total liability is limited to $20,000. The Client must respond to Firm requests for documents within 5 business days."
+        ],
+        "c": {
+          "parties": "This Engagement Agreement is made between Birchwood Advisory Test (the Firm) and Tomas Reyes Sample (the Client) for a employment claim.",
+          "term": "The engagement begins on April 15, 2025 and continues for 6 months unless ended earlier.",
+          "fee": "Fees for the employment claim are a fixed fee of $6,800.",
+          "retainer": "The Client pays an initial retainer of $1,000 before work begins.",
+          "invoice": "Invoices are due net 14 days from the invoice date.",
+          "late": "Overdue balances accrue interest at 2% per month.",
+          "notice": "Either party may terminate this agreement by giving 14 days written notice.",
+          "exit": "If the Client terminates early, an early termination fee of $250 applies.",
+          "conf": "The Firm will keep the Client's information confidential for 3 years after the engagement ends.",
+          "law": "This agreement is governed by the laws of Ohio.",
+          "cap": "The Firm's total liability is limited to $20,000.",
+          "obl": "The Client must respond to Firm requests for documents within 5 business days."
+        }
+      }
+    ],
+    "gold": {
+      "facts": [],
+      "distractors": [],
+      "sources": [],
+      "traps": [],
+      "status": "not_found",
+      "answer": "The agreement does not say."
+    }
+  }
+]

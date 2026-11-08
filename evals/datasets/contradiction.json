@@ -1,0 +1,272 @@
+[
+  {
+    "id": "conflict-alder-net",
+    "category": "contradiction",
+    "question": "When are invoices due under the Alder Row Legal agreement?",
+    "documents": [
+      {
+        "id": "alder-signed",
+        "pages": [
+          "Engagement Agreement. This Engagement Agreement is made between Alder Row Legal (the Firm) and Mara Ellison Test (the Client) for a tenancy dispute. The engagement begins on March 3, 2025 and continues for 12 months unless ended earlier.",
+          "Fees and payment. Fees are charged hourly at $310 per hour for all work on the tenancy dispute. The Client pays an initial retainer of $2,500 before work begins. Invoices are due net 30 days from the invoice date. Overdue balances accrue interest at 1.5% per month.",
+          "General terms. Either party may terminate this agreement by giving 30 days written notice. If the Client terminates early, an early termination fee of $400 applies. The Firm will keep the Client's information confidential for 5 years after the engagement ends. This agreement is governed by the laws of Oregon. The Firm's total liability is limited to $50,000. The Client must respond to Firm requests for documents within 5 business days."
+        ]
+      },
+      {
+        "id": "alder-draft",
+        "pages": [
+          "Engagement Agreement. This Engagement Agreement is made between Alder Row Legal (the Firm) and Mara Ellison Test (the Client) for a tenancy dispute. The engagement begins on March 3, 2025 and continues for 12 months unless ended earlier.",
+          "Fees and payment. Fees are charged hourly at $310 per hour for all work on the tenancy dispute. The Client pays an initial retainer of $2,500 before work begins. Invoices are due net 45 days from the invoice date. Overdue balances accrue interest at 1.5% per month.",
+          "General terms. Either party may terminate this agreement by giving 30 days written notice. If the Client terminates early, an early termination fee of $400 applies. The Firm will keep the Client's information confidential for 5 years after the engagement ends. This agreement is governed by the laws of Oregon. The Firm's total liability is limited to $50,000. The Client must respond to Firm requests for documents within 5 business days."
+        ]
+      }
+    ],
+    "gold": {
+      "facts": [
+        "net 30 days",
+        "net 45 days"
+      ],
+      "distractors": [],
+      "sources": [
+        {
+          "docId": "alder-signed",
+          "page": 2,
+          "quote": "Invoices are due net 30 days from the invoice date."
+        },
+        {
+          "docId": "alder-draft",
+          "page": 2,
+          "quote": "Invoices are due net 45 days from the invoice date."
+        }
+      ],
+      "traps": [],
+      "status": "partial",
+      "answer": "The documents conflict: the signed copy says net 30 days but the draft says net 45 days."
+    }
+  },
+  {
+    "id": "conflict-birch-notice",
+    "category": "contradiction",
+    "question": "How much notice is needed to terminate the agreement with Birchwood Advisory Test?",
+    "documents": [
+      {
+        "id": "birch-signed",
+        "pages": [
+          "Engagement Agreement. This Engagement Agreement is made between Birchwood Advisory Test (the Firm) and Tomas Reyes Sample (the Client) for a employment claim. The engagement begins on April 15, 2025 and continues for 6 months unless ended earlier.",
+          "Fees and payment. Fees for the employment claim are a fixed fee of $6,800. The Client pays an initial retainer of $1,000 before work begins. Invoices are due net 14 days from the invoice date. Overdue balances accrue interest at 2% per month.",
+          "General terms. Either party may terminate this agreement by giving 14 days written notice. If the Client terminates early, an early termination fee of $250 applies. The Firm will keep the Client's information confidential for 3 years after the engagement ends. This agreement is governed by the laws of Ohio. The Firm's total liability is limited to $20,000. The Client must respond to Firm requests for documents within 5 business days."
+        ]
+      },
+      {
+        "id": "birch-draft",
+        "pages": [
+          "Engagement Agreement. This Engagement Agreement is made between Birchwood Advisory Test (the Firm) and Tomas Reyes Sample (the Client) for a employment claim. The engagement begins on April 15, 2025 and continues for 6 months unless ended earlier.",
+          "Fees and payment. Fees for the employment claim are a fixed fee of $6,800. The Client pays an initial retainer of $1,000 before work begins. Invoices are due net 14 days from the invoice date. Overdue balances accrue interest at 2% per month.",
+          "General terms. Either party may terminate this agreement by giving 44 days written notice. If the Client terminates early, an early termination fee of $250 applies. The Firm will keep the Client's information confidential for 3 years after the engagement ends. This agreement is governed by the laws of Ohio. The Firm's total liability is limited to $20,000. The Client must respond to Firm requests for documents within 5 business days."
+        ]
+      }
+    ],
+    "gold": {
+      "facts": [
+        "14 days",
+        "44 days"
+      ],
+      "distractors": [],
+      "sources": [
+        {
+          "docId": "birch-signed",
+          "page": 3,
+          "quote": "Either party may terminate this agreement by giving 14 days written notice."
+        },
+        {
+          "docId": "birch-draft",
+          "page": 3,
+          "quote": "Either party may terminate this agreement by giving 44 days written notice."
+        }
+      ],
+      "traps": [],
+      "status": "partial",
+      "answer": "The documents conflict: the signed copy says 14 days but the draft says 44 days."
+    }
+  },
+  {
+    "id": "conflict-cedar-cap",
+    "category": "contradiction",
+    "question": "What is the cap on the Firm's liability to Priya Nandan Example?",
+    "documents": [
+      {
+        "id": "cedar-signed",
+        "pages": [
+          "Engagement Agreement. This Engagement Agreement is made between Cedar Quay Partners (the Firm) and Priya Nandan Example (the Client) for a contract review. The engagement begins on May 1, 2025 and continues for 24 months unless ended earlier.",
+          "Fees and payment. Fees for the contract review are a monthly retainer of $1,800. The Client pays an initial retainer of $1,800 before work begins. Invoices are due net 7 days from the invoice date. Overdue balances accrue interest at 1% per month.",
+          "General terms. Either party may terminate this agreement by giving 60 days written notice. If the Client terminates early, an early termination fee of $900 applies. The Firm will keep the Client's information confidential for 7 years after the engagement ends. This agreement is governed by the laws of Texas. The Firm's total liability is limited to $75,000. The Client must respond to Firm requests for documents within 5 business days."
+        ]
+      },
+      {
+        "id": "cedar-draft",
+        "pages": [
+          "Engagement Agreement. This Engagement Agreement is made between Cedar Quay Partners (the Firm) and Priya Nandan Example (the Client) for a contract review. The engagement begins on May 1, 2025 and continues for 24 months unless ended earlier.",
+          "Fees and payment. Fees for the contract review are a monthly retainer of $1,800. The Client pays an initial retainer of $1,800 before work begins. Invoices are due net 7 days from the invoice date. Overdue balances accrue interest at 1% per month.",
+          "General terms. Either party may terminate this agreement by giving 60 days written notice. If the Client terminates early, an early termination fee of $900 applies. The Firm will keep the Client's information confidential for 7 years after the engagement ends. This agreement is governed by the laws of Texas. The Firm's total liability is limited to $500,000. The Client must respond to Firm requests for documents within 5 business days."
+        ]
+      }
+    ],
+    "gold": {
+      "facts": [
+        "$75,000",
+        "$500,000"
+      ],
+      "distractors": [],
+      "sources": [
+        {
+          "docId": "cedar-signed",
+          "page": 3,
+          "quote": "The Firm's total liability is limited to $75,000."
+        },
+        {
+          "docId": "cedar-draft",
+          "page": 3,
+          "quote": "The Firm's total liability is limited to $500,000."
+        }
+      ],
+      "traps": [],
+      "status": "partial",
+      "answer": "The documents conflict: the signed copy says $75,000 but the draft says $500,000."
+    }
+  },
+  {
+    "id": "conflict-dune-net",
+    "category": "contradiction",
+    "question": "When are invoices due under the Dunemoor Law Group agreement?",
+    "documents": [
+      {
+        "id": "dune-signed",
+        "pages": [
+          "Engagement Agreement. This Engagement Agreement is made between Dunemoor Law Group (the Firm) and Wei Aldous Fakename (the Client) for a estate matter. The engagement begins on June 9, 2025 and continues for 18 months unless ended earlier.",
+          "Fees and payment. Fees are charged hourly at $275 per hour for all work on the estate matter. The Client pays an initial retainer of $3,000 before work begins. Invoices are due net 45 days from the invoice date. Overdue balances accrue interest at 1.25% per month.",
+          "General terms. Either party may terminate this agreement by giving 45 days written notice. If the Client terminates early, an early termination fee of $600 applies. The Firm will keep the Client's information confidential for 4 years after the engagement ends. This agreement is governed by the laws of Maine. The Firm's total liability is limited to $100,000. The Client must respond to Firm requests for documents within 5 business days."
+        ]
+      },
+      {
+        "id": "dune-draft",
+        "pages": [
+          "Engagement Agreement. This Engagement Agreement is made between Dunemoor Law Group (the Firm) and Wei Aldous Fakename (the Client) for a estate matter. The engagement begins on June 9, 2025 and continues for 18 months unless ended earlier.",
+          "Fees and payment. Fees are charged hourly at $275 per hour for all work on the estate matter. The Client pays an initial retainer of $3,000 before work begins. Invoices are due net 60 days from the invoice date. Overdue balances accrue interest at 1.25% per month.",
+          "General terms. Either party may terminate this agreement by giving 45 days written notice. If the Client terminates early, an early termination fee of $600 applies. The Firm will keep the Client's information confidential for 4 years after the engagement ends. This agreement is governed by the laws of Maine. The Firm's total liability is limited to $100,000. The Client must respond to Firm requests for documents within 5 business days."
+        ]
+      }
+    ],
+    "gold": {
+      "facts": [
+        "net 45 days",
+        "net 60 days"
+      ],
+      "distractors": [],
+      "sources": [
+        {
+          "docId": "dune-signed",
+          "page": 2,
+          "quote": "Invoices are due net 45 days from the invoice date."
+        },
+        {
+          "docId": "dune-draft",
+          "page": 2,
+          "quote": "Invoices are due net 60 days from the invoice date."
+        }
+      ],
+      "traps": [],
+      "status": "partial",
+      "answer": "The documents conflict: the signed copy says net 45 days but the draft says net 60 days."
+    }
+  },
+  {
+    "id": "conflict-elm-notice",
+    "category": "contradiction",
+    "question": "How much notice is needed to terminate the agreement with Elmstead Counsel Test?",
+    "documents": [
+      {
+        "id": "elm-signed",
+        "pages": [
+          "Engagement Agreement. This Engagement Agreement is made between Elmstead Counsel Test (the Firm) and Jonas Okafor Demo (the Client) for a trademark filing. The engagement begins on July 22, 2025 and continues for 9 months unless ended earlier.",
+          "Fees and payment. Fees for the trademark filing are a fixed fee of $3,200. The Client pays an initial retainer of $500 before work begins. Invoices are due net 21 days from the invoice date. Overdue balances accrue interest at 2.5% per month.",
+          "General terms. Either party may terminate this agreement by giving 21 days written notice. If the Client terminates early, an early termination fee of $150 applies. The Firm will keep the Client's information confidential for 2 years after the engagement ends. This agreement is governed by the laws of Utah. The Firm's total liability is limited to $15,000. The Client must respond to Firm requests for documents within 5 business days."
+        ]
+      },
+      {
+        "id": "elm-draft",
+        "pages": [
+          "Engagement Agreement. This Engagement Agreement is made between Elmstead Counsel Test (the Firm) and Jonas Okafor Demo (the Client) for a trademark filing. The engagement begins on July 22, 2025 and continues for 9 months unless ended earlier.",
+          "Fees and payment. Fees for the trademark filing are a fixed fee of $3,200. The Client pays an initial retainer of $500 before work begins. Invoices are due net 21 days from the invoice date. Overdue balances accrue interest at 2.5% per month.",
+          "General terms. Either party may terminate this agreement by giving 51 days written notice. If the Client terminates early, an early termination fee of $150 applies. The Firm will keep the Client's information confidential for 2 years after the engagement ends. This agreement is governed by the laws of Utah. The Firm's total liability is limited to $15,000. The Client must respond to Firm requests for documents within 5 business days."
+        ]
+      }
+    ],
+    "gold": {
+      "facts": [
+        "21 days",
+        "51 days"
+      ],
+      "distractors": [],
+      "sources": [
+        {
+          "docId": "elm-signed",
+          "page": 3,
+          "quote": "Either party may terminate this agreement by giving 21 days written notice."
+        },
+        {
+          "docId": "elm-draft",
+          "page": 3,
+          "quote": "Either party may terminate this agreement by giving 51 days written notice."
+        }
+      ],
+      "traps": [],
+      "status": "partial",
+      "answer": "The documents conflict: the signed copy says 21 days but the draft says 51 days."
+    }
+  },
+  {
+    "id": "conflict-fern-cap",
+    "category": "contradiction",
+    "question": "What is the cap on the Firm's liability to Lena Hartmann Sample?",
+    "documents": [
+      {
+        "id": "fern-signed",
+        "pages": [
+          "Engagement Agreement. This Engagement Agreement is made between Fernhollow Legal Test (the Firm) and Lena Hartmann Sample (the Client) for a immigration filing. The engagement begins on August 4, 2025 and continues for 12 months unless ended earlier.",
+          "Fees and payment. Fees for the immigration filing are a monthly retainer of $2,400. The Client pays an initial retainer of $2,400 before work begins. Invoices are due net 10 days from the invoice date. Overdue balances accrue interest at 1.75% per month.",
+          "General terms. Either party may terminate this agreement by giving 90 days written notice. If the Client terminates early, an early termination fee of $1,200 applies. The Firm will keep the Client's information confidential for 6 years after the engagement ends. This agreement is governed by the laws of Vermont. The Firm's total liability is limited to $60,000. The Client must respond to Firm requests for documents within 5 business days."
+        ]
+      },
+      {
+        "id": "fern-draft",
+        "pages": [
+          "Engagement Agreement. This Engagement Agreement is made between Fernhollow Legal Test (the Firm) and Lena Hartmann Sample (the Client) for a immigration filing. The engagement begins on August 4, 2025 and continues for 12 months unless ended earlier.",
+          "Fees and payment. Fees for the immigration filing are a monthly retainer of $2,400. The Client pays an initial retainer of $2,400 before work begins. Invoices are due net 10 days from the invoice date. Overdue balances accrue interest at 1.75% per month.",
+          "General terms. Either party may terminate this agreement by giving 90 days written notice. If the Client terminates early, an early termination fee of $1,200 applies. The Firm will keep the Client's information confidential for 6 years after the engagement ends. This agreement is governed by the laws of Vermont. The Firm's total liability is limited to $500,000. The Client must respond to Firm requests for documents within 5 business days."
+        ]
+      }
+    ],
+    "gold": {
+      "facts": [
+        "$60,000",
+        "$500,000"
+      ],
+      "distractors": [],
+      "sources": [
+        {
+          "docId": "fern-signed",
+          "page": 3,
+          "quote": "The Firm's total liability is limited to $60,000."
+        },
+        {
+          "docId": "fern-draft",
+          "page": 3,
+          "quote": "The Firm's total liability is limited to $500,000."
+        }
+      ],
+      "traps": [],
+      "status": "partial",
+      "answer": "The documents conflict: the signed copy says $60,000 but the draft says $500,000."
+    }
+  }
+]
