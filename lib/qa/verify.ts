@@ -226,7 +226,7 @@ function allAbsence(claim: string, ctx: JudgeContext): boolean {
   if (NEGATED_RIGHT.test(normalize(claim))) return false;
   // split only where a new "does not …" clause starts ("…, and does not define…", "…and so does not specify…"), so a
   // list stays inside its noun phrase
-  const t = opener(normalize(claim).replace(/\s*\([^)]*\)\s*/g, " ").replace(/[.!?]+\s*$/, "").trim());
+  const t = opener(normalize(claim).replace(/[.!?]+\s*$/, "").trim());
   const parts = t
     .split(new RegExp(`\\s*;\\s*|,?\\s+(?:and\\s+|but\\s+)?(?:so\\s+|therefore\\s+|thus\\s+|hence\\s+|also\\s+)?(?=(?:it\\s+|the\\s+agreement\\s+|this\\s+agreement\\s+)?(?:${NEG}|nor)\\b)(?<=\\b(?:and|but|so|therefore|thus|hence|also)\\s+)|,?\\s+nor\\s+`, "i"))
     .map((x) => x.trim())
@@ -276,29 +276,72 @@ function whoOf(ctx: JudgeContext): string {
   const names = [...ctx.names.keys()].filter(Boolean).map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
   return `(?:${[ROLE_WORD.source.slice(5, -3), ...names, "it", "they", "there"].join("|")})`;
 }
-const WH = /^(?:on\s+|about\s+|regarding\s+)?(?:whether|when|how|what|who|whom|which|if|where|why)\b/i;
+const WH = /^(?:(?:on|about|regarding|in|to|for|from|by|at|under|with|of)\s+)?(?:whether|when|how|what|who|whom|whose|which|if|where|why)\b/i;
 const FINITE = "(?:is|are|was|were|be|must|shall|may|will|can|pays?|owes?|has|have|applies|apply|gets?|receives?|bears?|keeps?|accepts?)";
-function okObject(object: string, ctx: JudgeContext): boolean {
-  const o = object.trim();
-  if (/^that\b/i.test(o)) return false;
-  // a question ("whether the Firm can terminate without notice") asserts nothing: only a reason or consequence, a new
-  // clause after a comma, or a right the binding text does give rule it out
-  if (WH.test(o)) {
-    if (/\b(?:because|since|therefore|hence|thus|which means)\b|,\s*(?:as|yet)\b|,\s*so\b(?!\s+that)|[;:]/i.test(o)) return false;
-    if (new RegExp(`,\\s*(?:and|but)\\s+(?!(?:whether|when|how|what|who|whom|which|if|where|why)\\b)(?:[a-z'’-]+\\s+){0,6}?${FINITE}\\b`, "i").test(o)) return false;
-    if (new RegExp(`,\\s*(?:and|or|but)\\s+(?:the\\s+|either\\s+|each\\s+|both\\s+|any\\s+)?${whoOf(ctx)}s?\\b(?!['’])\\s+(?!(?:or|and|to|from|of|for|in|on|with)\\b)[a-z]+`, "i").test(o)) return false;
-    return !(RIGHT_NOUN.test(o) && rightGiven(o, ctx));
+// a verb: an auxiliary or modal, or a plain verb of a term with no auxiliary before it ("refunds fees", not "is refunded")
+const AUX_RE = /\b(?:is|are|was|were|be|been|being|am|must|shall|may|will|can|could|would|should|might|do|does|did|has|have|had)\b/gi;
+const PLAIN_VERB = /\b(?:pays|paid|owes|owed|applies|applied|terminates|terminated|withdraws|withdrew|refunds|refunded|charges|charged|accepts|accepted|receives|received|bears|keeps|kept|covers|issues|issued)\b/gi;
+/** Where each verb group starts ("must be delivered", "is still charged" are one group). */
+function verbsIn(o: string): number[] {
+  const spans: [number, number][] = [...o.matchAll(AUX_RE)].map((m) => [m.index!, m.index! + m[0].length]);
+  for (const m of o.matchAll(PLAIN_VERB)) {
+    const before = o.slice(Math.max(0, m.index! - 25), m.index);
+    // a plain verb right after an auxiliary is the same verb ("is refunded"); after a determiner it's a noun ("the charges")
+    if (AUX_RE.test(before) || /\b(?:the|a|an|any|its|their|for|of|on|no|all|such|these|those|and|or)\s+(?:[a-z-]+\s+)?$/i.test(before)) { AUX_RE.lastIndex = 0; continue; }
+    AUX_RE.lastIndex = 0;
+    spans.push([m.index!, m.index! + m[0].length]);
   }
-  if (CONNECTOR.test(o) || NEGATION.test(o)) return false;
-  // a new clause after "and/or/but" with its own subject ("…, and either party withdraws freely")
-  const who = whoOf(ctx);
-  if (new RegExp(`\\b(?:and|or|but)\\s+(?:the\\s+|either\\s+|each\\s+|both\\s+|any\\s+)?${who}s?\\b(?!['’])\\s+(?!(?:or|and|to|from|of|for|in|on|with)\\b)[a-z]+`, "i").test(o)) return false;
-  // …or with a verb of its own ("…, and fees already paid are refundable"); "and how they are billed" is a question
-  if (/\b(?:and|but)\s+(?!(?:whether|when|how|what|who|whom|which|if|where|why)\b)(?:[a-z'’-]+\s+){0,6}?(?:is|are|was|were|be|must|shall|may|will|can|pays?|owes?|has|have|applies|apply|gets?|receives?|bears?|keeps?|accepts?)\b/i.test(o)) return false;
-  // a figure stated with a verb of obligation is a term, wherever it is ("a deadline the Client pays within 10 days")
-  if (/\d/.test(o) && TERM_VERB.test(o) && !/^(?:on\s+|about\s+)?(?:whether|when|how|what|who|whom|which|if|where|why)\b/i.test(o)) return false;
+  spans.sort((x, y) => x[0] - y[0]);
+  const groups: number[] = [];
+  let end = -Infinity;
+  for (const [a, b] of spans) {
+    // the next verb word follows with at most one word (an adverb) between: same group
+    if (/^\s+(?:[a-z]+\s+)?$/i.test(o.slice(end, a)) && end >= 0) {
+      end = b;
+      continue;
+    }
+    groups.push(a);
+    end = b;
+  }
+  return groups;
+}
+// a concession, contrast, reason or consequence: no absence carries one
+const ATTACHED = /\b(?:because|since|therefore|hence|thus|which means|meaning|whereas|while|whilst|though|although|even though|even so|given that|despite|notwithstanding|yet|instead|rather)\b|,\s*(?:as|so|but)\b(?!\s+that)|\bas\s+(?:the|it|they|there|this|its|their|either|each|both|no|all)\b/i;
+/**
+ * What an absence may say is missing: a noun phrase with no verb ("a refund deadline", "the country where data is
+ * stored" is a question), or one question ("whether the retainer is credited against the fee or is paid on top").
+ * Only list commas may punctuate it; a concession, reason, relative clause, second clause or a right the binding text
+ * gives rules it out.
+ */
+function okObject(object: string, ctx: JudgeContext): boolean {
+  // a gloss in brackets ("(for example, monthly)", "(the payment due date)") is set aside only when it states nothing:
+  // no verb, figure, negation or connector; any other bracket rules the object out
+  const o = object
+    .trim()
+    .replace(/\s*\(([^()]*)\)/g, (m, inner: string) => (verbsIn(inner).length || /\d/.test(inner) || NEGATION.test(inner) || ATTACHED.test(inner) || /[;:]/.test(inner) ? m : ""))
+    .trim();
+  if (!o || /^that\b/i.test(o) || /[()[\]—–;:]|\s-\s|\s--\s/.test(o) || ATTACHED.test(o)) return false;
+  // a thing or question coordinated with a question ("the amount of filing costs or how they will be billed"): each
+  // part is judged on its own
+  const coord = o.split(new RegExp(`,?\\s+(?:or|and|nor)\\s+(?=${WH.source.slice(1)})`, "i"));
+  if (coord.length > 1) return coord.every((x) => okObject(x, ctx));
   if (RIGHT_NOUN.test(o) && rightGiven(o, ctx)) return false;
-  return true;
+  // a relative clause with a verb of its own ("…the Provider, which must refund…", "…, who pays…")
+  if (/,\s*(?:which|who|whom|whose|that|where)\b/i.test(o)) return false;
+  const verbs = verbsIn(o);
+  // a new clause after "and/or/but" with its own subject ("…and either party withdraws freely")
+  if (new RegExp(`\\b(?:and|or|but)\\s+(?:the\\s+|either\\s+|each\\s+|both\\s+|any\\s+)?${whoOf(ctx)}s?\\b(?!['’])\\s+(?!(?:or|and|to|from|of|for|in|on|with)\\b)[a-z]+`, "i").test(o)) return false;
+  if (WH.test(o)) {
+    // one verb, or two joined directly ("is credited … or is paid"): a second clause isn't
+    const extra = verbs.slice(1).filter((i) => !/\b(?:or|and|nor)\s+$/i.test(o.slice(Math.max(0, i - 5), i)));
+    return extra.length === 0;
+  }
+  // a noun phrase: no verb, or one inside a clause of time or condition ("a number of days after an invoice is
+  // issued"); no negation
+  if (NEGATION.test(o)) return false;
+  if (!verbs.length) return true;
+  const sub = /\b(?:after|before|when|once|until|if|where|in which|by which|for which)\b/i.exec(o);
+  return verbs.length === 1 && !!sub && sub.index < verbs[0];
 }
 // a disclaimer clause: says the text isn't binding or doesn't change the terms, or reports what it says
 const DISCLAIM_CLAUSE = /\b(?:not binding|non-binding|nonbinding|not legally binding|not part of|isn['’]?t part of|does not form part|doesn['’]t form part|forms? no part|no contractual effect|no legal effect|has no effect|superseded|withdrawn|for information only|not one of (?:the |its )?(?:agreement['’]s )?terms|not a term|does not change|doesn['’]t change|does not alter|doesn['’]t alter|does not override|doesn['’]t override|does not affect|doesn['’]t affect|does not apply|doesn['’]t apply|not used|is labell?ed|is marked)\b/i;

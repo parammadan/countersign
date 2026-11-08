@@ -18,8 +18,9 @@ const CASES = new Map((loadCases() as Case[]).map((c) => [c.id, c]));
 // referral fee") it gave no evidence for, one sentence no judged claim covered, and "the agreement doesn't restrict
 // either party from competing" (a negated restriction is judged as a term, which needs evidence)
 // "Beyond the word \"total\", the agreement does not specify…" (a leading phrase with a term word isn't skipped), and
-// "no clause waives or mentions…" (only an adverb may come between "no clause" and its verb)
-const KNOWN = new Set(["abstain-arbitration-seat", "abstain-referral-fee", "ambiguous-termination-material", "abstain-non-compete", "single-fern-cap", "abstain-jury-waiver"]);
+// "no clause waives or mentions…" (only an adverb may come between "no clause" and its verb), and "tasks the Client must
+// provide" (a verb inside the noun phrase an absence names isn't allowed)
+const KNOWN = new Set(["abstain-arbitration-seat", "abstain-referral-fee", "ambiguous-termination-material", "abstain-non-compete", "single-fern-cap", "abstain-jury-waiver", "ambiguous-obligation-cooperate"]);
 
 const replay = (x: unknown): ModelProvider => ({ name: "replay", model: "claude-opus-5-5", complete: async () => JSON.parse(JSON.stringify(x)) });
 
