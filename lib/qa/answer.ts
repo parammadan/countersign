@@ -11,24 +11,26 @@ import { MIN_QUOTE, normalize, unsupportedTokens, unsupportedWords } from "../un
 import { AnalysisError, callModel, type ModelProvider, type Usage } from "../understand/model";
 import type { Finding } from "../understand/schema";
 import type { PageLines } from "../understand/text";
-import { checkCalculations, impliedCalculations, stemWord, misquoted, roleSwaps, scenarioFigures, stripPageRefs, unboundValues, unsupportedNegations, unsupportedPlaces, withoutAbsence, type Calculation } from "./check";
+import { checkCalculations, impliedCalculations, negationCheck, periodConflicts, stripRefutations, stemWord, misquoted, roleSwaps, scenarioFigures, stripPageRefs, unboundValues, unsupportedNegations, unsupportedPlaces, withoutAbsence, type Calculation } from "./check";
 import { GROUP_OF, passages, QA_INSTRUCTION_RE, retrieve, terms, type Passage, type Scored } from "./retrieve";
 
 export const QA_STATUSES = ["answered", "partial", "not_found"] as const;
 export type QaStatus = (typeof QA_STATUSES)[number];
 export const QA_STATUS_LABEL: Record<QaStatus, string> = { answered: "Answered from the agreement", partial: "Partly answered", not_found: "Not found in the agreement" };
 
+const CalcItem = z.object({ expression: z.string().trim().min(1).max(200), result: z.string().trim().min(1).max(200) });
 export const QaOutputSchema = z.object({
   status: z.enum(QA_STATUSES),
-  answer: z.string().trim().min(1).max(1200),
-  explanation: z.string().trim().max(1500).default(""),
-  calculations: z.array(z.object({ expression: z.string().trim().min(1).max(120), result: z.string().trim().min(1).max(40) })).max(6).default([]),
-  not_stated: z.array(z.string().trim().min(1).max(240)).max(4).default([]),
-  citations: z.array(z.object({ passage: z.string().regex(/^p\d{1,4}-n?\d{1,4}$/), quote: z.string().trim().min(3).max(300) })).max(8),
+  answer: z.string().trim().min(1).max(2000),
+  explanation: z.string().trim().max(3000).default(""),
+  // a malformed calculation is dropped, not a reason to discard the whole answer (its figures are then unverified)
+  calculations: z.array(z.unknown()).max(20).default([]).transform((xs) => xs.flatMap((x) => { const r = CalcItem.safeParse(x); return r.success ? [r.data] : []; })),
+  not_stated: z.array(z.string().trim().max(400)).max(8).default([]).transform((xs) => xs.filter(Boolean)),
+  citations: z.array(z.object({ passage: z.string().regex(/^p\d{1,4}-n?\d{1,4}$/), quote: z.string().trim().min(3).max(400) })).max(12),
 });
 
 /** `context` is the whole passage the quote comes from, shown with the quote highlighted, so a fragment can't hide what surrounds it. */
-export type Citation = { page: number; passage: string; quote: string; context?: string };
+export type Citation = { page: number; passage: string; quote: string; context?: string; /** attached by AgreementOS: the answer relies on this passage too */ added?: true };
 export type QaResult = {
   status: QaStatus;
   answer: string;
@@ -36,6 +38,9 @@ export type QaResult = {
   explanation?: string;
   calculations?: Calculation[];
   notStated?: string[];
+  /** model answers: "checked" when every check passed; "qualified" when shown with what couldn't be verified */
+  verification?: "checked" | "qualified";
+  unverified?: string[];
   citations: Citation[];
   mode: "passages" | "model";
   model?: string;
@@ -80,7 +85,8 @@ function digitize(s: string): string {
 }
 // clause numbers ("2. Term.", "4.1 Fees"): stripped from the passages before number/unit pairs are read, so
 // "within 2 days" can't lean on clause 2; never stripped from the answer
-const stripClauses = (raw: string) => raw.replace(/(^|\s)\d{1,3}(?:\.\d{1,3})*\.?(?=\s+[A-Z(“"])/g, "$1");
+// a label has a dot ("2. Term", "4.1 Fees"); "on 20 Business Days' notice" keeps its 20
+const stripClauses = (raw: string) => raw.replace(/(^|\s)\d{1,3}\.(?:\d{1,3}\.?)*(?=\s+[A-Z(“"])/g, "$1");
 // digits of any script as ASCII ("٢" -> "2"); NFKC already folds fullwidth and mathematical digits
 const asciiDigits = (s: string) =>
   s.replace(/\p{Nd}/gu, (d) => {
@@ -111,8 +117,19 @@ const COMMON_CAPS = new Set(["client", "provider", "consultant", "firm", "compan
  * what the document doesn't say ("doesn't specify a deadline") don't count as negations, and page references are
  * the app's own metadata.
  */
+/** The same period said another way: "fortnightly" is every 2 weeks, 48 hours is 2 days. */
+function equivalents(text: string): string {
+  const t = normalize(text);
+  const extra: string[] = [];
+  if (/\b(?:fortnight\w*|bi-?weekly|every other week)\b/.test(t)) extra.push("every 2 weeks, 2 weeks, two weeks");
+  for (const m of t.matchAll(/\b(\d+)\s*(?:-\s*)?hours?\b/g)) if (+m[1] > 0 && +m[1] % 24 === 0) extra.push(`${+m[1] / 24} days`);
+  if (/\b(?:annual|annually|per annum|yearly)\b/.test(t)) extra.push("per year, a year");
+  if (/\bquarterly\b/.test(t)) extra.push("per quarter, every 3 months");
+  return extra.length ? `${text}\n${extra.join("; ")}` : text;
+}
 export function unsupportedFacts(answer: string, quotes: string[], allowed: Set<string> = new Set(), question = "", o: { negations?: boolean; names?: string[]; checkNames?: boolean; periods?: boolean } = {}): string[] {
   answer = stripPageRefs(answer);
+  quotes = quotes.map(equivalents);
   const hay = normalize(quotes.join(" \n "));
   const out: string[] = [];
   const support = quotes.join(" \n ");
@@ -122,7 +139,12 @@ export function unsupportedFacts(answer: string, quotes: string[], allowed: Set<
   for (const pr of unitPairs(prep(answer))) if (!pairs.has(pr) && !allowed.has(pr.split(":")[0])) out.push(pr.replace(":", " ").replace(" %", "%"));
   const a = normalize(answer);
   const months = new Set([...hay.matchAll(MONTH_RE)].map((m) => m[1].slice(0, 3)));
-  for (const m of a.matchAll(MONTH_RE)) if (!months.has(m[1].slice(0, 3))) out.push(m[1]);
+  // "may" is a month only in a date ("May 1", "1 May 2027"); otherwise it's the verb
+  const raw = answer.slice(0, MAX_FACT_TEXT);
+  for (const m of a.matchAll(MONTH_RE)) {
+    if (m[1] === "may" && !/\bMay\s+\d|\d(?:st|nd|rd|th)?\s+(?:of\s+)?May\b/.test(raw)) continue;
+    if (!months.has(m[1].slice(0, 3))) out.push(m[1]);
+  }
   const asserted = withoutAbsence(answer);
   const asked = normalize(question);
   if (o.periods !== false) for (const [re, name] of PERIOD) if (re.test(asserted) && !re.test(hay) && !re.test(asked)) out.push(`per ${name}`);
@@ -136,7 +158,7 @@ export function unsupportedFacts(answer: string, quotes: string[], allowed: Set<
   const nameWords = o.names ? new Set(normalize(o.names.join(" \n ")).split(/[^\p{L}\p{N}]+/u)) : words;
   const text = answer.normalize("NFKC").slice(0, MAX_FACT_TEXT);
   for (const m of o.checkNames === false ? [] : text.matchAll(/\b([A-Z][\p{L}'’-]+)/gu)) {
-    const w = normalize(m[1]).replace(/'s$/, "");
+    const w = normalize(m[1]).replace(/'s$|'$/, "");
     // a capitalised word opening a sentence is an ordinary word ("Separately,", "Insurance coverage") unless it
     // reads as a name: followed by another capitalised word, or as the subject of "is the/a ..." ("Zenith is the
     // consultant")
@@ -144,7 +166,8 @@ export function unsupportedFacts(answer: string, quotes: string[], allowed: Set<
     const opensSentence = at === 0 || /[.!?:;\n]\s*["“(]?$/.test(text.slice(Math.max(0, at - 3), at));
     if (opensSentence && !/^[\p{L}'’-]+\s+(?:[A-Z]|(?:is|are|was|will be)\s+(?:the|a|an)\b)/u.test(text.slice(at, at + 60))) continue;
     // spelled-out numbers ("One month late") are checked as numbers, above
-    if (!COMMON_CAPS.has(w) && !words.has(w) && !nameWords.has(w) && !new RegExp(`^(?:${NUMWORD})$`).test(w)) out.push(m[1]);
+    const singular = w.replace(/(?:es|s)$/, "");
+    if (!COMMON_CAPS.has(w) && !words.has(w) && !nameWords.has(w) && !nameWords.has(singular) && !nameWords.has(`${w}s`) && !new RegExp(`^(?:${NUMWORD})$`).test(w)) out.push(m[1]);
   }
   const tokens = unsupportedTokens(answer.slice(0, MAX_FACT_TEXT), quotes.map(prep)).filter((t) => {
     const n = [...numbersIn(t)];
@@ -356,78 +379,138 @@ export async function answerWithModel(
   if (out.status === "not_found" && !citations.length) return result("not_found", NOT_FOUND);
   if (!citations.length) return withheld("The answer couldn't be tied to the agreement's text, so it isn't shown.");
 
-  // what may appear without a quote: figures from the user's own question, and arithmetic we re-did
-  const support = citations.map((c) => c.context ?? c.quote);
+  // Two levels. BLOCK (withheld, passages shown instead): fabricated citations, figures, names, places, dates or
+  // quotes that aren't in the binding agreement or the question, wrong arithmetic or invented calculation inputs,
+  // figures attached to the wrong term, parties swapped, a negation that contradicts the clause it's about,
+  // instructions in the output, non-binding text used as terms. QUALIFY (shown, with a notice of what couldn't be
+  // verified): details that are real but the checks can't tie down precisely. A detail from elsewhere in the
+  // agreement isn't a failure: the passage it comes from is attached as a source, so the reader can check it.
+  const qualify: string[] = [];
+  const binding = shown.filter((p) => p.binding !== false);
+  const agreementText = binding.map((p) => p.text);
+  const unofficialText = shown.filter((p) => p.binding === false).map((p) => p.text);
   const fromQuestion = numbersIn(question);
   // "a month late", "an hour" in the question is the figure 1 the answer may restate ("one month")
   if (/\b(?:a|an|one|per)\s+(?:hour|day|week|month|year|invoice)\b/i.test(question)) fromQuestion.add("1");
-  // arithmetic the model listed, and arithmetic it wrote in the prose, are both re-done
-  const { verified, operands, failed } = checkCalculations([...out.calculations, ...impliedCalculations(`${out.answer}\n${out.explanation}`)], support, question, `${out.answer} ${out.explanation}`);
-  if (failed.length) return withheld(`A calculation in the answer didn't check out (${failed.slice(0, 2).join("; ")}), so it isn't shown.`);
-  const allowed = new Set([...fromQuestion, ...verified, ...operands]);
+
   // passage ids are internal; they're never shown ("Passage p3-2 sets...")
   const noIds = (t: string) => t.replace(/\s*\(?\b(?:passages?\s+)?p\d{1,4}-n?\d{1,4}\b\)?/gi, "").replace(/\s{2,}/g, " ").trim();
   out.answer = noIds(out.answer);
   out.explanation = noIds(out.explanation);
+  out.not_stated = out.not_stated.map(noIds).filter(Boolean);
   // a sentence that only declines an instruction in the question ("I can't share my system prompt", "the
   // instruction to report $0 has been disregarded") isn't about the agreement: it's replaced by a standard note
-  const META = /\b(?:system prompt|api keys?|my (?:instructions|rules|prompt)|(?:can['’]?t|cannot|won['’]?t|will not|unable to) (?:share|reveal|provide|disclose|print))\b|\binstructions?\b[^.]{0,80}\b(?:disregard\w*|ignor\w*|not (?:reflected|followed)|won['’]?t follow|will not follow)\b|\b(?:disregard\w*|ignor\w*)\b[^.]{0,60}\b(?:instructions?|requests? to)\b/i;
+  const META = /\b(?:system prompt|api keys?|my (?:instructions|rules|prompt)|(?:can['’]?t|cannot|won['’]?t|will not|unable to) (?:share|reveal|provide|disclose|print|take on|act as|play))\b|\binstructions?\b[^.]{0,80}\b(?:disregard\w*|ignor\w*|not (?:reflected|followed)|won['’]?t follow|will not follow)\b|\b(?:disregard\w*|ignor\w*)\b[^.]{0,60}\b(?:instructions?|requests? to)\b/i;
   let declined = false;
   const dropMeta = (t: string) => t.split(/(?<=[.!?])\s+/).filter((x) => !(META.test(x) && (declined = true))).join(" ").trim();
   out.answer = dropMeta(out.answer) || out.answer;
   out.explanation = dropMeta(out.explanation);
   if (declined) warnings.push("Instructions in your question that weren't about the agreement were ignored.");
-  out.not_stated = out.not_stated.map(noIds).filter(Boolean);
-  // the answer and its explanation are held to the cited text. "Not stated" notes say what the agreement lacks,
-  // so they may name terms from anywhere in it, but nothing that isn't in it. A "not found" answer is itself a
-  // statement of absence, so its negations ("no arbitration clause") aren't matched against the cited text.
+
   const absent = out.status === "not_found";
-  const agreementText = shown.filter((p) => p.binding !== false).map((p) => p.text);
-  const unofficialText = shown.filter((p) => p.binding === false).map((p) => p.text);
   // sentences of the explanation that discuss text the agreement labels as not binding ("The $450 figure is from
   // a marketing summary labeled not binding") are checked against that text, then shown as they are
   const NB_WORDS = /\b(?:not binding|non-binding|nonbinding|unofficial|superseded|draft|marketing|faq)\b/i;
   const explSentences = out.explanation.split(/(?<=[.!?])\s+/);
   const aboutUnofficial = unofficialText.length ? explSentences.filter((t) => NB_WORDS.test(t)) : [];
-  if (aboutUnofficial.length) {
-    const bad = unsupportedFacts(aboutUnofficial.join("\n"), [...unofficialText, ...support], allowed, question, { negations: false, names: [...agreementText, ...unofficialText] });
-    if (bad.length) return withheld(`The answer mentioned ${bad.slice(0, 6).join(", ")}, which the agreement doesn't contain, so it isn't shown.`);
-  }
   const explanationChecked = explSentences.filter((t) => !aboutUnofficial.includes(t)).join(" ");
   const said = [out.answer, explanationChecked].filter(Boolean).join("\n");
   const notes = out.not_stated.join("\n");
-  const unsupportedNotes = notes ? [...unsupportedFacts(notes, agreementText, allowed, question, { negations: false, checkNames: false, periods: false }), ...unsupportedPlaces(notes, agreementText, question)] : [];
-  if (unsupportedNotes.length) return withheld(`The answer's notes mentioned ${unsupportedNotes.slice(0, 6).join(", ")}, which the agreement doesn't contain, so it isn't shown.`);
-  // an answer that itself reads like instructions or talks about prompts isn't an answer about the agreement
-  if (QA_INSTRUCTION_RE.test(normalize(`${said}\n${notes}`)) || /\b(?:system prompt|my instructions|previous instructions)\b/i.test(`${said}\n${notes}`)) return withheld("The answer read like instructions rather than an answer about the agreement, so it isn't shown.");
-  const wrongQuotes = misquoted(said, support);
-  if (wrongQuotes.length) return withheld(`The answer quoted ${wrongQuotes.slice(0, 2).join(", ")}, which isn't what the agreement says, so it isn't shown.`);
-  // facts in the answer and explanation; negations are judged in the answer itself, where a flipped term would be
-  // stated (an explanation contrasts and qualifies: "governs how often invoices are sent, not the time to pay")
-  const unsupported = [...unsupportedFacts(said, support, allowed, question, { negations: false, names: agreementText }), ...(absent ? [] : unsupportedNegations(out.answer, support, withoutAbsence))];
-  if (unsupported.length) return withheld(`The answer mentioned ${unsupported.slice(0, 6).join(", ")}, which the quoted text doesn't contain, so it isn't shown.`);
-  // statements of absence ("nothing provides for a $0 fee") don't attach a figure to a term
-  const unbound = unboundValues(withoutAbsence(said), support, question, verified, fromQuestion, scenarioFigures(question));
-  if (unbound.length) return withheld(`The answer gave ${unbound.slice(0, 4).join(", ")} for something the quoted text gives a different figure for, so it isn't shown.`);
-  const places = unsupportedPlaces(said, support, question);
-  if (places.length) return withheld(`The answer mentioned ${places.join(", ")}, which the quoted text doesn't contain, so it isn't shown.`);
-  const swapped = roleSwaps(said, support, shown.map((p) => p.text).join("\n"));
-  if (swapped.length) return withheld(`The answer has the ${swapped[0]} doing something the quoted text gives to another party, so it isn't shown.`);
 
-  const extra = { explanation: out.explanation || undefined, calculations: out.calculations.length ? out.calculations : undefined, notStated: out.not_stated.length ? out.not_stated : undefined };
-  // an answer whose words are mostly not in the text it cites isn't tied to it; a looser paraphrase gets a note
-  // the same significant words on both sides of the ratio (no "the", "agreement", party labels or bare numbers)
-  // words count as supported by stem ("monthly" ~ "month") or synonym group ("fee" ~ "pay"), not only exactly
+  // instructions in the output
+  if (QA_INSTRUCTION_RE.test(normalize(`${said}\n${notes}`)) || /\b(?:system prompt|my instructions|previous instructions)\b/i.test(`${said}\n${notes}`)) return withheld("The answer read like instructions rather than an answer about the agreement, so it isn't shown.");
+
+  // arithmetic, listed or in the prose
+  let support = citations.map((c) => c.context ?? c.quote);
+  const calcs = checkCalculations([...out.calculations, ...impliedCalculations(`${out.answer}\n${out.explanation}`)], support, question, `${out.answer} ${out.explanation}`, agreementText);
+  if (calcs.failed.length) return withheld(`A calculation in the answer didn't check out (${calcs.failed.slice(0, 2).join("; ")}), so it isn't shown.`);
+  qualify.push(...calcs.qualified);
+  const allowed = new Set([...fromQuestion, ...calcs.verified, ...calcs.operands]);
+
+  if (aboutUnofficial.length) {
+    const bad = unsupportedFacts(aboutUnofficial.join("\n"), [...unofficialText, ...agreementText], allowed, question, { negations: false, periods: false, names: [...agreementText, ...unofficialText] });
+    if (bad.length) return withheld(`The answer mentioned ${bad.slice(0, 6).join(", ")}, which the agreement doesn't contain, so it isn't shown.`);
+  }
+  if (notes) {
+    const bad = [...unsupportedFacts(notes, agreementText, allowed, question, { negations: false, checkNames: false, periods: false }), ...unsupportedPlaces(notes, agreementText, question)];
+    if (bad.length) return withheld(`The answer's notes mentioned ${bad.slice(0, 6).join(", ")}, which the agreement doesn't contain, so it isn't shown.`);
+  }
+
+  // facts: figures, dates, names, places, contact details. Each must be in the cited text; one that's elsewhere in
+  // the agreement brings the passage it's in along as a source; one that's nowhere in it is blocked
+  const facts = (sup: string[]) => [...unsupportedFacts(said, sup, allowed, question, { negations: false, periods: false, names: agreementText }), ...unsupportedPlaces(said, sup, question)];
+  const quotesOff = (sup: string[]) => misquoted(said, sup);
+  let missing = [...facts(support), ...quotesOff(support)];
+  if (missing.length) {
+    const cited = new Set(citations.map((c) => c.passage));
+    const tokens = (xs: string[]) => xs.flatMap((x) => normalize(x).replace(/["“”]/g, "").split(/[^\p{L}\p{N}.]+/u)).filter((t) => t.length >= 2);
+    for (let round = 0; round < 6 && missing.length; round++) {
+      const want = tokens(missing);
+      let best: Passage | null = null;
+      let left = missing.length;
+      for (const p of binding) {
+        if (cited.has(p.id)) continue;
+        const t = normalize(p.text);
+        if (!want.some((w) => t.includes(w.replace(/:/g, " ").split(" ")[0]))) continue;
+        const n = [...facts([...support, p.text]), ...quotesOff([...support, p.text])].length;
+        if (n < left) { best = p; left = n; }
+      }
+      if (!best) break;
+      cited.add(best.id);
+      citations.push({ page: best.page, passage: best.id, quote: best.text, context: best.text, added: true });
+      support = [...support, best.text];
+      missing = [...facts(support), ...quotesOff(support)];
+    }
+  }
+  if (missing.length) {
+    const onlyUnofficial = unofficialText.length && facts([...support, ...unofficialText]).length < facts(support).length;
+    return withheld(onlyUnofficial
+      ? `The answer used ${missing.slice(0, 4).join(", ")} from text the agreement labels as not binding, so it isn't shown.`
+      : `The answer mentioned ${missing.slice(0, 6).join(", ")}, which the agreement doesn't contain, so it isn't shown.`);
+  }
+
+  // figures on the wrong term, parties swapped, negations that contradict the clause they're about
+  const unbound = unboundValues(stripRefutations(withoutAbsence(said), question), support, question, new Set([...calcs.verified, ...calcs.fromAgreement]), fromQuestion, scenarioFigures(question), agreementText);
+  if (unbound.length) return withheld(`The answer gave ${unbound.slice(0, 4).join(", ")} for something the agreement gives a different figure for, so it isn't shown.`);
+  const wrongPeriod = periodConflicts(said, support);
+  if (wrongPeriod.length) return withheld(`The answer gave ${wrongPeriod.join(", ")}, but the agreement states that figure for a different period, so it isn't shown.`);
+  const swapped = roleSwaps(said, support, shown.map((p) => p.text).join("\n"));
+  if (swapped.length) return withheld(`The answer has the ${swapped[0]} doing something the agreement gives to another party, so it isn't shown.`);
+  if (!absent) {
+    const neg = negationCheck(out.answer, support, question, withoutAbsence);
+    if (neg.block.length) return withheld(`The answer says ${neg.block.join(", ")} where the agreement's text doesn't, so it isn't shown.`);
+    if (neg.qualify.length) qualify.push(`the answer's ${neg.qualify.join(", ")} isn't stated in so many words in the quoted text`);
+  }
+  // rate words ("per week", "quarterly") the agreement doesn't use
+  const periods = unsupportedFacts(said, [...agreementText, question], allowed, question, { negations: false, checkNames: false }).filter((x) => x.startsWith("per "));
+  // how often something is paid or happens is a term, not a detail
+  if (periods.length) return withheld(`The answer said ${periods.join(", ")}, which the agreement doesn't say, so it isn't shown.`);
+
+  // wording: mostly absent from the whole agreement means the answer isn't about it; loosely worded gets a note
   const generic = (w: string) => COMMON_CAPS.has(w) || GENERIC_WORDS.has(w);
-  const supportWords = normalize(support.join(" ")).split(/[^\p{L}\p{N}]+/u);
-  const stems = new Set(supportWords.map(stemWord));
-  const groups = new Set(supportWords.map((w) => GROUP_OF.get(w)).filter((g) => g !== undefined));
-  const covered = (w: string) => stems.has(stemWord(w)) || (GROUP_OF.has(w) && groups.has(GROUP_OF.get(w)!));
+  const coveredBy = (sup: string[]) => {
+    const ws = normalize(sup.join(" ")).split(/[^\p{L}\p{N}]+/u);
+    const stems = new Set(ws.map(stemWord));
+    const groups = new Set(ws.map((w) => GROUP_OF.get(w)).filter((g) => g !== undefined));
+    return (w: string) => stems.has(stemWord(w)) || (GROUP_OF.has(w) && groups.has(GROUP_OF.get(w)!));
+  };
   const words = unsupportedWords(out.answer, []).filter((w) => !generic(w));
-  const extraWords = unsupportedWords(out.answer, support).filter((w) => !generic(w) && !covered(w));
-  const share = words.length ? extraWords.length / words.length : 0;
-  if (!absent && words.length >= 2 && share > LOOSE_WORDING) return withheld("Most of the answer's wording isn't in the text it cites, so it isn't shown.");
-  if (share > 0.5) warnings.push("Much of this answer is worded differently from the quoted text. Check it against the quotes.");
+  const share = (sup: string[]) => {
+    const covered = coveredBy(sup);
+    return words.length ? unsupportedWords(out.answer, sup).filter((w) => !generic(w) && !covered(w)).length / words.length : 0;
+  };
+  // the answer itself must be mostly in the words of the text it cites (sources attached above count)
+  // (the question's own words don't count: "unlimited liability" isn't supported because the user asked about liability)
+  if (!absent && words.length >= 2 && share(support) > LOOSE_WORDING) return withheld("Most of the answer's wording isn't in the text it cites, so it isn't shown.");
+  if (!absent && share(support) > 0.5) qualify.push("much of the answer is worded differently from the quoted text");
+
+  const extra: Partial<QaResult> = {
+    explanation: out.explanation || undefined,
+    calculations: out.calculations.length ? out.calculations : undefined,
+    notStated: out.not_stated.length ? out.not_stated : undefined,
+    verification: qualify.length ? "qualified" : "checked",
+    unverified: qualify.length ? [...new Set(qualify)] : undefined,
+  };
   return result(out.status, out.answer, extra);
 }
 

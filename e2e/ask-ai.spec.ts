@@ -30,7 +30,7 @@ const answer = (o: Partial<Record<string, unknown>>) => ({ status: "answered", e
 const script: Script = (q, ps, seen) => {
   if (/payment terms/i.test(q)) {
     const fee = find(ps, "$4,800");
-    return { answer: answer({ answer: "The Client pays $4,800 per month, and each invoice is payable within 20 days of receipt.", explanation: "Clause 1 sets both the monthly fee and the payment window.", not_stated: ["How invoices are to be sent."], citations: [{ passage: fee.id, quote: "The Client will pay a fee of $4,800 per month." }, { passage: fee.id, quote: "Invoices are payable within 20 days of receipt." }] }) };
+    return { answer: answer({ answer: "The Client pays $4,800 per month, and each invoice is payable within 20 days of receipt.", explanation: "Clause 1 sets both the monthly fee and the payment window. Overdue amounts accrue interest at 1.5% per month.", not_stated: ["How invoices are to be sent."], citations: [{ passage: fee.id, quote: "The Client will pay a fee of $4,800 per month." }, { passage: fee.id, quote: "Invoices are payable within 20 days of receipt." }] }) };
   }
   if (/month late/i.test(q)) {
     if (!seen.earlierTurns) return { status: 500 };
@@ -72,6 +72,9 @@ test("ask with AI: checked answers, explanations, verified arithmetic, follow-up
     await expect(a1.getByRole("region", { name: "Why" })).toContainText("Clause 1 sets both");
     await expect(a1.getByRole("region", { name: "Not stated in the agreement" })).toContainText("How invoices are to be sent.");
     await expect(a1.getByRole("region", { name: "Sources" }).locator("mark").first()).toHaveText("The Client will pay a fee of $4,800 per month.");
+    // the explanation used the late-payment clause it didn't cite: that passage is attached and labelled
+    await expect(a1.getByRole("region", { name: "Sources" })).toContainText("added by AgreementOS");
+    await expect(a1.getByRole("region", { name: "Sources" })).toContainText("1.5% per month");
 
     // follow-up: the earlier turn goes with it; the arithmetic is re-done before it's shown
     const a2 = await ask(page, "And if an invoice is paid a month late?", true);

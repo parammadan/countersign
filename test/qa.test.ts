@@ -130,7 +130,7 @@ describe("answers from a model are checked before they're shown", () => {
     expect(r.status).toBe("partial");
     expect(r.answer).not.toMatch(/\$1 /);
     expect(r.citations[0].quote).toContain("$4,800");
-    expect(r.warnings.join(" ")).toMatch(/\$1, which the quoted text doesn't contain/);
+    expect(r.warnings.join(" ")).toMatch(/\$1, which the agreement doesn.t contain/);
   });
 
   it("a 'not found' from the model shows the standard message, never the model's own text", async () => {

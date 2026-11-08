@@ -140,6 +140,11 @@ function report(name: string, cases: Case[], rows: Row[]) {
     shownCorrect: ran.filter(([c, r]) => shownOk(c, r)).length,
     modelCorrect: ran.filter(([c, r]) => rawOk(c, r)).length,
     withheld: withheld.length,
+    falseRejections: withheldButRight.length,
+    qualified: ran.filter(([, r]) => r.shown?.verification === "qualified").map(([c]) => c.id),
+    withAddedSources: ran.filter(([, r]) => r.shown?.citations.some((x) => x.added)).length,
+    // shown, but not matching the gold facts: each one is reviewed by hand for an incorrect material claim
+    shownNeedsReview: ran.filter(([c, r]) => r.shown && !r.shown.warnings.some((w) => /isn't shown/.test(w)) && !shownOk(c, r)).map(([c]) => c.id),
     shownWithDistractor: ran.filter(([c, r]) => r.shown && r.shown.status !== "not_found" && mentionsDistractor(c, r.shown.answer)).map(([c]) => c.id),
     withheldButModelRight: withheldButRight.map(([c]) => c.id),
     trapLeaks: `${trapLeaks.length}/${traps.length}`,

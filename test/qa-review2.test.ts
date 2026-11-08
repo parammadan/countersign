@@ -292,3 +292,34 @@ describe("real-model dev and security findings (real Claude wording)", () => {
     expect(r.status).not.toBe("answered");
   });
 });
+
+describe("two-level validation", () => {
+  const DOC = linesFromText(['Services Agreement between Harrow Example Ltd ("Provider") and Quill Sample Inc ("Client"). 1. Fees. The Client will pay $3,200 per month. 2. Term. The term is 12 months. 3. Late payment. Overdue amounts accrue interest at 1.5% per month.', "7. Storage. The Provider keeps 4 backup copies of Client data.", "9. Governing law. The laws of the State of Oregon govern this Agreement."]);
+  const ans = (o: Out) => answerWithModel(model(o), "What do the fees come to?", DOC);
+  it("blocks a total computed with a figure from an unrelated clause", async () => {
+    const r = await answerWithModel(model({ answer: "Fees come to $12,800.", calculations: [{ expression: "3200 * 4", result: "12800" }] }), "What do the fees come to?", DOC);
+    expect(r.status).not.toBe("answered");
+  });
+  it("a fact from another clause brings its passage along as a source, marked as added", async () => {
+    const p: ModelProvider = { name: "s", model: "s", complete: async (r) => {
+      const fee = [...((r.context ?? "") + r.document).matchAll(/<passage id="([^"]+)" page="\d+">([\s\S]*?)<\/passage>/g)].find((m) => m[2].includes("$3,200"))!;
+      return { status: "answered", answer: "The Client pays $3,200 per month.", explanation: "Separately, the agreement is governed by Oregon law.", calculations: [], not_stated: [], citations: [{ passage: fee[1], quote: "The Client will pay $3,200 per month." }] };
+    } };
+    const r = await answerWithModel(p, "What do the fees come to?", DOC);
+    expect(r.status, r.warnings.join(" / ")).toBe("answered");
+    expect(r.verification).toBe("checked");
+    expect(r.citations.some((c) => c.added && /Oregon/.test(c.context ?? ""))).toBe(true);
+  });
+  it("blocks a figure that is nowhere in the agreement even if it's labelled 'approximately'", async () => {
+    expect((await ans({ answer: "Fees come to approximately $40,000." })).status).not.toBe("answered");
+  });
+  it("a payment cadence the agreement doesn't state is blocked, not qualified", async () => {
+    expect((await ans({ answer: "The Client pays $3,200 per month, settled weekly in practice." })).status).not.toBe("answered");
+  });
+  it("a faithful but loose paraphrase is shown, marked partly verified, saying why", async () => {
+    const r = await ans({ answer: "Quill is billed $3,200 monthly for ongoing advisory support." });
+    expect(r.status, r.warnings.join(" / ")).toBe("answered");
+    expect(r.verification).toBe("qualified");
+    expect((r.unverified ?? []).join(" ")).toMatch(/worded differently/);
+  });
+});

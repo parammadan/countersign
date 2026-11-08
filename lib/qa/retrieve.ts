@@ -84,6 +84,8 @@ export function terms(s: string): string[] {
 }
 
 /** Short passages: one or two sentences, never across pages, never over ~400 characters. */
+/** A passage is one or more whole sentences; joining stops near 400 characters, but a single sentence isn't cut short of this. */
+const MAX_PASSAGE = 2000;
 export function passages(pages: PageLines[]): { passages: Passage[]; excluded: Passage[] } {
   const out: Passage[] = [];
   const excluded: Passage[] = [];
@@ -127,14 +129,15 @@ export function passages(pages: PageLines[]): { passages: Passage[]; excluded: P
     for (let i = 0; i < sentences.length; i++) {
       // never evidence; set aside on its own, so the clause next to it stays usable, and the answer can mention it
       if (aside[i]) {
-        excluded.push({ id: `p${p.page}-${aside[i]}${i}`, page: p.page, text: sentences[i].slice(0, 400), seq: seq++, ...(aside[i] === "n" ? { binding: false as const } : {}) });
+        excluded.push({ id: `p${p.page}-${aside[i]}${i}`, page: p.page, text: sentences[i].slice(0, MAX_PASSAGE), seq: seq++, ...(aside[i] === "n" ? { binding: false as const } : {}) });
         continue;
       }
       let text = sentences[i];
       // short sentences ("2. Term.") join the next one so the passage carries its meaning; never across a
       // sentence that's set aside, so a passage stays one verbatim run
       while (text.length < 120 && i + 1 < sentences.length && !aside[i + 1] && (text + " " + sentences[i + 1]).length <= 400) text += " " + sentences[++i];
-      out.push({ id: `p${p.page}-${++n}`, page: p.page, text: text.slice(0, 400), seq: seq++ });
+      // a long sentence is kept whole (cutting it would hide its end from the model and from the checks)
+      out.push({ id: `p${p.page}-${++n}`, page: p.page, text: text.slice(0, MAX_PASSAGE), seq: seq++ });
     }
   }
   return { passages: out, excluded };

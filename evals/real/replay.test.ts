@@ -24,7 +24,7 @@ describe.skipIf(!FILE)("replay saved real-model responses", () => {
       const ok = c.gold.status === "not_found" ? out.status === "not_found" : out.status !== "not_found" && c.gold.facts.every((f) => containsFact(text, f));
       if (ok) correct++;
       if (out.warnings.some((w) => /isn't shown/.test(w))) withheld++;
-      if (c.gold.traps.some((t) => qn(text).includes(qn(t)))) trapLeaks++;
+      if (c.gold.traps.some((t) => qn(text).includes(qn(t)))) { trapLeaks++; console.log(`[trap] ${r.id}: ${out.status}/${out.verification} | ${out.answer.slice(0, 220)} || ${(out.explanation ?? "").slice(0, 220)}`); }
       console.log(`[replay] ${r.id}: was ${r.shown?.status ?? "-"} -> now ${out.status} ${ok ? "OK" : "WRONG"} | ${out.warnings.filter((w) => /isn't shown/.test(w)).join(" / ")}`);
     }
     console.log(`[replay-summary] ${n} responses: shown correct ${correct}/${n}, withheld ${withheld}, trap leaks ${trapLeaks}`);

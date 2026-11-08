@@ -47,7 +47,13 @@ function locate(context: string, quote: string): { at: number; len: number } | n
 }
 
 /** One passage with every quote taken from it highlighted, so a fragment can't hide its context. */
-function Source({ context, quotes, page }: { context?: string; quotes: string[]; page: number }) {
+function Source({ context, quotes, page, added }: { context?: string; quotes: string[]; page: number; added?: boolean }) {
+  if (added && context) return (
+    <figure className="border-l-2 border-dashed border-line-strong pl-3 text-[13px] leading-relaxed text-ink-2">
+      <blockquote className="break-words">“{context}”</blockquote>
+      <figcaption className="mt-0.5 text-xs text-muted">Page {page} · added by AgreementOS: the answer also relies on this passage</figcaption>
+    </figure>
+  );
   if (!context) return (
     <figure className="border-l-2 border-brand/40 pl-3 text-[13px] leading-relaxed text-ink-2">
       <blockquote className="break-words">{quotes.map((q, i) => <span key={i}>“<mark className="rounded bg-brand-soft px-0.5 text-ink">{q}</mark>” </span>)}</blockquote>
@@ -78,11 +84,13 @@ function Source({ context, quotes, page }: { context?: string; quotes: string[];
 }
 
 function sources(cs: Citation[]) {
-  const by = new Map<string, { context?: string; quotes: string[]; page: number }>();
+  const by = new Map<string, { context?: string; quotes: string[]; page: number; added: boolean }>();
   cs.forEach((c, i) => {
     const key = c.context ? `${c.page}:${c.context}` : `q${i}`;
-    const g = by.get(key) ?? { context: c.context, quotes: [], page: c.page };
-    g.quotes.push(c.quote);
+    const g = by.get(key) ?? { context: c.context, quotes: [], page: c.page, added: !!c.added };
+    // an attached passage is shown whole, without highlighting all of it
+    if (!c.added) g.quotes.push(c.quote);
+    g.added = g.added && !!c.added;
     by.set(key, g);
   });
   return [...by.values()];
@@ -102,8 +110,16 @@ function Turn({ h }: { h: QaEntry }) {
       <article aria-label={`Answer to: ${h.question}`} className="rounded-lg border border-line bg-white p-4 shadow-1">
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
           <Badge tone={TONE[r.status]}>{QA_STATUS_LABEL[r.status]}</Badge>
-          <span>{ai ? `Claude (${r.model}) · checked against the agreement` : "Quoted passages, no AI"}</span>
+          {ai && r.verification === "qualified" && <Badge tone="warn">Partly verified</Badge>}
+          <span>{ai ? `Claude (${r.model}) · ${r.verification === "qualified" ? "partly verified against the agreement" : "checked against the agreement"}` : "Quoted passages, no AI"}</span>
         </div>
+        {ai && r.verification === "qualified" && r.unverified && r.unverified.length > 0 && (
+          <div className="mt-2" role="note" aria-label="Verification notice">
+            <Notice tone="warn">
+              AgreementOS checked this answer&apos;s sources, figures, names and arithmetic against the agreement, but couldn&apos;t confirm everything: {r.unverified.join("; ")}. Read the sources below before relying on it.
+            </Notice>
+          </div>
+        )}
         <p className="mt-2 text-[15px] leading-relaxed whitespace-pre-line break-words text-ink">{r.answer}</p>
         {r.explanation && (
           <section className="mt-3" aria-label="Why">
