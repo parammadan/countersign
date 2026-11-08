@@ -49,6 +49,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
+          <LinkButton href={`/app/agreements/${version.id}/understand`} variant="secondary" icon="spark">What it says</LinkButton>
           {here.live && !archived && <LinkButton href={`/app/files/new?template=${template.id}`} icon="plus">Use for a new file</LinkButton>}
           {version.status === "published" && admin && !archived && (
             entry.draft ? (
