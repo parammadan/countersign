@@ -55,7 +55,7 @@ describe("questions about an agreement", () => {
       model: "fake-1",
       complete: async (r) => {
         r.onUsage?.({ inputTokens: 1500, outputTokens: 120 });
-        const m = r.document.match(/<passage id="([^"]+)"[^>]*>([^<]{20,})<\/passage>/)!;
+        const m = ((r.context ?? "") + r.document).match(/<passage id="([^"]+)"[^>]*>([^<]{20,})<\/passage>/)!;
         return { status: "answered", answer: m[2].slice(0, 60), citations: [{ passage: m[1], quote: m[2].slice(0, 60) }] };
       },
     };
@@ -136,5 +136,56 @@ describe("questions about an agreement", () => {
     }
     expect(db.one<{ n: number }>("SELECT COUNT(*) n FROM qa_answers WHERE workspace_id = 'ws_a'")!.n).toBe(before + 1);
     expect(Q.recentAnswers("ws_a", vid, 500).some((h) => h.askedBy === "j@example.com")).toBe(false);
+  });
+
+  it("a follow-up continues the asker's own conversation, with earlier turns as context; others can't join it", async () => {
+    const seen: string[] = [];
+    const p: ModelProvider = {
+      name: "fake",
+      model: "claude-opus-5-5",
+      complete: async (r) => {
+        seen.push(r.document);
+        r.onUsage?.({ inputTokens: 300, outputTokens: 500, cacheWriteTokens: 4000, cacheReadTokens: 0 });
+        const m = ((r.context ?? "") + r.document).match(/<passage id="([^"]+)"[^>]*>([^<]{20,})<\/passage>/)!;
+        return { status: "answered", answer: m[2].slice(0, 60), citations: [{ passage: m[1], quote: m[2].slice(0, 60) }] };
+      },
+    };
+    const kim = { id: "u_kim", email: "kim@example.com" };
+    const first = await Q.askQuestion("ws_a", vid, kim, "What are the payment terms?", p);
+    const second = await Q.askQuestion("ws_a", vid, kim, "And when are they due?", p, first);
+    expect(seen[1]).toContain("<earlier_turns>");
+    expect(seen[1]).toContain("What are the payment terms?");
+    const turns = Q.conversation("ws_a", vid, first);
+    expect(turns.map((t) => t.id)).toEqual([first, second]);
+    expect(Q.conversations("ws_a", vid).find((t) => t.id === first)).toMatchObject({ turns: 2, firstQuestion: "What are the payment terms?" });
+    // someone else, or another workspace, can't continue it
+    await expect(Q.askQuestion("ws_a", vid, { id: "u_lee", email: "lee@example.com" }, "And the fee?", p, first)).rejects.toThrow(/conversation wasn't found/);
+    await expect(Q.askQuestion("ws_b", vid, kim, "And the fee?", p, first)).rejects.toThrow(files.AppError);
+    expect(() => Q.conversation("ws_b", vid, first)).toThrow(files.AppError);
+  });
+
+  it("records what each AI answer cost, including prompt-cache tokens", () => {
+    const row = db.one<{ cost_microusd: number; cache_write_tokens: number }>("SELECT cost_microusd, cache_write_tokens FROM qa_answers WHERE asked_by = 'kim@example.com' ORDER BY rowid LIMIT 1")!;
+    // 300 x $4 + 500 x $20 + 4000 x $5 per million tokens = $0.0312
+    expect(row).toEqual({ cost_microusd: 31_200, cache_write_tokens: 4000 });
+  });
+
+  it("past the daily AI budget, answers fall back to passages and say why; no model call is made", async () => {
+    let called = 0;
+    const p: ModelProvider = { name: "fake", model: "claude-opus-5-5", complete: async () => { called++; return {}; } };
+    const before = process.env.AI_DAILY_BUDGET_USD;
+    process.env.AI_DAILY_BUDGET_USD = "0.05"; // already spent: 2 x $0.0312
+    try {
+      await Q.askQuestion("ws_a", vid, { id: "u_mo", email: "mo@example.com" }, "What are the payment terms?", p);
+    } finally {
+      if (before === undefined) delete process.env.AI_DAILY_BUDGET_USD;
+      else process.env.AI_DAILY_BUDGET_USD = before;
+    }
+    expect(called).toBe(0);
+    const [h] = Q.recentAnswers("ws_a", vid);
+    expect(h.result.mode).toBe("passages");
+    expect(h.result.warnings[0]).toMatch(/spending limit/);
+    expect(Q.aiDailyBudgetUsd({})).toBe(5);
+    expect(Q.aiDailyBudgetUsd({ AI_DAILY_BUDGET_USD: "abc" })).toBe(5);
   });
 });
