@@ -56,7 +56,7 @@ describe("questions about an agreement", () => {
       complete: async (r) => {
         r.onUsage?.({ inputTokens: 1500, outputTokens: 120 });
         const m = r.document.match(/<passage id="([^"]+)"[^>]*>([^<]{20,})<\/passage>/)!;
-        return { status: "answered", answer: "See the quoted terms.", citations: [{ passage: m[1], quote: m[2].slice(0, 60) }] };
+        return { status: "answered", answer: m[2].slice(0, 60), citations: [{ passage: m[1], quote: m[2].slice(0, 60) }] };
       },
     };
     await Q.askQuestion("ws_a", vid, { id: "u_bob", email: "bob@example.com" }, "What are the payment terms?", p);
@@ -103,5 +103,38 @@ describe("questions about an agreement", () => {
     const text = events.map((e) => e.data_json).join("\n");
     expect(text).not.toMatch(/payment terms|invoices due|quoted terms/i);
     expect(JSON.parse(events[0].data_json)).toHaveProperty("mode");
+  });
+
+  it("a failed model call still records what it cost, and the passages are shown", async () => {
+    db.run("DELETE FROM qa_answers WHERE id LIKE 'qa_fill%'"); // the daily-cap test above filled the allowance
+    const failing: ModelProvider = { name: "x", model: "x", complete: async (r) => { r.onUsage?.({ inputTokens: 2100, outputTokens: 4000 }); throw new Error("cut off"); } };
+    await Q.askQuestion("ws_a", vid, { id: "u_h", email: "h@example.com" }, "What are the payment terms?", failing);
+    const row = db.one<{ mode: string; input_tokens: number; output_tokens: number }>("SELECT mode, input_tokens, output_tokens FROM qa_answers WHERE asked_by = 'h@example.com'")!;
+    expect(row).toEqual({ mode: "model_failed", input_tokens: 2100, output_tokens: 4000 });
+  });
+
+  it("dismissed M2.1 findings aren't used in answers", async () => {
+    const S = await import("../lib/understand/store");
+    await S.analyzeVersion("ws_a", vid, alice.email);
+    const a = S.latestAnalysis("ws_a", vid)!;
+    const fee = a.result.findings.find((f) => f.category === "payment" && f.status === "stated" && f.value)!;
+    S.reviewFinding("ws_a", a.id, fee.id, "dismissed", alice.email);
+    await Q.askQuestion("ws_a", vid, { id: "u_i", email: "i@example.com" }, "What are the payment terms?", null);
+    const [h] = Q.recentAnswers("ws_a", vid);
+    expect(h.result.answer).not.toContain(`${fee.label}: ${fee.value}`);
+  });
+
+  it("an attempt that fails before answering still counts, and pending or failed attempts aren't listed", async () => {
+    const before = db.one<{ n: number }>("SELECT COUNT(*) n FROM qa_answers WHERE workspace_id = 'ws_a'")!.n;
+    const p = path.join(dir, "blobs", `ws/ws_a/templates/${vid}/agreement.pdf`);
+    const orig = fs.readFileSync(p);
+    fs.writeFileSync(p, Buffer.concat([orig, Buffer.from("%x")]));
+    try {
+      await expect(Q.askQuestion("ws_a", vid, { id: "u_j", email: "j@example.com" }, "What is the fee?", null)).rejects.toThrow(/fingerprint/);
+    } finally {
+      fs.writeFileSync(p, orig);
+    }
+    expect(db.one<{ n: number }>("SELECT COUNT(*) n FROM qa_answers WHERE workspace_id = 'ws_a'")!.n).toBe(before + 1);
+    expect(Q.recentAnswers("ws_a", vid, 500).some((h) => h.askedBy === "j@example.com")).toBe(false);
   });
 });
