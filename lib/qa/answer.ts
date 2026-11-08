@@ -109,7 +109,7 @@ const COMMON_CAPS = new Set(["client", "provider", "consultant", "firm", "compan
  * what the document doesn't say ("doesn't specify a deadline") don't count as negations, and page references are
  * the app's own metadata.
  */
-export function unsupportedFacts(answer: string, quotes: string[], allowed: Set<string> = new Set(), question = "", o: { negations?: boolean } = {}): string[] {
+export function unsupportedFacts(answer: string, quotes: string[], allowed: Set<string> = new Set(), question = "", o: { negations?: boolean; names?: string[] } = {}): string[] {
   answer = stripPageRefs(answer);
   const hay = normalize(quotes.join(" \n "));
   const out: string[] = [];
@@ -129,11 +129,13 @@ export function unsupportedFacts(answer: string, quotes: string[], allowed: Set<
   for (const m of a.matchAll(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+|\b(?:https?:\/\/|www\.)\S+/g)) if (!hay.includes(m[0].replace(/[.,;:)]+$/, ""))) out.push(m[0]);
   // negations must be supported where the cited text talks about the same thing, not anywhere in it
   if (o.negations !== false) out.push(...unsupportedNegations(answer, quotes, withoutAbsence));
-  // names: every capitalised word must be in the quotes, unless it's a common word that starts sentences
+  // names: every capitalised word must be in the agreement (a clause heading or a party named elsewhere is
+  // fine; who does what is checked separately), unless it's a common word that starts sentences
+  const nameWords = o.names ? new Set(normalize(o.names.join(" \n ")).split(/[^\p{L}\p{N}]+/u)) : words;
   for (const m of answer.normalize("NFKC").slice(0, MAX_FACT_TEXT).matchAll(/\b([A-Z][\p{L}'’-]+)/gu)) {
     const w = normalize(m[1]).replace(/'s$/, "");
     // spelled-out numbers ("One month late") are checked as numbers, above
-    if (!COMMON_CAPS.has(w) && !words.has(w) && !new RegExp(`^(?:${NUMWORD})$`).test(w)) out.push(m[1]);
+    if (!COMMON_CAPS.has(w) && !words.has(w) && !nameWords.has(w) && !new RegExp(`^(?:${NUMWORD})$`).test(w)) out.push(m[1]);
   }
   const tokens = unsupportedTokens(answer.slice(0, MAX_FACT_TEXT), quotes.map(prep)).filter((t) => {
     const n = [...numbersIn(t)];
@@ -372,7 +374,7 @@ export async function answerWithModel(
   if (QA_INSTRUCTION_RE.test(normalize(`${said}\n${notes}`)) || /\b(?:system prompt|my instructions|previous instructions)\b/i.test(`${said}\n${notes}`)) return withheld("The answer read like instructions rather than an answer about the agreement, so it isn't shown.");
   const wrongQuotes = misquoted(said, support);
   if (wrongQuotes.length) return withheld(`The answer quoted ${wrongQuotes.slice(0, 2).join(", ")}, which isn't what the agreement says, so it isn't shown.`);
-  const unsupported = unsupportedFacts(said, support, allowed, question, { negations: !absent });
+  const unsupported = unsupportedFacts(said, support, allowed, question, { negations: !absent, names: agreementText });
   if (unsupported.length) return withheld(`The answer mentioned ${unsupported.slice(0, 6).join(", ")}, which the quoted text doesn't contain, so it isn't shown.`);
   const unbound = unboundValues(said, support, question, verified, fromQuestion, scenarioFigures(question));
   if (unbound.length) return withheld(`The answer gave ${unbound.slice(0, 4).join(", ")} for something the quoted text gives a different figure for, so it isn't shown.`);
