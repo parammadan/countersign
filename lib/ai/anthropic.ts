@@ -14,16 +14,26 @@ export class ProviderError extends Error {}
 export function configuredProvider(env: Record<string, string | undefined> = process.env): ModelProvider | null {
   if (env.AI_PROVIDER !== "anthropic" || !env.ANTHROPIC_API_KEY) return null;
   const effort = (["low", "medium", "high"] as const).find((e) => e === env.AI_EFFORT) ?? "medium";
-  return anthropicProvider({ apiKey: env.ANTHROPIC_API_KEY, model: env.AI_MODEL || AI_MODEL_DEFAULT, effort });
+  return anthropicProvider({ apiKey: env.ANTHROPIC_API_KEY, model: env.AI_MODEL || AI_MODEL_DEFAULT, effort, baseURL: testEndpoint(env) });
+}
+
+/**
+ * Browser tests run the app against a local stand-in for the API (scripted answers, no cost). Only a loopback
+ * http address is accepted, and only with AI_TEST_ENDPOINT set explicitly; anything else means the real API.
+ */
+export function testEndpoint(env: Record<string, string | undefined>): string | undefined {
+  const u = env.AI_TEST_ENDPOINT;
+  if (!u) return undefined;
+  return /^http:\/\/(?:127\.0\.0\.1|localhost):\d{2,5}$/.test(u) ? u : undefined;
 }
 
 type Client = Pick<Anthropic, "beta">;
 
-export function anthropicProvider(o: { apiKey?: string; model: string; effort?: Effort; client?: Client }): ModelProvider {
+export function anthropicProvider(o: { apiKey?: string; model: string; effort?: Effort; client?: Client; baseURL?: string }): ModelProvider {
   // one retry for transient errors; the caller's deadline bounds the total time
   // no SDK logging (request bodies hold agreement text), and the key only ever goes to Anthropic's API, whatever
   // ANTHROPIC_BASE_URL says
-  const client: Client = o.client ?? new Anthropic({ apiKey: o.apiKey, maxRetries: 1, logLevel: "off", baseURL: "https://api.anthropic.com" });
+  const client: Client = o.client ?? new Anthropic({ apiKey: o.apiKey, maxRetries: 1, logLevel: "off", baseURL: o.baseURL ?? "https://api.anthropic.com" });
   return {
     name: "anthropic",
     model: o.model,
@@ -33,7 +43,18 @@ export function anthropicProvider(o: { apiKey?: string; model: string; effort?: 
           model: o.model,
           max_tokens: req.maxOutputTokens,
           system: req.system,
-          messages: [{ role: "user", content: req.document }],
+          // the agreement first, marked for caching, so follow-up questions about the same version re-read it cheaply
+          messages: [
+            {
+              role: "user",
+              content: req.context
+                ? [
+                    { type: "text", text: req.context, cache_control: { type: "ephemeral" } },
+                    { type: "text", text: req.document },
+                  ]
+                : req.document,
+            },
+          ],
           output_config: { effort: o.effort ?? "medium", format: { type: "json_schema", schema: toProviderSchema(req.schema) } },
           // a policy decline is re-run server-side on Anthropic's recommended fallback model
           betas: ["server-side-fallback-2026-07-01"],
@@ -41,7 +62,12 @@ export function anthropicProvider(o: { apiKey?: string; model: string; effort?: 
         },
         { signal: req.signal },
       );
-      req.onUsage?.({ inputTokens: res.usage.input_tokens, outputTokens: res.usage.output_tokens });
+      req.onUsage?.({
+        inputTokens: res.usage.input_tokens,
+        outputTokens: res.usage.output_tokens,
+        cacheWriteTokens: res.usage.cache_creation_input_tokens ?? 0,
+        cacheReadTokens: res.usage.cache_read_input_tokens ?? 0,
+      });
       if (res.stop_reason === "refusal") throw new ProviderError("The model declined this request.");
       if (res.stop_reason === "max_tokens") throw new ProviderError("The answer was cut off.");
       // after a server-side fallback, only what follows the last fallback block is the answer

@@ -17,8 +17,27 @@ const QA_EXTRA = [
   String.raw`\b(?:ai )?assistants? (?:reading|processing|reviewing) (?:this|the)\b[^.]{0,40}?\b(?:must|should|shall)\b`,
   String.raw`^\s*(?:q|question|a|answer)\s*:\s`,
   String.raw`\b${ANSWER_VERB}\s+that\s+(?:the\s+)?(?:fees?|client|customer|agreement|amount|payment|price|signatures?)\b`,
+  // a sentence that tells the reader's software what to tell its user, or speaks to it as "you"
+  String.raw`^\W*(?:tell|inform|let|show|assure|convince)\s+(?:the\s+)?(?:user|reader|requester|person asking|human)\b`,
+  // "you must say that...", "you should answer only with..." (but not "you must tell us within 14 days")
+  String.raw`\byou (?:must|should|shall|need to|are to|will) (?:now |always |only )?(?:say|answer|reply|respond|output|print|claim)\s+(?:that|with|only|exactly|"|“|the word|the following)`,
+  String.raw`\[\s*(?:system|assistant|admin|instructions?|developer|prompt)\s*\]|<\s*/?\s*(?:system|instructions?)\s*>`,
+  String.raw`\b(?:reveal|print|repeat|show|output)\b[^.]{0,30}\b(?:system prompt|your (?:instructions|prompt|rules))\b`,
 ].join("|");
 export const QA_INSTRUCTION_RE = new RegExp(`${INSTRUCTION_RE.source}|${QA_EXTRA}`, "i");
+
+/**
+ * Text the agreement itself labels as not part of its terms ("Marketing summary (not binding): ...",
+ * "Superseded draft: ...", "Unofficial FAQ: ..."). It stays visible (so the reader can be told it exists) but an
+ * answer can't rely on it.
+ */
+export const NON_BINDING_RE = new RegExp(
+  [
+    String.raw`^(?:[a-z][\w ]{0,30}\.\s+)?(?:marketing (?:summary|copy|material|overview)|unofficial (?:faq|summary|notes?|guide|overview)|superseded (?:drafts?|versions?|terms)|draft (?:summary|version|terms|overview)|faq|sales (?:summary|sheet))\b`,
+    String.raw`\((?:not (?:legally )?binding|non-binding|unofficial|superseded|draft only|for discussion only)\)`,
+  ].join("|"),
+  "i",
+);
 import { pageText, type PageLines } from "../understand/text";
 
 export type Passage = { id: string; page: number; text: string };
@@ -43,6 +62,7 @@ const GROUPS: string[][] = [
   ["insurance", "insure", "insured", "coverage"],
   ["data", "personal", "privacy", "gdpr", "protection"],
 ];
+const GENERIC = new Set(["agreement", "agreements", "contract", "contracts", "document", "documents", "letter", "terms", "clause", "clauses", "section", "include", "includes", "say", "says", "state", "states", "mention", "mentions", "tell", "anything", "there", "much", "many", "need", "needed", "needs", "happen", "happens", "get", "gets", "allowed", "able", "possible", "specific", "exactly", "kind", "type", "apply", "applies", "give", "given", "know", "explain", "actually"]);
 const GROUP_OF = new Map<string, number>();
 GROUPS.forEach((g, i) => g.forEach((w) => GROUP_OF.set(w, i)));
 
@@ -88,9 +108,15 @@ export function retrieve(question: string, all: Passage[], o: RetrieveOptions = 
   const q = terms(question);
   if (!q.length || !all.length) return [];
   const qStems = new Set(q.map(stem));
-  // a question's concepts: a synonym group, or the word itself; coverage = share of them a passage mentions
+  // a question's concepts: a synonym group, or the word itself; coverage = share of them a passage mentions.
+  // Names ("the Alder Row Legal agreement") and words like "agreement" say which document, not what about it,
+  // so they don't count toward coverage (they still score).
   const concept = (w: string) => (GROUP_OF.has(w) ? `g${GROUP_OF.get(w)}` : stem(w));
-  const qConcepts = new Set(q.map(concept));
+  const names = new Set(
+    [...question.normalize("NFKC").matchAll(/(?<=\S\s+)([A-Z][\p{L}'’&-]*)/gu)].map((m) => normalize(m[1]).replace(/'s$/, "")).filter((w) => !GROUP_OF.has(w)),
+  );
+  const topical = q.filter((w) => !names.has(w) && !GENERIC.has(w));
+  const qConcepts = new Set((topical.length ? topical : q).map(concept));
   const qGroups = new Set(q.map((w) => GROUP_OF.get(w)).filter((g): g is number => g !== undefined));
   const docs = all.map((p) => terms(p.text));
   const avg = docs.reduce((a, d) => a + d.length, 0) / docs.length || 1;
