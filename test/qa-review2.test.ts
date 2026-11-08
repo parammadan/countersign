@@ -323,3 +323,53 @@ describe("two-level validation", () => {
     expect((r.unverified ?? []).join(" ")).toMatch(/worded differently/);
   });
 });
+
+describe("review of two-level validation: wrong material claims are blocked", () => {
+  // one clause per page, so each is its own cited passage
+  const D = linesFromText([
+    'Consulting Agreement between Harrow Example Ltd ("Provider") and Quill Sample Inc ("Client").',
+    "1. Fees. The Client will pay $3,200 per month, payable within 15 days of invoice.",
+    "2. Termination. Either party may terminate on 45 days' written notice. Fees already paid are not refundable.",
+    "3. Liability. The Provider's total liability is limited to the fees paid in the 12 months before the claim.",
+    "4. Late payment. Overdue amounts accrue interest at 1.5% per month.",
+    "5. Insurance. The Provider shall maintain professional liability insurance of $1,000,000.",
+    "6. Renewal. Fees may increase by up to 5% at each annual renewal.",
+    "7. Support. The Provider will reply to support requests within 48 hours.",
+    "8. Notices. Notices go to legal@harrow.example.",
+    "Schedule A. Marketing summary (not binding): the fee drops to $450 per month and notice is 7 days.",
+  ]);
+  const cite = (re: RegExp) => (r: { context?: string; document: string }) => [...((r.context ?? "") + r.document).matchAll(/<passage id="([^"]+)" page="\d+">([\s\S]*?)<\/passage>/g)].filter((m) => re.test(m[2])).map((m) => ({ passage: m[1], quote: m[2].slice(0, 200) }));
+  const only = (re: RegExp, o: Out): ModelProvider => ({ name: "s", model: "s", complete: async (r) => ({ status: "answered", explanation: "", calculations: [], not_stated: [], ...o, citations: cite(re)(r) }) });
+  const cases: [string, string, RegExp, Out][] = [
+    ["a figure from another clause attached to the wrong term", "What's the liability cap?", /Liability\./, { answer: "The Provider's liability is capped at $1,000,000." }],
+    ["a hedged money negation", "Does the client owe anything after terminating?", /Termination/, { answer: "The Client likely owes nothing after terminating." }],
+    ["an annual fee the agreement charges monthly", "What is the fee?", /Fees\./, { answer: "The Client pays an annual fee of $3,200." }],
+    ["a monthly rate stated as yearly", "What interest applies?", /Late payment/, { answer: "Interest accrues at 1.5% per year." }],
+    ["a decimal rate from an unrelated clause", "Late interest on a $3,200 invoice a month late?", /Late payment|Fees\./, { answer: "Interest of $160 is due.", calculations: [{ expression: "3200 * 0.05", result: "160" }] }],
+    ["a leading figure with 'once'", "We were told the notice period is 30 days now. How do we terminate?", /Termination/, { answer: "Once you give 30 days' written notice, either party may terminate." }],
+    ["a sycophantic 'claim that' confirmation", "Is the notice period 30 days?", /Termination/, { answer: "Yes. The claim that either party may terminate on 30 days' written notice matches the agreement." }],
+    ["'as the client' isn't a premise", "As the client, is notice required to terminate?", /Termination/, { answer: "No notice is required to terminate." }],
+    ["a month the agreement doesn't name", "When does it renew?", /Renewal/, { answer: "It renews each May for a one-year term." }],
+    ["a negation in the explanation that contradicts the clause", "Can the client end it?", /Termination/, { answer: "Either party may terminate on 45 days' written notice.", explanation: "The Client cannot terminate the agreement on written notice." }],
+    ["a non-binding figure presented as a term", "What is the fee?", /Fees\./, { answer: "The Client pays $3,200 per month.", explanation: "Under the agreement the fee drops to $450 per month, per the marketing summary." }],
+    ["a figure the question asserts, used in a calculation", "The monthly fee is $5,000 - what will we pay over a year?", /Fees\./, { answer: "You will pay $60,000 over a year.", calculations: [{ expression: "5000 * 12", result: "60000" }] }],
+    ["a made-up party opening a sentence", "Who pays?", /Fees\./, { answer: "Brightline will pay $3,200 per month." }],
+  ];
+  for (const [what, q, re, o] of cases)
+    it(what, async () => {
+      const r = await answerWithModel(only(re, o), q, D);
+      expect(r.status === "answered" || r.status === "not_found" ? r.verification : "blocked", `${r.status} ${r.warnings.join(" / ")}`).not.toBe("checked");
+      expect(r.answer).not.toBe(o.answer);
+    });
+  const shown: [string, string, RegExp, Out][] = [
+    ["a percentage result", "What is the yearly interest rate equivalent?", /Late payment/, { answer: "That is 18% over a year.", calculations: [{ expression: "1.5% * 12", result: "18%" }] }],
+    ["two months late", "What is the interest on a $3,200 invoice two months late?", /Late payment/, { answer: "$96 of interest.", calculations: [{ expression: "3200 * 1.5% * 2", result: "96" }] }],
+    ["a plain can't", "Can the client end it sooner than 45 days?", /Termination/, { answer: "No, you can't end it sooner: either party may terminate on 45 days' written notice." }],
+    ["a disclaimed non-binding figure", "Is the $450 in the marketing summary binding?", /Fees\./, { answer: "No. The $450 figure comes from a marketing summary that is not binding; the Client will pay $3,200 per month." }],
+  ];
+  for (const [what, q, re, o] of shown)
+    it(`shows: ${what}`, async () => {
+      const r = await answerWithModel(only(re, o), q, D);
+      expect(r.status, r.warnings.join(" / ")).toBe("answered");
+    });
+});

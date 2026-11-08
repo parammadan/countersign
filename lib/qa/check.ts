@@ -22,7 +22,9 @@ const ABSENCE: RegExp[] = [
   // the subject left implicit: "...but doesn't define 'promptly'", "it doesn't give a day count"
   /\b(?:does|do|did)\s*(?:n['’]?t|not)\s+(?:\w+\s+)?(?:specify|state|say|mention|set|set out|give|define|address|include|provide|cover|explain|indicate|identify|list|name|contain|quantify|explain)\b/g,
   /\b(?:isn['’]?t|is not|aren['’]?t|are not)\s+(?:specified|stated|defined|set out|given|mentioned|addressed|explained|identified|quantified|covered)\b/g,
-  /\bno\s+(?:clause|section|provision|term|mention|reference|definition)\b/g,
+  /\bno\s+(?:clause|section|provision|term|mention|reference|definition|passage|part)\b/g,
+  /\bno\s+\w+(?:\s+of\s+\w+)?\s+(?:is|are|was|were)\s+(?:stated|specified|given|set|mentioned|defined|named|listed)\b/g,
+  /\b(?:says|states|provides|contains|includes|sets out|specifies)\s+nothing\b/g,
   // seen in real answers: "sets no dollar cap", "isn't named in the agreement", "doesn't support that", hedges
   /\b(?:sets?|has|have|contains?|includes?|gives?|states?|provides?|names?|lists?)\s+no\b/g,
   /\b(?:isn['’]?t|is not|aren['’]?t|are not)\s+(?:named|listed|included|mentioned|covered|addressed|among|part of|reflected|supported|found)\b/g,
@@ -157,7 +159,11 @@ export function supportSegments(support: string[]): Seg[] {
  * question (`fromQuestion`) may be repeated, but not when the agreement gives that term a different figure of the
  * same kind ("Is the fee $5,000?" when it's $3,200). Figures whose term can't be judged aren't reported.
  */
-export function unboundValues(answer: string, support: string[], question = "", skip: Set<string> = new Set(), fromQuestion: Set<string> = new Set(), scenario: Set<string> = new Set(), agreement: string[] = []): string[] {
+export function unboundValues(answer: string, support: string[], question = "", skip: Set<string> = new Set(), fromQuestion: Set<string> = new Set(), scenario: Set<string> = new Set(), agreement: string[] = [], cited: string[] = support): string[] {
+  const citedSegs = supportSegments(cited);
+  // word overlap counting synonyms ("capped" ~ "limited", "invoice" ~ "payment") as matches
+  const groupTags = (t: string) => new Set(normalize(t).split(/[^\p{L}]+/u).map((w) => GROUP_OF.get(w)).filter((g): g is number => g !== undefined));
+  const closeness = (clauseAnchors: Set<string>, clauseGroups: Set<number>, s: Seg) => [...clauseAnchors].filter((w) => !isRate(w) && s.a.has(w)).length + [...groupTags(s.t)].filter((g) => clauseGroups.has(g)).length;
   const segs = supportSegments(support);
   // where a figure belongs is looked up in the whole agreement (a calculation input from another clause), conflicts
   // only in the text the answer cites
@@ -183,7 +189,28 @@ export function unboundValues(answer: string, support: string[], question = "", 
       // "5% of $1,000" applies a stated rate to the user's own figure
       if (skip.has(v.n) || (scenario.has(v.n) && (conditional || /%\s+of\b/.test(c)))) continue;
       const withValue = home.filter((s) => s.v.some((x) => x.n === v.n && compatible(x.kind, v.kind)));
-      if (withValue.some((s) => binding.some((w) => s.a.has(w)))) continue;
+      const bound = withValue.filter((s) => binding.some((w) => s.a.has(w)));
+      if (bound.length) {
+        // a figure found only outside the cited clauses ("$1,000,000" from the insurance clause, for a question about
+        // the liability cap) belongs to the answer's term only if its clause is at least as close to the answer as
+        // the cited clauses are
+        const fromCited = bound.some((s) => citedSegs.some((x) => x.t === s.t));
+        if (fromCited) continue;
+        // words in a contrast ("shares of the price, not termination payments") don't say what the figure is about
+        const positive = c.replace(/\b(?:not|no|never|rather than|instead of)\b[^,.;:]*/gi, " ");
+        const pa = anchors(positive);
+        const cg = groupTags(positive);
+        const bestBound = Math.max(...bound.map((s) => closeness(pa, cg, s)));
+        // a cited clause whose figure the sentence also states ("…of the $184,000 fixed price") explains its own overlap
+        const bestCited = Math.max(0, ...citedSegs.filter((s) => s.v.some((x) => x.kind !== "plain" && x.n !== v.n && !statedHere.has(x.n))).map((s) => closeness(pa, cg, s)));
+        // and the answer must name what that clause is about that the cited clauses aren't ("insurance"), not only
+        // a word they share ("liability")
+        const citedWords = new Set(citedSegs.flatMap((s) => [...s.a]));
+        const distinctive = bound.some((s) => [...s.a].some((w) => !isRate(w) && !citedWords.has(w) && pa.has(w)));
+        if (bestBound >= bestCited && distinctive) continue;
+        out.push(`${v.n}${v.kind === "percent" ? "%" : ""}`);
+        continue;
+      }
       const asked = fromQuestion.has(v.n);
       // the answer's term has a different specific figure in the agreement: of the same kind (one number of days
       // for another), or of another kind when the wording matches strongly (a sum put where the days belong)
@@ -204,7 +231,9 @@ const NEG = /\b(?:\w+n['’]t|cannot|no|not|nothing|never|none|neither|nor|witho
 const NEG_WORD = /\b(\w+n['’]t|cannot|no|not|nothing|never|none|neither|nor|without|non-\w+|waived?|free|zero)\b/g;
 /** "No, ..." / "Yes, ..." opening a sentence is a reply, not a claim; "no later than" is a deadline, not a negation. */
 const REPLY = /(^|[.!?]\s+)(?:no|yes)\s*[,.;:!—-]\s*/gi;
-const BOUNDS = /\b(?:no|not)\s+(?:later|earlier|more|less|fewer|sooner)\s+than\b|\b(?:not|cannot|\w+n['’]t)\b[^.,;]{0,50}?\bwithout\b/g;
+// limits and conditions, not reversals: "no later than", "not without notice", "can't end it sooner", "not a convenience
+// termination" (a contrast), "not the same as"
+const BOUNDS = /\b(?:no|not)\s+(?:later|earlier|more|less|fewer|sooner)\s+than\b|\b(?:not|cannot|\w+n['’]t)\b[^.,;]{0,50}?\b(?:without|sooner|earlier|before|until|unless|except|beyond)\b|\bnot\s+(?:a|an|the same|the time|limited by|about)\b|\b(?:rather than|instead of)\b[^,.;:]*|,\s*(?:and\s+|but\s+)?not\s+(?:to|for|on|in|as|by|at|from|with)\b[^,.;:]*/g;
 /**
  * Negations (and "waived", "free", "zero") in the answer that the cited text doesn't support where it talks about
  * the same thing: "Either party may not terminate" when the termination sentence has no negation is rejected
@@ -222,7 +251,8 @@ export function unsupportedNegations(answer: string, support: string[], absenceF
     // the cited sentences most about the same thing (not any sentence sharing one word)
     const overlap = (s: { a: Set<string> }) => a.filter((w) => s.a.has(w)).length;
     const best = Math.max(0, ...segs.map(overlap));
-    const near = best ? segs.filter((s) => overlap(s) === best) : [];
+    // the cited sentences about the same thing: the best match, and any other that shares at least two words
+    const near = best ? segs.filter((s) => overlap(s) === best || overlap(s) >= 2) : [];
     for (const w of words) {
       const special = /^(?:waived?|free|zero)$/.test(w);
       const has = (t: string) => (special ? new RegExp(`\\b${w.replace(/d$/, "")}`).test(normalize(t)) : NEG.test(normalize(t)) || BOUNDS.test(normalize(t)));
@@ -419,6 +449,7 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
   const groupsOf = (t: string) => new Set(normalize(t).split(/[^\p{L}]+/u).map((w) => GROUP_OF.get(w)).filter((g) => g !== undefined));
   const topicGroups = groupsOf(`${question} ${topic}`);
   const onTopic = (s: Seg) => [...s.a].some((w) => topicAnchors.has(w)) || [...groupsOf(s.t)].some((g) => topicGroups.has(g));
+  const onTopicStrict = (s: Seg) => [...s.a].some((w) => !isRate(w) && topicAnchors.has(w));
   const has = (segs: Seg[], n: string, kind: Kind | null) => segs.filter((s) => s.v.some((x) => x.n === n && (kind === null || x.kind === kind || (kind !== "percent" && x.kind === "plain"))));
   const talk = normalize(`${question} ${topic}`);
   const agreementText = normalize(agreement.join(" \n "));
@@ -426,7 +457,10 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
   const percentsAll = new Set(everywhere.flatMap((s) => s.v.filter((x) => x.kind === "percent").map((x) => x.n)));
   const overtime = /\b(?:overtime|time and a half|time-and-a-half|double time|1\.5 times|150%)\b/.test(agreementText);
   // a multiplier derived from a stated percentage: 1.2 from 20%, 0.015 from 1.5%, 0.8 from a 20% discount
-  const derivedRate = (n: number) => [n * 100, (n - 1) * 100, (1 - n) * 100].some((p) => percentsAll.has(String(+p.toFixed(6))));
+  const percentsOnTopic = new Set([...cited, ...everywhere].filter(onTopicStrict).flatMap((s) => s.v.filter((x) => x.kind === "percent").map((x) => x.n)));
+  // a multiplier from a stated percentage about the question: 1.2 from a 20% markup, 0.015 from 1.5% interest
+  const derivedRate = (n: number) => [n * 100, (n - 1) * 100, (1 - n) * 100].some((p) => percentsOnTopic.has(String(+p.toFixed(6))));
+  const derivedOffTopic = (n: number) => !derivedRate(n) && [n * 100, (n - 1) * 100, (1 - n) * 100].some((p) => percentsAll.has(String(+p.toFixed(6))));
   for (const c of calcs.slice(0, 10)) {
     const value = evaluate(c.expression);
     const operands = [...c.expression.replace(/\b(?:min|max|round)\b/gi, " ").replace(/[×x÷]/g, " ").replace(/(?<=\d),(?=\d{3}(?!\d))/g, "").matchAll(OPERAND)].map((m) => ({ n: String(Number(m[2].replace(/,/g, ""))), kind: (m[1] ? "money" : m[3] ? "percent" : null) as Kind | null }));
@@ -436,8 +470,15 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
       if (o.kind === null && constant(o.n)) return true;
       if (o.kind === null && o.n === "100" && operands.some((x) => x.n !== "100" && percentsAll.has(x.n))) return true;
       if (o.kind === null && (derivedRate(Number(o.n)) || (overtime && (o.n === "1.5" || o.n === "2")))) return true;
-      if (has(cited, o.n, o.kind).some(onTopic)) return true;
-      // stated in the agreement, but not where the question is: real, but say so
+      if (o.kind === null && derivedOffTopic(Number(o.n))) {
+        offTopic = true;
+        return true;
+      }
+      // a rate must come from a clause that shares a word with the question or answer ("interest"), not just a
+      // payment synonym; other figures may match by synonym ("cost" ~ "fee")
+      const topical = o.kind === "percent" ? onTopicStrict : onTopic;
+      if (has(cited, o.n, o.kind).some(topical) || has(everywhere, o.n, o.kind).some(topical)) return true;
+      // stated in the agreement, but in a clause that isn't about the question
       if (has(everywhere, o.n, o.kind).length) {
         offTopic = true;
         return true;
@@ -447,7 +488,10 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
     const m = RESULT.exec(c.result);
     const stated = m ? Number(m[1].replace(/,/g, "")) : NaN;
     const labelFigures = m ? [...m[2].matchAll(/\d[\d,]*(?:\.\d+)?/g)].map((x) => String(Number(x[0].replace(/,/g, "")))) : [];
-    const ok = value !== null && operands.length > 0 && operands.every(known) && Number.isFinite(stated) && Math.abs(value - stated) <= 0.005 + Math.abs(value) * 1e-9;
+    // "1.5% * 12 = 18%": the parser gives 0.18; a result written as a percentage is compared as one
+    const pct = m ? /^\s*[$£€]?\s*-?\d[\d,]*(?:\.\d+)?\s*%/.test(c.result) : false;
+    const target = value !== null && pct ? value * 100 : value;
+    const ok = value !== null && target !== null && operands.length > 0 && operands.every(known) && Number.isFinite(stated) && Math.abs(target - stated) <= 0.005 + Math.abs(target) * 1e-9;
     if (!ok) {
       failed.push(`${c.expression} = ${c.result}`);
       continue;
@@ -500,7 +544,11 @@ export function scenarioFigures(question: string): Set<string> {
     at >= 0 ? q.slice(at) : "",
     ...[...q.matchAll(/\b(?:on|for|of|with)\s+(?:a|an)\s+[$£€]?\d[\d,.]*\s*(?:[a-z]+)?/g)].map((m) => m[0]),
     // the user's own situation: "the balance is now $4,200", "we worked 46 hours", "after 200 hours"
-    ...q.split(/[,.;?]/).filter((x) => /\b(?:now|currently|balance|remaining|left|used|worked|works|spent|has|have|had|drops?|dropped|fell|falls|reach(?:es|ed)?|after|over|added|adding|we|our|my)\b/.test(x)),
+    ...q.split(/[,.;?]/).filter((x) => /\b(?:currently|balance|remaining|left|used|worked|works|spent|drops?|dropped|fell|falls|reach(?:es|ed)?|added|adding)\b/.test(x)),
+    // "for two weeks", "for 46 hours"
+    ...[...q.matchAll(/\b(?:for|over|across)\s+(?:\d+(?:\.\d+)?|[a-z]+)\s+(?:hours?|days?|weeks?|months?|years?|units?|users?|people|staff)\b/g)].map((m) => m[0]),
+    // "two months late", "10 days overdue"
+    ...[...q.matchAll(/\b(?:\d+|[a-z]+)\s+(?:days?|weeks?|months?|years?|hours?)\s+(?:late|overdue|early|after|before|in)\b/g)].map((m) => m[0]),
   ];
   for (const part of parts) {
     for (const v of valuesIn(part)) out.add(v.n);
@@ -541,9 +589,13 @@ export function impliedCalculations(text: string): Calculation[] {
  * Refuting the user's own premise ("$610, not $250"; "the waiver is not free" when the question says it's free) and
  * statements of absence aren't negated facts.
  */
-const REFUTE_SENTENCE = /\b(?:can['’]?t|cannot|could not|unable to)\s+(?:confirm|verify|agree)\b|\bno such (?:term|clause|provision|right)\b|\b(?:claim|assertion|suggestion|statement|premise)s?\s+(?:that|in the question)\b|\b(?:does not|doesn['’]?t|did not)\s+come from\b|\bisn['’]?t (?:in|from) the agreement\b|\bis not (?:in|from) the agreement\b/i;
-const PREMISE = /\b(?:since|given that|as|now|claims?|claimed|says?|said|told|emailed|confirm\w*|isn['’]?t it|right\?|correct\?|true that|is it true|apparently|i heard)\b/i;
-export function negationCheck(answer: string, support: string[], question: string, absenceFree: (s: string) => string): { block: string[]; qualify: string[] } {
+// agreeing with the user's claim ("yes, that's correct", "the claim ... matches the agreement"), not "can't confirm"
+const AFFIRMS = { test: (x: string) => /\b(?:yes|correct|matches|accurate|true|confirms|consistent with|agrees with|is what the agreement says)\b/i.test(x) && !/\b(?:not|n['’]t|cannot|unable to|no)\s+(?:\w+\s+)?(?:correct|accurate|true|confirm\w*|match\w*|consistent)\b/i.test(x) };
+const REFUTE_SENTENCE_RAW = /\b(?:can['’]?t|cannot|could not|unable to)\s+(?:confirm|verify|agree)\b|\bno such (?:term|clause|provision|right)\b|\b(?:claim|assertion|suggestion|statement|premise)s?\s+(?:that|in the question)\b|\b(?:does not|doesn['’]?t|did not)\s+come from\b|\bisn['’]?t (?:in|from) the agreement\b|\bis not (?:in|from) the agreement\b/i;
+const PREMISE = /\b(?:since|given that|claims?|claimed|says?|said|told|emailed|confirm\w*|isn['’]?t it|right\?|correct\?|true that|is it true|apparently|i heard)\b/i;
+/** A sentence that disputes the user's claim, and doesn't also agree with it. */
+const REFUTE_SENTENCE = { test: (x: string) => REFUTE_SENTENCE_RAW.test(x) && !AFFIRMS.test(x) && /\b(?:not|n['’]t|no such|cannot|set aside|disregard\w*|ignor\w*|unsupported)\b/i.test(x) };
+export function negationCheck(answer: string, support: string[], question: string, absenceFree: (s: string) => string, o: { lenient?: boolean } = {}): { block: string[]; qualify: string[] } {
   const segs = support.flatMap(segments).map((t) => ({ t, a: anchors(t) }));
   const all = normalize(support.join(" \n "));
   const qAnchors = anchors(question);
@@ -570,7 +622,8 @@ export function negationCheck(answer: string, support: string[], question: strin
     const a = [...anchors(c)].filter((w) => !isRate(w));
     const overlap = (s: { a: Set<string> }) => a.filter((w) => s.a.has(w)).length;
     const best = Math.max(0, ...segs.map(overlap));
-    const near = best ? segs.filter((s) => overlap(s) === best) : [];
+    // the cited sentences about the same thing: the best match, and any other that shares at least two words
+    const near = best ? segs.filter((s) => overlap(s) === best || overlap(s) >= 2) : [];
     for (const w of words) {
       const special = /^(?:waived?|free|zero)$/.test(w);
       const has = (t: string) => (special ? new RegExp(`\\b${w.replace(/d$/, "")}`).test(normalize(t)) : NEG.test(normalize(t)) || BOUNDS.test(normalize(t)));
@@ -578,7 +631,11 @@ export function negationCheck(answer: string, support: string[], question: strin
       // saying money isn't owed ("owes nothing", "no fees apply", "the fee is waived") is material however weak the match
       // payment (0), termination (1), liability (6), late payment and interest (9), refunds (11): material terms
       const money = special || w === "nothing" || normalize(c).split(/[^\p{L}]+/u).some((x) => [0, 1, 6, 9, 11].includes(GROUP_OF.get(x) ?? -1));
-      (!hedged && (best >= 2 || money) ? block : qualify).push(`"${w}"`);
+      if (o.lenient) {
+        if (!hedged && best >= 2 && w !== "without") block.push(`"${w}"`);
+        continue;
+      }
+      ((money || (!hedged && best >= 2)) ? block : qualify).push(`"${w}"`);
     }
   }
   return { block: [...new Set(block)], qualify: [...new Set(qualify)] };
@@ -591,15 +648,24 @@ const PERIOD_TAGS: [RegExp, string][] = [
   [/^\s*(?:per|a|each|every)\s+month|^\s*monthly/, "month"],
   [/^\s*(?:per|a|each|every)\s+(?:year|annum)|^\s*(?:yearly|annually|a year)/, "year"],
 ];
-/** Sums the answer gives per one period ("$4,800 per year") that the agreement gives only per another ("per month"). */
+/**
+ * Sums and rates the answer gives per one period ("an annual fee of $3,200", "1.5% per year", "$3,200, billed
+ * annually") that the agreement gives per another ("per month").
+ */
 export function periodConflicts(answer: string, support: string[]): string[] {
+  const TAGS: [RegExp, string][] = [[/\bhour(?:ly)?\b/, "hour"], [/\b(?:day|daily)\b/, "day"], [/\bweek(?:ly)?\b/, "week"], [/\bmonth(?:ly)?\b/, "month"], [/\b(?:year|annum|yearly|annual|annually)\b/, "year"]];
   const rate = (text: string) => {
     const out: { n: string; tag: string }[] = [];
-    const t = normalize(text);
-    for (const m of t.matchAll(/[$£€]\s?(\d[\d,]*(?:\.\d+)?)/g)) {
-      const after = t.slice((m.index ?? 0) + m[0].length, (m.index ?? 0) + m[0].length + 20);
-      const tag = PERIOD_TAGS.find(([re]) => re.test(after))?.[1];
-      if (tag) out.push({ n: String(Number(m[1].replace(/,/g, ""))), tag });
+    for (const sentence of normalize(text).split(/(?<=[.;!?])\s+/)) {
+      for (const m of sentence.matchAll(/([$£€]\s?(\d[\d,]*(?:\.\d+)?))|(\d+(?:\.\d+)?)\s?%/g)) {
+        const n = String(Number((m[2] ?? m[3]).replace(/,/g, "")));
+        const at = m.index ?? 0;
+        const after = sentence.slice(at + m[0].length, at + m[0].length + 28);
+        const before = sentence.slice(Math.max(0, at - 24), at);
+        // nearest period word: right after the figure ("per month", ", billed annually"), else just before ("annual fee of")
+        const tag = TAGS.find(([re]) => re.test(after.split(/\b(?:and|but|or)\b|[$£€]|\d/)[0]))?.[1] ?? TAGS.find(([re]) => re.test(before.split(/[$£€]|\d/).at(-1) ?? ""))?.[1];
+        if (tag) out.push({ n, tag });
+      }
     }
     return out;
   };

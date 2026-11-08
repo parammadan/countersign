@@ -72,7 +72,7 @@ const NUMWORD_RUN = new RegExp(`\\b(?:${NUMWORD})(?:[\\s-]+(?:and[\\s-]+)?(?:${N
 function digitize(s: string): string {
   return s.replace(NUMWORD_RUN, (run, at: number) => {
     // "one" alone is usually a pronoun ("the one who", "no one"); it's the number 1 only before a unit
-    if (run === "one" && !/^\s*(?:\(1\)\s*)?(?:hour|day|week|month|year|percent|dollar|business|calendar|working|invoice|time|instal)/.test(s.slice(at + 3, at + 30))) return run;
+    if (run === "one" && !/^\s*(?:\(1\)\s*)?(?:(?:additional|further|more|extra|full|single|separate)\s+)?(?:hour|day|week|month|year|percent|dollar|business|calendar|working|invoice|time|instalment|installment|term|renewal|period|extension|copy|copies|user|location|seat|licen[cs]e|payment|site|visit|round|revision|milestone|session|unit|item|page|image)(?:s|es)?\b/.test(s.slice(at + 3, at + 40))) return run;
     let cur = 0, total = 0;
     for (const w of run.split(/[\s-]+/)) {
       if (ONES.includes(w)) cur += ONES.indexOf(w);
@@ -109,7 +109,7 @@ function unitPairs(prepped: string): Set<string> {
 }
 const MONTH_RE = /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/g;
 const PERIOD: [RegExp, string][] = [[/\b(hours?|hourly)\b/, "hour"], [/\b(days?|daily)\b/, "day"], [/\b(weeks?|weekly)\b/, "week"], [/\b(months?|monthly)\b/, "month"], [/\b(quarters?|quarterly)\b/, "quarter"], [/\b(years?|yearly|annual|annually|annum)\b/, "year"]];
-const COMMON_CAPS = new Set(["client", "provider", "consultant", "firm", "company", "customer", "supplier", "contractor", "vendor", "agency", "licensor", "licensee", "landlord", "tenant", "buyer", "seller", "employer", "employee", "party", "parties", "about", "around", "approximately", "roughly", "nearly", "almost", "exactly", "total", "altogether", "combined", "together", "see", "check", "read", "refer", "look", "how", "why", "whether", "whose", "whom", "would", "could", "should", "does", "do", "did", "is", "are", "was", "were", "can", "may", "might", "must", "will", "shall", "has", "have", "had", "instead", "likewise", "overall", "generally", "typically", "usually", "though", "given", "assuming", "thus", "hence", "besides", "additionally", "furthermore", "moreover", "nevertheless", "still", "yet", "just", "even", "again", "first", "second", "third", "finally", "next", "last", "lastly", "out", "up", "over", "some", "most", "many", "much", "more", "less", "such", "every", "other", "another", "nor", "whatever", "whoever", "clause", "section", "page", "paragraph", "schedule", "appendix", "exhibit", "article", "because", "since", "although", "therefore", "so", "according", "based", "not", "nothing", "none", "neither", "note", "here", "then", "otherwise", "the", "this", "that", "these", "those", "it", "its", "if", "either", "each", "both", "there", "a", "an", "i", "under", "no", "yes", "only", "all", "any", "after", "before", "when", "within", "from", "for", "per", "they", "their", "however", "also", "but", "and", "or", "in", "on", "at", "by", "to", "with", "as", "unless", "until", "once", "while", "where", "which", "who", "what", "you", "your", "we"]);
+const COMMON_CAPS = new Set(["usd", "eur", "gbp", "net", "vat", "gst", "ach", "eft", "client", "provider", "consultant", "firm", "company", "customer", "supplier", "contractor", "vendor", "agency", "licensor", "licensee", "landlord", "tenant", "buyer", "seller", "employer", "employee", "party", "parties", "about", "around", "approximately", "roughly", "nearly", "almost", "exactly", "total", "altogether", "combined", "together", "see", "check", "read", "refer", "look", "how", "why", "whether", "whose", "whom", "would", "could", "should", "does", "do", "did", "is", "are", "was", "were", "can", "may", "might", "must", "will", "shall", "has", "have", "had", "instead", "likewise", "overall", "generally", "typically", "usually", "though", "given", "assuming", "thus", "hence", "besides", "additionally", "furthermore", "moreover", "nevertheless", "still", "yet", "just", "even", "again", "first", "second", "third", "finally", "next", "last", "lastly", "out", "up", "over", "some", "most", "many", "much", "more", "less", "such", "every", "other", "another", "nor", "whatever", "whoever", "clause", "section", "page", "paragraph", "schedule", "appendix", "exhibit", "article", "because", "since", "although", "therefore", "so", "according", "based", "not", "nothing", "none", "neither", "note", "here", "then", "otherwise", "the", "this", "that", "these", "those", "it", "its", "if", "either", "each", "both", "there", "a", "an", "i", "under", "no", "yes", "only", "all", "any", "after", "before", "when", "within", "from", "for", "per", "they", "their", "however", "also", "but", "and", "or", "in", "on", "at", "by", "to", "with", "as", "unless", "until", "once", "while", "where", "which", "who", "what", "you", "your", "we"]);
 
 /**
  * Facts in an answer that none of its quotes contain: numbers, months, periods, names, negations. Numbers in
@@ -138,11 +138,14 @@ export function unsupportedFacts(answer: string, quotes: string[], allowed: Set<
   const pairs = unitPairs(prep(stripClauses(support)));
   for (const pr of unitPairs(prep(answer))) if (!pairs.has(pr) && !allowed.has(pr.split(":")[0])) out.push(pr.replace(":", " ").replace(" %", "%"));
   const a = normalize(answer);
-  const months = new Set([...hay.matchAll(MONTH_RE)].map((m) => m[1].slice(0, 3)));
+  // the agreement's own "may" is the verb too, unless it's a date or capitalised mid-sentence
+  const rawSupport = quotes.join(" \n ");
+  const months = new Set([...hay.matchAll(MONTH_RE)].map((m) => m[1].slice(0, 3)).filter((m) => m !== "may" || /\bMay\s+\d|\d(?:st|nd|rd|th)?\s+(?:of\s+)?May\b|[a-z,]\s+May\b/.test(rawSupport)));
   // "may" is a month only in a date ("May 1", "1 May 2027"); otherwise it's the verb
   const raw = answer.slice(0, MAX_FACT_TEXT);
   for (const m of a.matchAll(MONTH_RE)) {
-    if (m[1] === "may" && !/\bMay\s+\d|\d(?:st|nd|rd|th)?\s+(?:of\s+)?May\b/.test(raw)) continue;
+    // "may" is the verb unless it's a date or "May" capitalised mid-sentence ("renews each May")
+    if (m[1] === "may" && !/\bMay\s+\d|\d(?:st|nd|rd|th)?\s+(?:of\s+)?May\b|[a-z,]\s+May\b/.test(raw)) continue;
     if (!months.has(m[1].slice(0, 3))) out.push(m[1]);
   }
   const asserted = withoutAbsence(answer);
@@ -164,7 +167,7 @@ export function unsupportedFacts(answer: string, quotes: string[], allowed: Set<
     // consultant")
     const at = m.index ?? 0;
     const opensSentence = at === 0 || /[.!?:;\n]\s*["“(]?$/.test(text.slice(Math.max(0, at - 3), at));
-    if (opensSentence && !/^[\p{L}'’-]+\s+(?:[A-Z]|(?:is|are|was|will be)\s+(?:the|a|an)\b)/u.test(text.slice(at, at + 60))) continue;
+    if (opensSentence && !/^[\p{L}'’-]+\s+(?:[A-Z]|(?:is|are|was|will be)\s+(?:the|a|an)\b|(?:will|shall|must|may|can|pays?|owes?|agrees?|provides?|delivers?|keeps?|bears?|receives?|retains?|owns?|has to|is required)\b)/u.test(text.slice(at, at + 60))) continue;
     // spelled-out numbers ("One month late") are checked as numbers, above
     const singular = w.replace(/(?:es|s)$/, "");
     if (!COMMON_CAPS.has(w) && !words.has(w) && !nameWords.has(w) && !nameWords.has(singular) && !nameWords.has(`${w}s`) && !new RegExp(`^(?:${NUMWORD})$`).test(w)) out.push(m[1]);
@@ -410,11 +413,14 @@ export async function answerWithModel(
   const absent = out.status === "not_found";
   // sentences of the explanation that discuss text the agreement labels as not binding ("The $450 figure is from
   // a marketing summary labeled not binding") are checked against that text, then shown as they are
-  const NB_WORDS = /\b(?:not binding|non-binding|nonbinding|unofficial|superseded|draft|marketing|faq)\b/i;
-  const explSentences = out.explanation.split(/(?<=[.!?])\s+/);
-  const aboutUnofficial = unofficialText.length ? explSentences.filter((t) => NB_WORDS.test(t)) : [];
-  const explanationChecked = explSentences.filter((t) => !aboutUnofficial.includes(t)).join(" ");
-  const said = [out.answer, explanationChecked].filter(Boolean).join("\n");
+  // only a sentence that says the text isn't binding may mention it ("…from a marketing summary labeled not binding,
+  // so it is not part of the terms"); "the fee drops to $450, per the marketing summary" presents it as a term
+  const NB_DISCLAIM = /\b(?:not binding|non-binding|nonbinding|not legally binding|not part of|isn['’]?t part of|no legal effect|does not change|doesn['’]?t change|does not override|doesn['’]?t override|withdrawn|superseded)\b/i;
+  const split = (t: string) => t.split(/(?<=[.!?])\s+/).filter(Boolean);
+  const aboutUnofficial = unofficialText.length ? [...split(out.answer), ...split(out.explanation)].filter((t) => NB_DISCLAIM.test(t)) : [];
+  const answerChecked = split(out.answer).filter((t) => !aboutUnofficial.includes(t)).join(" ");
+  const explanationChecked = split(out.explanation).filter((t) => !aboutUnofficial.includes(t)).join(" ");
+  const said = [answerChecked, explanationChecked].filter(Boolean).join("\n");
   const notes = out.not_stated.join("\n");
 
   // instructions in the output
@@ -440,6 +446,7 @@ export async function answerWithModel(
   // the agreement brings the passage it's in along as a source; one that's nowhere in it is blocked
   const facts = (sup: string[]) => [...unsupportedFacts(said, sup, allowed, question, { negations: false, periods: false, names: agreementText }), ...unsupportedPlaces(said, sup, question)];
   const quotesOff = (sup: string[]) => misquoted(said, sup);
+  const citedSupport = [...support];
   let missing = [...facts(support), ...quotesOff(support)];
   if (missing.length) {
     const cited = new Set(citations.map((c) => c.passage));
@@ -470,19 +477,31 @@ export async function answerWithModel(
   }
 
   // figures on the wrong term, parties swapped, negations that contradict the clause they're about
-  const unbound = unboundValues(stripRefutations(withoutAbsence(said), question), support, question, new Set([...calcs.verified, ...calcs.fromAgreement]), fromQuestion, scenarioFigures(question), agreementText);
+  const scenario = scenarioFigures(question);
+  const unbound = unboundValues(withoutAbsence(stripRefutations(said, question)), support, question, new Set([...calcs.verified, ...calcs.fromAgreement]), fromQuestion, scenario, agreementText, citedSupport);
   if (unbound.length) return withheld(`The answer gave ${unbound.slice(0, 4).join(", ")} for something the agreement gives a different figure for, so it isn't shown.`);
+  // a figure the question asserts about a term ("The monthly fee is $5,000 - what's that per year?") can't be used
+  // when the agreement gives that term a different figure
+  const asserted = unboundValues(question, agreementText, "", scenario, fromQuestion, scenario, agreementText);
+  const restated = numbersIn(withoutAbsence(stripRefutations(said, question)));
+  const used = asserted.map((x) => x.replace(/%$/, "")).filter((n) => calcs.operands.has(n) || restated.has(n));
+  if (used.length) return withheld(`The answer relied on ${used.join(", ")} from the question, but the agreement gives a different figure, so it isn't shown.`);
   const wrongPeriod = periodConflicts(said, support);
   if (wrongPeriod.length) return withheld(`The answer gave ${wrongPeriod.join(", ")}, but the agreement states that figure for a different period, so it isn't shown.`);
   const swapped = roleSwaps(said, support, shown.map((p) => p.text).join("\n"));
   if (swapped.length) return withheld(`The answer has the ${swapped[0]} doing something the agreement gives to another party, so it isn't shown.`);
   if (!absent) {
-    const neg = negationCheck(out.answer, support, question, withoutAbsence);
+    // the answer is held strictly; the explanation's conditions and contrasts ("not cured within 10 days") only
+    // when they plainly contradict the clause they're about
+    const neg = negationCheck(answerChecked, support, question, withoutAbsence);
+    const negExpl = negationCheck(explanationChecked, support, question, withoutAbsence, { lenient: true });
+    neg.block.push(...negExpl.block);
     if (neg.block.length) return withheld(`The answer says ${neg.block.join(", ")} where the agreement's text doesn't, so it isn't shown.`);
     if (neg.qualify.length) qualify.push(`the answer's ${neg.qualify.join(", ")} isn't stated in so many words in the quoted text`);
   }
   // rate words ("per week", "quarterly") the agreement doesn't use
-  const periods = unsupportedFacts(said, [...agreementText, question], allowed, question, { negations: false, checkNames: false }).filter((x) => x.startsWith("per "));
+  const nameless = said.replace(/(?<=[A-Za-z]\s)(?:Quarterly|Annual|Monthly|Weekly|Daily)\b/g, (w) => (agreementText.some((t) => t.includes(w)) ? " " : w));
+  const periods = unsupportedFacts(nameless, [...support, question], allowed, question, { negations: false, checkNames: false }).filter((x) => x.startsWith("per "));
   // how often something is paid or happens is a term, not a detail
   if (periods.length) return withheld(`The answer said ${periods.join(", ")}, which the agreement doesn't say, so it isn't shown.`);
 
