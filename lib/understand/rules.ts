@@ -3,7 +3,7 @@
 // both go through the same validation and evidence check.
 import type { Field } from "../fields";
 import type { AnalyzerOutput, Category, Evidence, Finding, Status } from "./schema";
-import { normalize } from "./evidence";
+import { INSTRUCTION_RE, normalize } from "./evidence";
 import { pageText, type PageLines } from "./text";
 
 export type RulesInput = {
@@ -52,7 +52,9 @@ export function analyzeWithRules(input: RulesInput): AnalyzerOutput {
     findings.push({ id: `${category}-${n}`, category, label, status, value: status === "missing" ? null : value, evidence: evidence.filter((e) => e.quote.length >= 3).slice(0, 5), ...(note ? { note } : {}) });
   };
   const pages = input.pages;
-  const all = sentences(pages);
+  // sentences addressed to software are reported (gaps, below) and never used as a source for anything else
+  const raw = sentences(pages);
+  const all = raw.filter((s) => !INSTRUCTION_RE.test(normalize(s.text)));
   const early = all.filter((s) => s.page <= 2);
 
   // ---- parties ----
@@ -159,7 +161,9 @@ export function analyzeWithRules(input: RulesInput): AnalyzerOutput {
   const AMOUNT = /(?:[$£€]\s?\d[\d,]*(?:\.\d{1,2})?(?:\s?(?:k|m)\b)?|\b(?:USD|GBP|EUR|CAD|AUD)\s?\d[\d,]*(?:\.\d{1,2})?|\b\d+(?:\.\d+)?\s?%)/g;
   const payS = all.filter((s) => PAY.test(s.text));
   let amounts = 0;
+  const LATE = /\b(late (?:fee|payment|charge)s?|interest (?:at|of|on)|accrue[sd]? interest|overdue)\b/i;
   for (const s of payS) {
+    if (LATE.test(s.text)) continue; // late-payment interest is reported on its own below
     const a = [...new Set(s.text.match(AMOUNT) ?? [])];
     if (!a.length) continue;
     if (++amounts > 4) break;
@@ -167,11 +171,22 @@ export function analyzeWithRules(input: RulesInput): AnalyzerOutput {
   }
   const blankFee = payS.find((s) => BLANK_RE.test(s.text) && !(s.text.match(AMOUNT) ?? []).length);
   if (blankFee) add("payment", "Fee left blank", "missing", null, [quote(blankFee.page, blankFee.text)], "A fee or amount is left blank.");
-  const DUE = /\b(net\s?\d+|within\s+\d+\s*(?:\(\d+\)\s*)?(?:calendar\s+|business\s+)?days|due (?:on|upon|within|in advance)|in advance|in arrears|upon receipt|on receipt|on the \w+ (?:business )?day of each month|monthly|annually|quarterly)\b/i;
-  const due = payS.find((s) => DUE.test(s.text));
-  if (due) add("payment", "When payment is due", "stated", due.text.match(DUE)![0], [quote(due.page, due.text)]);
+  // most specific first: a deadline beats "in arrears", which beats a bare frequency
+  const DUE = [
+    /\bnet\s?\d+\b/i,
+    /\bwithin\s+(?:[a-z-]+\s+)?\(?\d+\)?\s*(?:calendar\s+|business\s+)?days(?:\s+(?:of|after|from)\s+(?:the\s+|its\s+)?[a-z]+(?:\s+date)?)?/i,
+    /\b(?:due (?:on|upon) receipt|upon receipt|on receipt)\b/i,
+    /\bin (?:advance|arrears)\b/i,
+    /\b(?:monthly|annually|quarterly|weekly|on the \w+ (?:business )?day of each month)\b/i,
+  ];
+  let due: { s: Sentence; v: string } | undefined;
+  for (const re of DUE) {
+    const s = payS.find((x) => re.test(x.text));
+    if (s) { due = { s, v: s.text.match(re)![0] }; break; }
+  }
+  if (due) add("payment", "When payment is due", "stated", due.v, [quote(due.s.page, due.s.text)]);
   else if (amounts) add("payment", "When payment is due", "missing", null, [], "Amounts are given, but not when they're due.");
-  const late = all.find((s) => /\b(late (?:fee|payment|charge)s?|interest (?:at|of|on)|overdue)\b/i.test(s.text));
+  const late = all.find((s) => LATE.test(s.text));
   if (late) add("payment", "Late payment", "stated", clip(late.text, 160), [quote(late.page, late.text)]);
   if (!payS.length) add("payment", "Payment terms", "missing", null, [], "No fees or payment terms were found. Some agreements keep them in a separate schedule or order form.");
 
@@ -229,6 +244,8 @@ export function analyzeWithRules(input: RulesInput): AnalyzerOutput {
   if (witness) add("signatures", "Witness or notary", "stated", null, [quote(witness.page, witness.text)], "AgreementOS doesn't collect witness or notary signatures. Check whether this applies.");
 
   // ---- gaps ----
+  const unreadable = pages.filter((p) => p.textLayer === false || p.lines.length === 0).map((p) => p.page);
+  if (unreadable.length) add("gaps", unreadable.length === 1 ? `Page ${unreadable[0]} has no readable text` : `Pages ${unreadable.join(", ")} have no readable text`, "missing", null, [], "It may be a scan or an image. Nothing on it was read, so check it yourself.");
   let blanks = 0;
   for (const p of pages) {
     for (const l of p.lines) {
@@ -237,8 +254,8 @@ export function analyzeWithRules(input: RulesInput): AnalyzerOutput {
       add("gaps", "Blank left to fill in", "missing", null, [quote(p.page, l)]);
     }
   }
-  const INJECTION = /\b(?:ignore|disregard|forget|override)\b[^.]{0,60}\b(?:instructions?|prompts?|rules|guidelines)\b|\bsystem prompt\b|\byou are (?:an? |the )?(?:ai|assistant|language model|chatbot)\b|\bas an ai\b|\bdeveloper mode\b|\b(?:ai|assistant|model)s?\s*(?:must|should|shall)\b/i;
-  const inj = all.find((s) => INJECTION.test(s.text));
+  const INJECTION = INSTRUCTION_RE;
+  const inj = raw.find((s) => INJECTION.test(normalize(s.text)));
   if (inj) add("gaps", "Text addressed to an automated reader", "ambiguous", null, [quote(inj.page, inj.text)], "This reads like an instruction to software. It was treated as part of the document and not followed. Check why it's there.");
 
   return { findings };
