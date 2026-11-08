@@ -641,13 +641,6 @@ export function negationCheck(answer: string, support: string[], question: strin
   return { block: [...new Set(block)], qualify: [...new Set(qualify)] };
 }
 
-const PERIOD_TAGS: [RegExp, string][] = [
-  [/^\s*(?:per|a|an|each|every)\s+hour|^\s*hourly/, "hour"],
-  [/^\s*(?:per|a|each|every)\s+day|^\s*daily/, "day"],
-  [/^\s*(?:per|a|each|every)\s+week|^\s*weekly/, "week"],
-  [/^\s*(?:per|a|each|every)\s+month|^\s*monthly/, "month"],
-  [/^\s*(?:per|a|each|every)\s+(?:year|annum)|^\s*(?:yearly|annually|a year)/, "year"],
-];
 /**
  * Sums and rates the answer gives per one period ("an annual fee of $3,200", "1.5% per year", "$3,200, billed
  * annually") that the agreement gives per another ("per month").
