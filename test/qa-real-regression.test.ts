@@ -14,14 +14,14 @@ const RESPONSES: R[] = JSON.parse(fs.readFileSync(path.join(process.cwd(), "fixt
 // still withheld, known and reported: an uptime figure inside a table of bands, a balance the user states as a fact,
 // an alternative calculation that uses a figure the agreement doesn't state, and other clauses' percentages listed
 // in a contrast (the rule that stops a figure being borrowed from another clause can't tell the contrast apart)
-const KNOWN_WITHHELD = new Set(["msa-service-credit-calc", "castellane-deposit-topup", "tenancy-late-fee-cap", "dev-in-progress-milestone-amount"]);
+const KNOWN_WITHHELD = new Set(["msa-service-credit-calc", "tenancy-late-fee-cap", "dev-in-progress-milestone-amount"]);
 // correct on review, but worded differently from the fact list ("sets no dollar cap"; "isn't named... reasonable time")
 const REVIEWED_CORRECT = new Set(["brindlewick-travel-expense-cap", "tenancy-nonurgent-repair-time", "brindlewick-suspension-trigger"]);
 // the trap phrase appears only where the answer refutes it ("$610, not $250"; "does not provide that conversions are free")
 const REFUTES_TRAP = new Set(["castellane-partner-rate-override", "staffing-conversion-fee-override", "mislead-marketing", "mislead-superseded", "mislead-unofficial", "mislead-draft"]);
 
 describe("real Claude responses through the checks", () => {
-  it("shows every correct answer except the known four, and no planted claim", async () => {
+  it("shows every correct answer except the known three, and no planted claim", async () => {
     const withheld: string[] = [];
     const wrong: string[] = [];
     const leaks: string[] = [];

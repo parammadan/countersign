@@ -412,6 +412,28 @@ describe("review of two-level validation: wrong material claims are blocked", ()
       const r = await answerWithModel(only(re, o), q, D);
       expect(r.status === "answered" || r.status === "not_found" ? r.verification : "blocked", `${r.status} ${r.warnings.join(" / ")}`).not.toBe("checked");
     });
+  // fourth round
+  const blocked4: [string, string, RegExp, Out][] = [
+    ["a notice period in other units", "Can we cancel if we give two weeks' notice?", /Termination/, { answer: "Yes, if you give two weeks' notice you may cancel." }],
+    ["'also' followed by a second, wrong claim", "What's the liability cap?", /Liability\./, { answer: "The Provider's total liability is limited to the fees paid in the 12 months before the claim.", explanation: "That cap is also backed by $1,000,000 of insurance, so the most you could recover is $1,000,000." }],
+    ["a material negation with nothing behind it", "Is the provider liable for everything?", /Liability\./, { answer: "The Provider's total liability is limited to the fees paid in the 12 months before the claim.", explanation: "The Provider is not responsible for indirect damages." }],
+  ];
+  for (const [what, q, re, o] of blocked4)
+    it(`blocks: ${what}`, async () => {
+      const r = await answerWithModel(only(re, o), q, D);
+      expect(r.status === "answered" || r.status === "not_found" ? r.verification : "blocked", `${r.status} ${r.warnings.join(" / ")}`).not.toBe("checked");
+      expect(r.verification).not.toBe("qualified");
+    });
+  const shown4: [string, string, RegExp, Out][] = [
+    ["'30 days isn't enough' correcting the user", "With 30 days' notice, can we terminate?", /Termination/, { answer: "No. Either party may terminate on 45 days' written notice, so 30 days isn't enough." }],
+    ["'it isn't waived'", "Is late interest waived?", /Late payment/, { answer: "Overdue amounts accrue interest at 1.5% per month; it isn't waived." }],
+  ];
+  for (const [what, q, re, o] of shown4)
+    it(`shows: ${what}`, async () => {
+      const r = await answerWithModel(only(re, o), q, D);
+      expect(r.status, r.warnings.join(" / ")).toBe("answered");
+    });
+
   it("a liability negation isn't supported by an unrelated negated sentence sharing one word", async () => {
     const r = await answerWithModel(only(/Late payment|Termination/, { answer: "Overdue amounts accrue interest at 1.5% per month.", explanation: "The Provider is not liable for late payment interest." }), "Is interest charged?", D);
     expect(r.status === "answered" ? r.verification : "blocked").not.toBe("checked");

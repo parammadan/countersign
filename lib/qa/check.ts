@@ -124,7 +124,7 @@ export function segments(text: string): string[] {
 /** Answer text split finer, into clauses, so "invoices are due in 30 days and late fees are 2%" is two claims. */
 function clauses(text: string): string[] {
   // "and" splits two claims, not a range of numbers ("Lease Years 3 and 4")
-  return stripPageRefs(text.slice(0, MAX_TEXT)).split(/(?<=[.!?])\s+|;\s*|\n+|,?\s+(?:and|but|while|whereas|plus)\s+(?!\d)/i).map((s) => s.trim()).filter(Boolean);
+  return stripPageRefs(text.slice(0, MAX_TEXT)).split(/(?<=[.!?])\s+|;\s*|\n+|,?\s+(?:and|but|while|whereas|plus)\s+(?!\d)|,\s+(?:so|therefore|thus|which means|meaning|hence)\s+/i).map((s) => s.trim()).filter(Boolean);
 }
 
 type Seg = { t: string; a: Set<string>; v: Value[] };
@@ -184,7 +184,10 @@ export function unboundValues(answer: string, support: string[], question = "", 
     const statedHere = new Set(stated.map((x) => x.n));
     // a scenario figure from the question ("if a $3,200 invoice is late") may be used where the answer is itself
     // conditional ("on a $3,200 invoice, ..."); stated as a fact it's checked like any other figure
-    const conditional = /\b(?:if|assuming|suppos\w*|on an?|in that case|in your example|in this scenario|because|since|given(?: that)?|when|once)\b/i.test(c);
+    // comparing the user's figure with the agreement's ("45 days falls in the 89-to-30-day window", "200 hours is
+    // fewer than 520") is evaluating their scenario, not stating a term
+    const compares = /\b(?:falls?\s+(?:in|within|inside|outside|before|after|under)|is\s+(?:fewer|less|more|greater|longer|shorter|lower|higher)\s+than|exceeds?|is\s+(?:within|inside|outside|below|above|under|over)|comes\s+(?:before|after))\b/i.test(c);
+    const conditional = compares || /\b(?:if|assuming|suppos\w*|on an?|in that case|in your example|in this scenario|because|since|given(?: that)?|when|once)\b/i.test(c);
     for (const v of stated) {
       // "5% of $1,000" applies a stated rate to the user's own figure
       if (skip.has(v.n)) continue;
@@ -198,7 +201,7 @@ export function unboundValues(answer: string, support: string[], question = "", 
         // against "45 days' written notice"), or sharing two words with that clause
         const after = headsAfter(c, v.n);
         const strong = segs.some((sg) => sg.v.some((x) => x.kind === v.kind && x.kind !== "plain" && x.n !== v.n && !statedHere.has(x.n) && (own.filter((w) => sg.a.has(w)).length >= 2 || (v.kind !== "money" && [...headsAfter(sg.t, x.n)].some((w) => after.has(w))))));
-        if (!strong) continue;
+        if (!strong || compares) continue;
         out.push(`${v.n}${v.kind === "percent" ? "%" : ""}`);
         continue;
       }
@@ -232,6 +235,12 @@ export function unboundValues(answer: string, support: string[], question = "", 
         out.push(`${v.n}${v.kind === "percent" ? "%" : ""}`);
         continue;
       }
+      // a figure that isn't in any sentence the model quoted, and that the answer doesn't tie to the clause it's
+      // from, is a figure from elsewhere put to an unstated use ("so the most you could recover is $1,000,000")
+      if (agreement.length && v.kind !== "plain" && withValue.length && !withValue.some((s) => citedSegs.some((x) => normalize(x.t).includes(normalize(s.t)) || normalize(s.t).includes(normalize(x.t))))) {
+        out.push(`${v.n}${v.kind === "percent" ? "%" : ""}`);
+        continue;
+      }
       const asked = fromQuestion.has(v.n);
       // the answer's term has a different specific figure in the agreement: of the same kind (one number of days
       // for another), or of another kind when the wording matches strongly (a sum put where the days belong)
@@ -252,6 +261,8 @@ const NEG = /\b(?:\w+n['’]t|cannot|no|not|nothing|never|none|neither|nor|witho
 const NEG_WORD = /\b(\w+n['’]t|cannot|no|not|nothing|never|none|neither|nor|without|non-\w+|waived?|free|zero)\b/g;
 /** "No, ..." / "Yes, ..." opening a sentence is a reply, not a claim; "no later than" is a deadline, not a negation. */
 const REPLY = /(^|[.!?]\s+)(?:no|yes)\s*[,.;:!—-]\s*/gi;
+// "isn't waived", "is not free": saying a charge applies
+const AFFIRMING_NEGATION = /\b(?:not|isn['’]?t|is not|aren['’]?t|are not|never)\s+(?:waived|free|excused|forgiven)\b/g;
 // limits and conditions, not reversals: "no later than", "not without notice", "can't end it sooner", "not a convenience
 // termination" (a contrast), "not the same as"
 const BOUNDS = /\b(?:no|not)\s+(?:later|earlier|more|less|fewer|sooner)\s+than\b|\b(?:not|cannot|\w+n['’]t)\b[^.,;]{0,50}?\b(?:without|sooner|earlier|before|until|unless|except|beyond)\b|(?<!there(?:'s| is| are| was)\s)\bnot\s+(?:a|an)\s+(?![a-z]*\s*(?:cap|limit|fee|charge|penalty|right|obligation)\b)|\bnot\s+(?:the same|the time|about)\b|\bnot\s+limited\s+by\s+(?:section|clause|article|paragraph|schedule)\b|\bnot\s+(?:cured|remedied|corrected|paid|received|delivered|disputed|approved|accepted)\s+(?:within|by|on|in)\b|\b(?:rather than|instead of)\b[^,.;:]*|,\s*(?:and\s+|but\s+)?not\s+(?:to|for|on|in|as|by|at|from|with)\b[^,.;:]*/g;
@@ -650,7 +661,7 @@ export function negationCheck(answer: string, support: string[], question: strin
       block.push(`"${normalize(lead[1]).trim()}"`);
       continue;
     }
-    let c = absenceFree(raw).replace(BOUNDS, " ");
+    let c = absenceFree(raw).replace(BOUNDS, " ").replace(AFFIRMING_NEGATION, " ");
     // "with no overtime" repeated from the user's own question is their scenario, not a term
     c = c.replace(/\b(?:no|not|without)\s+[a-z]+(?:\s+[a-z]+)?/g, (m) => (qn.includes(m) && unaddressed(m) ? " " : m));
     // the user asserted something ("Since the fee is now $0", "the emailed claim that the waiver is free"): an
@@ -669,7 +680,9 @@ export function negationCheck(answer: string, support: string[], question: strin
     for (const w of words) {
       const special = /^(?:waived?|free|zero)$/.test(w);
       const has = (t: string) => (special ? new RegExp(`\\b${w.replace(/d$/, "")}`).test(normalize(t)) : NEG.test(normalize(t)) || BOUNDS.test(normalize(t)));
-      if (near.some((s) => has(s.t)) || (best === 0 && has(all) && !special)) continue;
+      // a material negation about something no cited sentence addresses has nothing behind it
+      const moneyish = special || w === "nothing" || normalize(c).split(/[^\p{L}]+/u).some((x) => [0, 1, 6, 9, 11].includes(GROUP_OF.get(x) ?? -1));
+      if (near.some((s) => has(s.t)) || (best === 0 && has(all) && !special && !moneyish)) continue;
       // saying money isn't owed ("owes nothing", "no fees apply", "the fee is waived") is material however weak the match
       // payment (0), termination (1), liability (6), late payment and interest (9), refunds (11): material terms
       const money = special || w === "nothing" || normalize(c).split(/[^\p{L}]+/u).some((x) => [0, 1, 6, 9, 11].includes(GROUP_OF.get(x) ?? -1));
@@ -722,6 +735,8 @@ export function stripRefutations(text: string, question: string): string {
   const qNums = new Set(valuesIn(question).map((v) => v.n));
   const qAll = new Set([...normalize(question).matchAll(/\d[\d,]*(?:\.\d+)?/g)].map((m) => String(Number(m[0].replace(/,/g, "")))));
   for (const n of qAll) qNums.add(n);
+  // "so 30 days isn't enough": the user's figure, corrected
+  text = text.replace(/([$£€]?\s?(\d[\d,]*(?:\.\d+)?)\s*(?:%|(?:business |calendar |working )?(?:hours?|days?|weeks?|months?|years?))?['’]?(?:\s+\w+){0,2})\s+(?:isn['’]?t|is not|wouldn['’]?t be|would not be|won['’]?t be|falls short|is too (?:short|low|little))(?:\s+(?:enough|sufficient|correct|right|valid))?/gi, (m, _p, num: string) => (qNums.has(String(Number(num.replace(/,/g, "")))) ? " " : m));
   return text.replace(/\b(?:not|no|never|isn['’]?t|aren['’]?t|rather than|instead of)\s+((?:[^,.;:]|(?<=\d)[,.](?=\d))+)/gi, (m, tail: string) => {
     if (tail.length > 60) return m;
     const tv = [...tail.matchAll(/\d[\d,]*(?:\.\d+)?/g)].map((x) => String(Number(x[0].replace(/,/g, ""))));
@@ -731,8 +746,9 @@ export function stripRefutations(text: string, question: string): string {
 }
 
 /** The content words right after a figure and its unit: what the figure is of ("30 days' notice" -> notice). */
+const WORD_NUM: Record<string, string> = { one: "1", two: "2", three: "3", four: "4", five: "5", six: "6", seven: "7", eight: "8", nine: "9", ten: "10", twelve: "12", fourteen: "14", fifteen: "15", twenty: "20", thirty: "30", "forty-five": "45", sixty: "60", ninety: "90" };
 function headsAfter(text: string, n: string): Set<string> {
-  const t = normalize(text);
+  const t = normalize(text).replace(/\b(?:one|two|three|four|five|six|seven|eight|nine|ten|twelve|fourteen|fifteen|twenty|thirty|forty-five|sixty|ninety)\b/g, (w) => WORD_NUM[w]);
   const out = new Set<string>();
   const num = n.replace(/\./g, "\\.");
   const re = new RegExp(`(?:^|[^\\d.])(?:[$£€]\\s?)?${num}(?:[\\d,]*)\\s*(?:\\(\\s*\\d+\\s*\\)\\s*)?(?:%|percent|(?:business|calendar|working)\\s+)?(?:hours?|days?|weeks?|months?|years?)?['’]?s?\\s+((?:[a-z'’-]+\\s+){0,2}[a-z'’-]+)`, "g");
