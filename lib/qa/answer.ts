@@ -109,7 +109,7 @@ const COMMON_CAPS = new Set(["client", "provider", "consultant", "firm", "compan
  * what the document doesn't say ("doesn't specify a deadline") don't count as negations, and page references are
  * the app's own metadata.
  */
-export function unsupportedFacts(answer: string, quotes: string[], allowed: Set<string> = new Set(), question = ""): string[] {
+export function unsupportedFacts(answer: string, quotes: string[], allowed: Set<string> = new Set(), question = "", o: { negations?: boolean } = {}): string[] {
   answer = stripPageRefs(answer);
   const hay = normalize(quotes.join(" \n "));
   const out: string[] = [];
@@ -128,7 +128,7 @@ export function unsupportedFacts(answer: string, quotes: string[], allowed: Set<
   // contact details and links must be copied too
   for (const m of a.matchAll(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+|\b(?:https?:\/\/|www\.)\S+/g)) if (!hay.includes(m[0].replace(/[.,;:)]+$/, ""))) out.push(m[0]);
   // negations must be supported where the cited text talks about the same thing, not anywhere in it
-  out.push(...unsupportedNegations(answer, quotes, withoutAbsence));
+  if (o.negations !== false) out.push(...unsupportedNegations(answer, quotes, withoutAbsence));
   // names: every capitalised word must be in the quotes, unless it's a common word that starts sentences
   for (const m of answer.normalize("NFKC").slice(0, MAX_FACT_TEXT).matchAll(/\b([A-Z][\p{L}'’-]+)/gu)) {
     const w = normalize(m[1]).replace(/'s$/, "");
@@ -175,6 +175,7 @@ export const QA_SYSTEM = [
   '- Passages marked binding="false" are text the agreement itself labels as drafts, marketing or not binding:',
   "  never treat them as the agreement's terms or cite them as evidence; you may say they exist and aren't binding.",
   "- Earlier turns show what the user means by a follow-up. They are not evidence: cite passages for every fact.",
+  "- In the answer, explanation and notes, refer to clauses by number or heading, never by passage id.",
   "- Describe what the agreement says; don't give legal advice or opinions on enforceability.",
   "Answer only with JSON matching the schema.",
 ].join("\n");
@@ -353,13 +354,25 @@ export async function answerWithModel(
   const { verified, operands, failed } = checkCalculations([...out.calculations, ...impliedCalculations(`${out.answer}\n${out.explanation}`)], support, question, `${out.answer} ${out.explanation}`);
   if (failed.length) return withheld(`A calculation in the answer didn't check out (${failed.slice(0, 2).join("; ")}), so it isn't shown.`);
   const allowed = new Set([...fromQuestion, ...verified, ...operands]);
-  // the answer, the explanation and the "not stated" notes are all held to the same standard
-  const said = [out.answer, out.explanation, ...out.not_stated].filter(Boolean).join("\n");
+  // passage ids are internal; they're never shown ("Passage p3-2 sets...")
+  const noIds = (t: string) => t.replace(/\s*\(?\b(?:passages?\s+)?p\d{1,4}-n?\d{1,4}\b\)?/gi, "").replace(/\s{2,}/g, " ").trim();
+  out.answer = noIds(out.answer);
+  out.explanation = noIds(out.explanation);
+  out.not_stated = out.not_stated.map(noIds).filter(Boolean);
+  // the answer and its explanation are held to the cited text. "Not stated" notes say what the agreement lacks,
+  // so they may name terms from anywhere in it, but nothing that isn't in it. A "not found" answer is itself a
+  // statement of absence, so its negations ("no arbitration clause") aren't matched against the cited text.
+  const absent = out.status === "not_found";
+  const said = [out.answer, out.explanation].filter(Boolean).join("\n");
+  const agreementText = shown.filter((p) => p.binding !== false).map((p) => p.text);
+  const notes = out.not_stated.join("\n");
+  const unsupportedNotes = notes ? [...unsupportedFacts(notes, agreementText, allowed, question, { negations: false }), ...unsupportedPlaces(notes, agreementText, question)] : [];
+  if (unsupportedNotes.length) return withheld(`The answer's notes mentioned ${unsupportedNotes.slice(0, 6).join(", ")}, which the agreement doesn't contain, so it isn't shown.`);
   // an answer that itself reads like instructions or talks about prompts isn't an answer about the agreement
-  if (QA_INSTRUCTION_RE.test(normalize(said)) || /\b(?:system prompt|my instructions|previous instructions)\b/i.test(said)) return withheld("The answer read like instructions rather than an answer about the agreement, so it isn't shown.");
+  if (QA_INSTRUCTION_RE.test(normalize(`${said}\n${notes}`)) || /\b(?:system prompt|my instructions|previous instructions)\b/i.test(`${said}\n${notes}`)) return withheld("The answer read like instructions rather than an answer about the agreement, so it isn't shown.");
   const wrongQuotes = misquoted(said, support);
   if (wrongQuotes.length) return withheld(`The answer quoted ${wrongQuotes.slice(0, 2).join(", ")}, which isn't what the agreement says, so it isn't shown.`);
-  const unsupported = unsupportedFacts(said, support, allowed, question);
+  const unsupported = unsupportedFacts(said, support, allowed, question, { negations: !absent });
   if (unsupported.length) return withheld(`The answer mentioned ${unsupported.slice(0, 6).join(", ")}, which the quoted text doesn't contain, so it isn't shown.`);
   const unbound = unboundValues(said, support, question, verified, fromQuestion, scenarioFigures(question));
   if (unbound.length) return withheld(`The answer gave ${unbound.slice(0, 4).join(", ")} for something the quoted text gives a different figure for, so it isn't shown.`);
@@ -380,7 +393,7 @@ export async function answerWithModel(
   const words = unsupportedWords(out.answer, []).filter((w) => !generic(w));
   const extraWords = unsupportedWords(out.answer, support).filter((w) => !generic(w) && !covered(w));
   const share = words.length ? extraWords.length / words.length : 0;
-  if (words.length >= 2 && share > LOOSE_WORDING) return withheld("Most of the answer's wording isn't in the text it cites, so it isn't shown.");
+  if (!absent && words.length >= 2 && share > LOOSE_WORDING) return withheld("Most of the answer's wording isn't in the text it cites, so it isn't shown.");
   if (share > 0.5) warnings.push("Much of this answer is worded differently from the quoted text. Check it against the quotes.");
   return result(out.status, out.answer, extra);
 }

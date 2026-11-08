@@ -252,3 +252,23 @@ describe("review 6", () => {
     expect(text(["1. Fees. The Client will pay $3,200 per month. Unofficial FAQ: answers for prospective clients. Is there a setup fee? None for new clients."])).not.toContain("None for new clients");
   });
 });
+
+describe("real-model smoke findings", () => {
+  const P = linesFromText(['Engagement Agreement between Alder Row Legal (the "Firm") and the Client. Fees and payment. Fees are charged hourly at $310 per hour. The Client pays an initial retainer of $2,500 before work begins. Invoices are due net 30 days from the invoice date. Overdue balances accrue interest at 1.5% per month.', "General terms. This agreement is governed by the laws of Oregon."]);
+  const pick = (r: { context?: string; document: string }, re: RegExp) => [...((r.context ?? "") + r.document).matchAll(/<passage id="([^"]+)" page="\d+">([\s\S]*?)<\/passage>/g)].find((m) => re.test(m[2]))![1];
+  it("a 'not stated' note may name a term from elsewhere in the agreement, but not an invented one", async () => {
+    const mk = (note: string): ModelProvider => ({ name: "s", model: "s", complete: async (r) => ({ status: "answered", answer: "Invoices are due net 30 days from the invoice date.", explanation: "", calculations: [], not_stated: [note], citations: [{ passage: pick(r, /net 30/), quote: "Invoices are due net 30 days from the invoice date." }] }) });
+    expect((await answerWithModel(mk("Whether the $2,500 retainer is applied against invoices"), "When are invoices due?", P)).status).toBe("answered");
+    expect((await answerWithModel(mk("Whether the $9,999 setup fee is refundable"), "When are invoices due?", P)).status).not.toBe("answered");
+  });
+  it("a correct 'not found' answer that cites the nearest clause and mentions a passage id is shown, without the id", async () => {
+    const p: ModelProvider = { name: "s", model: "s", complete: async (r) => ({ status: "not_found", answer: "The agreement does not say where arbitration is held; it contains no arbitration clause at all. The only related term is that the agreement is governed by the laws of Oregon.", explanation: "No passage mentions arbitration, dispute resolution procedures, or a venue. Passage " + pick(r, /Oregon/) + " sets Oregon as the governing law, but governing law is not the same as an arbitration location.", calculations: [], not_stated: ["Whether disputes must go to arbitration"], citations: [{ passage: pick(r, /Oregon/), quote: "This agreement is governed by the laws of Oregon." }] }) };
+    const r = await answerWithModel(p, "Where is arbitration held?", P);
+    expect(r.status, r.warnings.join(" / ")).toBe("not_found");
+    expect(r.answer).toContain("no arbitration clause");
+    expect(r.explanation).not.toMatch(/p\d+-\d+/);
+    // a not-found answer still can't invent a place
+    const bad: ModelProvider = { ...p, complete: async (r) => ({ ...(await p.complete(r as never) as object), answer: "There's no arbitration clause; disputes go to the courts of Nevada." }) };
+    expect((await answerWithModel(bad, "Where is arbitration held?", P)).status).not.toBe("not_found");
+  });
+});

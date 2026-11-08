@@ -109,8 +109,10 @@ function report(name: string, cases: Case[], rows: Row[]) {
     if (!o) return false;
     if (c.gold.status === "not_found") return o.status === "not_found";
     const text = `${o.answer ?? ""} ${o.explanation ?? ""}`;
-    return o.status !== "not_found" && c.gold.facts.every((f) => containsFact(text, f)) && !c.gold.distractors.some((d) => containsFact(o.answer ?? "", d) && !c.gold.facts.some((f) => containsFact(String(Array.isArray(d) ? d[0] : d), f)));
+    return o.status !== "not_found" && c.gold.facts.every((f) => containsFact(text, f));
   };
+  // a distractor (a plausible wrong value) in the answer: wrong, or extra correct context; reviewed by hand
+  const mentionsDistractor = (c: Case, text: string) => c.gold.distractors.some((d) => containsFact(text, d) && !c.gold.facts.some((f) => containsFact(String(Array.isArray(d) ? d[0] : d), f)));
   const shownOk = (c: Case, r: Row) => {
     const s = r.shown;
     if (!s) return false;
@@ -138,6 +140,7 @@ function report(name: string, cases: Case[], rows: Row[]) {
     shownCorrect: ran.filter(([c, r]) => shownOk(c, r)).length,
     modelCorrect: ran.filter(([c, r]) => rawOk(c, r)).length,
     withheld: withheld.length,
+    shownWithDistractor: ran.filter(([c, r]) => r.shown && r.shown.status !== "not_found" && mentionsDistractor(c, r.shown.answer)).map(([c]) => c.id),
     withheldButModelRight: withheldButRight.map(([c]) => c.id),
     trapLeaks: `${trapLeaks.length}/${traps.length}`,
     byCategory: byCat,
