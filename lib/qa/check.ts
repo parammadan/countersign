@@ -348,8 +348,12 @@ const NUMERIC_RESULT = /^\s*[$£€]?\s*-?\d[\d,]*(?:\.\d+)?\s*%?\s*$/;
  * stated percentage, a sum from a stated amount, never a clause number) about the question's topic, a figure from
  * the question, a calendar constant, or an earlier verified result. The result must be a plain number that matches.
  */
-export function checkCalculations(calcs: Calculation[], support: string[], question: string, topic: string): { verified: Set<string>; failed: string[] } {
+export function checkCalculations(calcs: Calculation[], support: string[], question: string, topic: string): { verified: Set<string>; operands: Set<string>; failed: string[] } {
   const verified = new Set<string>();
+  // operands of calculations that checked out: they may appear in the answer, but (unlike results and calendar
+  // constants) they're still checked for belonging to the right term, so a figure from a leading question used
+  // in a calculation ("$5,000 x 12") is still caught
+  const operandsOk = new Set<string>();
   const failed: string[] = [];
   const segs = supportSegments(support);
   const q = valuesIn(question);
@@ -373,6 +377,7 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
     const hundredOk = operands.some((o) => o.n !== "100" && percents.has(o.n));
     const known = (o: { n: string; kind: Kind | null }) =>
       verified.has(o.n) ||
+      operandsOk.has(o.n) ||
       fromQuestion.has(o.n) ||
       (o.kind === null && (constant(o.n) || (o.n === "100" && hundredOk) || (Number(o.n) < 1 && percents.has(String(+(Number(o.n) * 100).toFixed(6)))))) ||
       fromAgreement(o.n, o.kind === "percent" ? "percent" : o.kind);
@@ -380,13 +385,16 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
     const bad = value === null || !operands.length || !operands.every(known) || !NUMERIC_RESULT.test(c.result) || !Number.isFinite(stated) || Math.abs(value - stated) > 0.005 + Math.abs(value) * 1e-9;
     if (bad) failed.push(`${c.expression} = ${c.result}`);
     else {
-      for (const o of operands) verified.add(o.n);
+      for (const o of operands) {
+        if (o.kind === null && constant(o.n)) verified.add(o.n);
+        else operandsOk.add(o.n);
+      }
       verified.add(String(Number(stated)));
       verified.add(String(Number(value.toFixed(2))));
       verified.add(String(Math.round(value)));
     }
   }
-  return { verified, failed };
+  return { verified, operands: operandsOk, failed };
 }
 
 // ---- quotations inside the answer ----

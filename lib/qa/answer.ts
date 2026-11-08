@@ -350,9 +350,9 @@ export async function answerWithModel(
   // "a month late", "an hour" in the question is the figure 1 the answer may restate ("one month")
   if (/\b(?:a|an|one|per)\s+(?:hour|day|week|month|year|invoice)\b/i.test(question)) fromQuestion.add("1");
   // arithmetic the model listed, and arithmetic it wrote in the prose, are both re-done
-  const { verified, failed } = checkCalculations([...out.calculations, ...impliedCalculations(`${out.answer}\n${out.explanation}`)], support, question, `${out.answer} ${out.explanation}`);
+  const { verified, operands, failed } = checkCalculations([...out.calculations, ...impliedCalculations(`${out.answer}\n${out.explanation}`)], support, question, `${out.answer} ${out.explanation}`);
   if (failed.length) return withheld(`A calculation in the answer didn't check out (${failed.slice(0, 2).join("; ")}), so it isn't shown.`);
-  const allowed = new Set([...fromQuestion, ...verified]);
+  const allowed = new Set([...fromQuestion, ...verified, ...operands]);
   // the answer, the explanation and the "not stated" notes are all held to the same standard
   const said = [out.answer, out.explanation, ...out.not_stated].filter(Boolean).join("\n");
   // an answer that itself reads like instructions or talks about prompts isn't an answer about the agreement

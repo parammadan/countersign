@@ -231,3 +231,24 @@ describe("review 5", () => {
     expect(r.status).not.toBe("answered");
   });
 });
+
+describe("review 6", () => {
+  it("a figure from a leading question is still checked when it's used in a calculation", async () => {
+    for (const o of [
+      { answer: "Yes, the monthly fee is $5,000, so $5,000 x 12 = $60,000 a year." },
+      { answer: "Yes, the monthly fee is $5,000, so $60,000 a year.", calculations: [{ expression: "5000 * 12", result: "60000" }] },
+    ]) {
+      const r = await ask("Is the monthly fee $5,000, and what is that per year?", o);
+      expect(r.status, o.answer).not.toBe("answered");
+    }
+    const ok = await ask("What is the monthly fee, and what is that per year?", { answer: "The Client pays $3,200 per month, so $3,200 x 12 = $38,400 a year." });
+    expect(ok.status, ok.warnings.join(" / ")).toBe("answered");
+  });
+  it("superseded schedules: a 'Section 4 of the draft…' sentence, schedule items numbered past the main clauses, an FAQ with a subtitle", () => {
+    const text = (pages: string[]) => passages(linesFromText(pages)).passages.map((p) => p.text).join(" ");
+    expect(text(["1. Fees. The Client will pay $3,200 per month. Schedule C. Superseded draft terms (withdrawn). Section 4 of the earlier draft set the monthly fee at $50."])).not.toContain("$50");
+    expect(text(["1. Fees. The Client will pay $3,200 per month.", "Schedule C. Superseded draft terms (withdrawn). 1. The monthly fee is $50. 2. The notice period is 5 days.", "SCHEDULE D. Payment details. Pay by wire transfer."])).not.toMatch(/\$50|\b5 days/);
+    expect(text(["1. Fees. The Client will pay $3,200 per month.", "Schedule C. Superseded draft terms (withdrawn). 1. The monthly fee is $50.", "SCHEDULE D. Payment details. Pay by wire transfer."])).toContain("Pay by wire transfer.");
+    expect(text(["1. Fees. The Client will pay $3,200 per month. Unofficial FAQ: answers for prospective clients. Is there a setup fee? None for new clients."])).not.toContain("None for new clients");
+  });
+});

@@ -41,7 +41,8 @@ export const QA_INSTRUCTION_RE = new RegExp(`${INSTRUCTION_RE.source}|${QA_EXTRA
 // "Schedule C", "Section 5", "Exhibit IV" (with an identifier), or a heading in capitals ("GENERAL TERMS")
 const KEYWORD_HEADING = /^\s*(?:schedule|appendix|exhibit|annex|article|section|part)\s+(?:[a-z]|\d{1,3}|[ivx]{1,5})(?:[.:)\s]|$)/i;
 const CAPS_HEADING = /^\s*[A-Z][A-Z &,'-]{3,60}[.:]?$/;
-const isHeading = (t: string) => KEYWORD_HEADING.test(t) || CAPS_HEADING.test(t);
+// a keyword line is a heading only when short ("Schedule D.", "Section 5: Fees"), not "Section 4 of the draft set..."
+const isHeading = (t: string) => (KEYWORD_HEADING.test(t) && t.split(/\s+/).length <= 8) || CAPS_HEADING.test(t);
 export const NON_BINDING_SECTION_RE = /^(?:[a-z][\w ]{0,30}\.\s+)?(?:marketing (?:summary|copy|material|overview)|unofficial (?:faq|summary|notes?|guide|overview)|superseded (?:drafts?|versions?|terms)|draft (?:summary|version|terms|overview)|faq|sales (?:summary|sheet))\b/i;
 export const NON_BINDING_SENTENCE_RE = /\((?:not (?:legally )?binding|non-binding|unofficial|superseded|draft only|for discussion only)\)/i;
 export const NON_BINDING_RE = new RegExp(`${NON_BINDING_SECTION_RE.source}|${NON_BINDING_SENTENCE_RE.source}`, "i");
@@ -87,6 +88,7 @@ export function passages(pages: PageLines[]): { passages: Passage[]; excluded: P
   const out: Passage[] = [];
   const excluded: Passage[] = [];
   let unofficial = false;
+  let sectionItem = 0;
   let lastClause = 0;
   let seq = 0;
   for (const p of pages) {
@@ -105,10 +107,19 @@ export function passages(pages: PageLines[]): { passages: Passage[]; excluded: P
       // a label sentence is itself set aside; it opens a section only when it's a heading: short with nothing after
       // a colon, ending in a colon, or right after a heading ("Schedule C.")
       const label = NON_BINDING_SECTION_RE.test(n);
-      const headingLike = /:\s*$/.test(t) || (t.split(/\s+/).length <= 8 && !/:\s*\S/.test(t)) || (prev !== "" && (isHeading(prev) || prev.split(/\s+/).length <= 3));
+      const afterHeading = prev !== "" && (isHeading(prev) || prev.split(/\s+/).length <= 3);
+      // an FAQ is questions and answers: its label opens a section even with a subtitle ("Unofficial FAQ: answers...")
+      const headingLike = /:\s*$/.test(t) || (t.split(/\s+/).length <= 8 && (!/:\s*\S/.test(t) || /\bfaq\b/.test(n))) || afterHeading;
       prev = t;
-      if (label && headingLike) unofficial = true;
-      else if (unofficial && !label && (isHeading(t) || (num > lastClause && num > 0))) unofficial = false;
+      if (label && headingLike) {
+        if (!unofficial) sectionItem = 0;
+        unofficial = true;
+      } else if (unofficial && !label) {
+        // the section keeps its own numbering ("1.", "2." of a superseded schedule); a number that isn't its next
+        // item and is above the agreement's last clause means the agreement has resumed
+        if (isHeading(t) || (num > 0 && num > lastClause && num > sectionItem + 1)) unofficial = false;
+        else if (num > 0) sectionItem = Math.max(sectionItem, num);
+      }
       if (!unofficial && !label && num > 0) lastClause = Math.max(lastClause, num);
       aside.push(QA_INSTRUCTION_RE.test(n) ? "x" : unofficial || label || NON_BINDING_SENTENCE_RE.test(n) ? "n" : null);
     }
