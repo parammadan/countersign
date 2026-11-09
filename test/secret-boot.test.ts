@@ -66,7 +66,19 @@ describe("boot check", () => {
     env.NEXT_RUNTIME = "nodejs";
     const before = g.__csworker;
     const { register } = await import("../instrumentation");
-    await expect(register()).rejects.toThrow(/APP_SECRET/);
+    // Next.js would log a thrown error and keep serving 500s, so register() exits the process itself
+    const exit = vi.spyOn(process, "exit").mockImplementation(((code?: number) => {
+      throw new Error(`exit ${code}`);
+    }) as never);
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await expect(register()).rejects.toThrow("exit 1");
+      expect(exit).toHaveBeenCalledWith(1);
+      expect(err.mock.calls.flat().join(" ")).toMatch(/\[boot\] APP_SECRET is not set/);
+    } finally {
+      exit.mockRestore();
+      err.mockRestore();
+    }
     expect(g.__csworker).toBe(before);
   });
 
