@@ -584,26 +584,20 @@ export function datesIn(text: string, limit = MAX_TEXT): Set<string> {
 /** A step's notes ("(second anniversary)", "(discount forgone)") aren't part of it: parentheses holding words are dropped. */
 export const stripNotes = (t: string) => t.replace(/[−–—]/g, "-").replace(/\s*\((?=[^)]*\p{L}{2})[^()]*\)/gu, " ").replace(/\s+/g, " ").trim();
 /**
- * "Next Working Day after Sunday 5 April 2026, skipping Easter Monday 6 April 2026" = "Tuesday 7 April 2026": the
- * first weekday after the base date that isn't a listed skipped date. Null when the expression isn't such a step.
- * (Whether a skipped date really is a holiday is the verifier's call: it can only make the date later.)
+ * "Next Working Day after Sunday 5 April 2026" = "Monday 6 April 2026": re-done across weekends only. A step that
+ * skips holidays isn't re-done here (whether a date is a holiday can't be confirmed without reading the agreement's
+ * meaning), so its result gets no provenance and the verifier must judge it. From a weekday the date doesn't move.
+ * Null when the expression isn't such a step, or names holidays to skip.
  */
-export function checkNextWorkingDay(expression: string, result: string): { ok: boolean; dates: string[]; skipped?: string[] } | null {
-  const m = new RegExp(`^\\s*(?:the\\s+)?next\\s+(?:working|business)\\s+day\\s+(?:after|following)\\s+(?:${WEEKDAY},?\\s+)?(${DATE_TERM.source})(.*)$`, "i").exec(expression);
+export function checkNextWorkingDay(expression: string, result: string): { ok: boolean; dates: string[] } | null {
+  const m = new RegExp(`^\\s*(?:the\\s+)?next\\s+(?:working|business)\\s+day\\s+(?:after|following)\\s+(?:${WEEKDAY},?\\s+)?(${DATE_TERM.source})\\s*$`, "i").exec(expression);
   if (!m) return null;
   const base = parseDate(m[2]);
   const got = parseDate((DATE_TERM.exec(result) ?? [""])[0]);
   if (!base || !got) return null;
-  const skipped = datesIn(m[m.length - 1]);
-  // the rule moves a day that isn't a working day: from a weekday that isn't skipped, the date doesn't move
-  if (base.getUTCDay() !== 0 && base.getUTCDay() !== 6 && !skipped.has(iso(base))) return { ok: got.getTime() === base.getTime(), dates: [m[2], (DATE_TERM.exec(result) ?? [""])[0]], skipped: [] };
   const d = new Date(base.getTime());
-  do d.setUTCDate(d.getUTCDate() + 1);
-  while (d.getUTCDay() === 0 || d.getUTCDay() === 6 || skipped.has(iso(d)));
-  // skipped dates are inputs (each needs its own provenance, like a holiday listed in the agreement); only the
-  // result is derived
-  const skippedText = [...m[m.length - 1].matchAll(DATE_TERM_G)].map((x) => x[0]);
-  return { ok: d.getTime() === got.getTime(), dates: [m[2], (DATE_TERM.exec(result) ?? [""])[0]], skipped: skippedText } as { ok: boolean; dates: string[]; skipped?: string[] };
+  while (d.getUTCDay() === 0 || d.getUTCDay() === 6) d.setUTCDate(d.getUTCDate() + 1);
+  return { ok: d.getTime() === got.getTime(), dates: [m[2], (DATE_TERM.exec(result) ?? [""])[0]] };
 }
 const CLOCK = `${WEEKDAY}\\s+(\\d{1,2})(?:[:.](\\d{2}))?\\s*(a\\.?m\\.?|p\\.?m\\.?)?`;
 const minutesOf = (day: string, h: string, mi: string | undefined, ap: string | undefined) => {
@@ -772,8 +766,6 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
     const phrase = new RegExp(`\\b(?:${day},?\\s+(?:at\\s+)?${time}|${time},?\\s+on\\s+(?:a\\s+|the\\s+)?${day})\\b`, "i");
     return phrase.test(said);
   };
-  // sentences that list holidays or days that aren't working days, in the agreement or the user's words
-  const holidaySources = `${question}\n${agreement.join("\n")}`.slice(0, 400_000).split(/(?<=[.!?])\s+|\n+/).filter((x) => /\b(?:holidays?|bank holiday|public holiday|not (?:a )?(?:working|business) days?|non-working|closure|closed)\b/i.test(x));
   const countKnown = (n: string) => fromQuestion.has(n) || quotedNums.has(n) || has(everywhere, n, null).length > 0 || constant(n) || verified.has(n) || recomputed.has(n);
   const steps = calcs.slice(0, 10).map((x) => ({ ...x, expression: stripNotes(x.expression) }));
   let size = -1;
@@ -799,22 +791,13 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
       }
       const base = calendar ? calendar.dates[0] : working ? working.dates[0] : null;
       const count = calendar?.count ?? clock?.count ?? null;
-      // every input has provenance: a base date, the count, each skipped date (a holiday), both ends of a span, and a
+      // every input has provenance: a base date, the count, both ends of a span, and a
       // clock step's starting day and time (in the user's words or the agreement)
       const inputsKnown =
         (base === null || dateKnown(base)) &&
         (count === null || countKnown(count)) &&
         // a holiday may be a day and month the agreement lists without a year ("Easter Monday 6 April"), in the base
         // date's year
-        // a skipped date counts only as a holiday a source lists: a date (or a day and month without a year, in the base
-        // date's year) in a sentence of the agreement or the user's words that is about holidays. A date existing, or
-        // being reached by calculation, isn't evidence it's a holiday; and the base date is never its own holiday.
-        (working?.skipped ?? []).every((d) => {
-          const p = parseDate(d);
-          const b = base === null ? null : parseDate(base);
-          if (!p || (b && iso(p) === iso(b))) return false;
-          return holidaySources.some((sentence) => datesIn(sentence).has(iso(p)) || (base !== null && recurringDates(d, sentence, [base]).length > 0));
-        }) &&
         (span === null || span.dates.every(dateKnown)) &&
         (clock === null || clockKnown(clock.text[0]));
       if (!inputsKnown) {
@@ -823,7 +806,7 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
         continue;
       }
       // the step's checked inputs (a known base date, both known ends of a span, a known clock start) and what it
-      // reaches have provenance; a skipped date doesn't become one
+      // reaches have provenance
       const reached = span ? span.dates : calendar ? calendar.dates : working ? working.dates : clock!.text;
       for (const d of reached) {
         dates.push(d);

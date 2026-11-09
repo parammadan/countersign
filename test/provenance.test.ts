@@ -50,10 +50,10 @@ describe("calendar steps", () => {
     expect(r.recomputed.has("182")).toBe(true);
     expect(r.dates).toContain("23 December 2024");
   });
-  it("next working day: right, wrong, and holidays only make it later", () => {
-    expect(checkNextWorkingDay("Next Working Day after Sunday 5 April 2026, skipping Easter Monday 6 April 2026", "Tuesday 7 April 2026")?.ok).toBe(true);
+  it("next working day: re-done across weekends only; a step that skips holidays isn't re-done (review 26)", () => {
     expect(checkNextWorkingDay("Next Working Day after Sunday 5 April 2026", "Tuesday 7 April 2026")?.ok).toBe(false);
     expect(checkNextWorkingDay("next business day after 5 April 2026", "6 April 2026")?.ok).toBe(true);
+    expect(checkNextWorkingDay("Next Working Day after Sunday 5 April 2026, skipping Easter Monday 6 April 2026", "Tuesday 7 April 2026")).toBeNull();
   });
   it("clock arithmetic", () => {
     expect(checkClockStep("Monday 6:30 a.m. + 72 hours", "Thursday 6:30 a.m.")?.ok).toBe(true);
@@ -228,12 +228,17 @@ describe("R23 clock starts, working days and yearless dates", () => {
     expect(shown(r1)).toBe(false);
     expect(shown(await ask("Our invoice is due on 31 December 2025. When must we pay?", { answer: "You must pay by 1 January 2026.", calculations: [{ expression: "Next Working Day after 31 December 2025, skipping 31 December 2025", result: "1 January 2026" }] }))).toBe(false);
   });
-  it("a holiday the agreement lists moves a weekend date on", () => {
+  it("a holiday step isn't re-done: its date gets no provenance, even from a holiday schedule (review 26)", () => {
     const sched = ["Working Day means Monday to Friday excluding the public holidays in Schedule 2. Schedule 2 public holidays: Good Friday 3 April; Easter Monday 6 April."];
     const r = checkCalculations([{ expression: "Next Working Day after Sunday 5 April 2026, skipping Easter Monday 6 April 2026", result: "Tuesday 7 April 2026" }], sched, "My invoice was due on 5 April 2026.", "", sched);
-    expect(r.unproven).toEqual([]);
-    expect(r.wrong).toEqual([]);
+    expect(r.dates).not.toContain("Tuesday 7 April 2026");
   });
+  for (const clause of ["The Landlord's sales office closed on 24 June 2024.", "Holiday pay for the Landlord's staff is reviewed on 24 June 2024.", "The service charge invoice is dated 24 June 2024; if a payment day is not a Working Day, it moves to the next Working Day."])
+    it(`a reused 'holiday' sentence can't move a date: ${clause.slice(0, 40)}… (review 26)`, async () => {
+      const lease = linesFromText([`${AGREEMENT[0]}\n7. ${clause}`]);
+      const r = await answerWithModel(model({ answer: "You must pay by 25 June 2024.", calculations: [{ expression: "Next Working Day after Sunday 23 June 2024, skipping 24 June 2024", result: "25 June 2024" }] }), "Our invoice is due on Sunday 23 June 2024. When must we pay?", lease, QA_LIMITS, { verifier: approveAll() });
+      expect(shown(r)).toBe(false);
+    });
   it("a yearless recurring date stated in the user's year as another event", async () => {
     expect(shown(await ask("Today is 3 March 2029. When does the Term end?", { answer: "The Term ends on 24 June 2029." }))).toBe(false);
   });
