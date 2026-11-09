@@ -138,6 +138,10 @@ export async function sendFile(f: FileRow, ws: Workspace, kind: "invite" | "rese
   if (["completed", "voided", "signed"].includes(f.status)) throw new AppError(`This file is ${f.status}; it can't be sent again.`, 409);
   if (f.status === "declined" && kind !== "resend") throw new AppError("This file was declined. Use Send again.", 409);
   assertCanSendTo(ws.id, f.client_email);
+  // the link first (the token never changes): if it can't be built, e.g. APP_SECRET missing or changed, nothing is
+  // marked sent and nothing is emailed
+  const link = signingLink(f);
+  if (!link) throw new AppError("This file's signing link can't be built, so nothing was sent.", 500);
   const t = now();
   if (f.status === "draft" || f.status === "expired" || f.status === "declined") {
     // (re)starting the clock: reminders count from now
@@ -147,7 +151,6 @@ export async function sendFile(f: FileRow, ws: Workspace, kind: "invite" | "rese
   }
   if (kind === "reminder") run("UPDATE files SET reminders_sent = reminders_sent + 1, last_reminder_at = ? WHERE id = ?", t, f.id);
   const file = getFile(ws.id, f.id);
-  const link = signingLink(file)!;
   const name = templateName(file);
   const first = escapeHtml(file.client_name.split(" ")[0] || file.client_name);
   const onFile = file.title.startsWith(name) ? "" : ` on <b>${escapeHtml(file.title)}</b>`;
