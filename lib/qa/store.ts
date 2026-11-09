@@ -13,7 +13,7 @@ import { id, now, sha256 } from "../util";
 import { pageLines } from "../understand/text";
 import { latestAnalysis, MAX_PAGES } from "../understand/store";
 import { AnalysisError, type ModelProvider, type Usage } from "../understand/model";
-import { configuredProvider, configuredVerifier } from "../ai/anthropic";
+import { configuredProvider, configuredVerifier, TEST_KEY } from "../ai/anthropic";
 import { costMicroUsd, worstCaseMicroUsd } from "../ai/pricing";
 import { answerFromPassages, answerWithModel, cleanQuestion, modelContext, QA_LIMITS, QaModelError, requestTokens, tokensAtMost, type QaResult, type Turn } from "./answer";
 import type { PageLines } from "../understand/text";
@@ -43,6 +43,13 @@ export const aiNewWorkspaceDailyBudgetUsd = (env: Record<string, string | undefi
   return Number.isFinite(v) && v >= 0 ? v : 2;
 };
 export const NEW_WORKSPACE_DAYS = 7;
+/**
+ * Whether AI answers need a workspace whose owner confirmed their email. Always, whatever the email mode: with no
+ * email provider (outbox) there is nothing to gate for mail, but model answers still cost money. Only the browser
+ * tests, which sign up without a mailbox, turn it off, and only with the test key: a real key is never ungated.
+ */
+export const aiNeedsVerifiedWorkspace = (env: Record<string, string | undefined> = process.env) =>
+  !(env.AI_ALLOW_UNVERIFIED_FOR_TESTS === "1" && env.ANTHROPIC_API_KEY === TEST_KEY);
 const COMPLETED = "('passages', 'model', 'model_failed')";
 
 export type QaEntry = { id: string; threadId: string; question: string; result: QaResult; askedBy: string; createdAt: string };
@@ -98,9 +105,14 @@ export async function askQuestion(
     let model = !!provider;
     // a sign-up gets a session straight away, so AI spend is only for workspaces whose owner confirmed their email
     // (the rule invites and outbound mail use); otherwise throwaway workspaces could use up everyone's budget
-    if (model && verificationRequired() && !workspaceVerified(wsId)) {
+    if (model && aiNeedsVerifiedWorkspace() && !workspaceVerified(wsId)) {
       model = false;
-      notes.push("Confirm your email address to get AI answers. Until the workspace owner does, these are the most relevant passages instead.");
+      // in outbox mode no confirmation email is sent, so the owner has no way to confirm here
+      notes.push(
+        verificationRequired()
+          ? "Confirm your email address to get AI answers. Until the workspace owner does, these are the most relevant passages instead."
+          : "AI answers need a confirmed email address, and this server can't send confirmation emails yet, so these are the most relevant passages instead.",
+      );
     }
     if (model) {
       const all = one<{ n: number | null }>("SELECT SUM(cost_microusd) n FROM qa_answers WHERE created_at > ?", since)?.n ?? 0;
