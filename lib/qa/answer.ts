@@ -11,7 +11,7 @@ import { MIN_QUOTE, normalize, unsupportedTokens, unsupportedWords } from "../un
 import { AnalysisError, callModel, type ModelProvider, type Usage } from "../understand/model";
 import type { Finding } from "../understand/schema";
 import type { PageLines } from "../understand/text";
-import { checkCalculations, recurringDates, weekdayChecks, withoutDates, clauses, figuresInTrueComparisons, partyRoles, ROLES, impliedCalculations, negationCheck, periodConflicts, stripRefutations, stemWord, misquoted, roleSwaps, scenarioFigures, stripPageRefs, unboundValues, unsupportedNegations, unsupportedPlaces, withoutAbsence, type Calculation } from "./check";
+import { checkCalculations, weekdayChecks, withoutDates, clauses, figuresInTrueComparisons, partyRoles, ROLES, impliedCalculations, negationCheck, periodConflicts, stripRefutations, stemWord, misquoted, roleSwaps, scenarioFigures, stripPageRefs, unboundValues, unsupportedNegations, unsupportedPlaces, withoutAbsence, type Calculation } from "./check";
 import { accept, userFigureDisowned, verifyAnswer, VerifyError, type AcceptContext, type Acceptance, type Verdict, type VerifiedClaim } from "./verify";
 import { GROUP_OF, passages, QA_INSTRUCTION_RE, retrieve, terms, type Passage, type Scored } from "./retrieve";
 
@@ -604,15 +604,12 @@ export async function answerWithModel(
   const userText = [question, ...history.map((t) => t.question)].join("\n");
   // dates reached by a date step that checked out are reasoning; where its base date comes from is the verifier's call
   // provenance: dates a calendar step derived (in any format), and weekdays that match their dates, aren't invented
-  // a day and month the agreement states without a year, in the year of a date that has provenance, is quoted
-  const knownDates = [...calcs.dates, ...[question, ...history.map((t) => t.question), ...agreementText].join("\n").match(/\b\d{1,2}(?:st|nd|rd|th)?\s+[A-Z][a-z]+\s+\d{4}\b|\b[A-Z][a-z]+\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4}\b/g) ?? []];
-  const recurring = recurringDates(`${said}\n${calcCore}`, agreementText.join("\n"), knownDates);
   // a checked clock time may be written "Thursday at 6:30 a.m." or "6:30 a.m. on Thursday": exactly that day and time
   const clockForms = calcs.dates.flatMap((d) => {
     const m = /^(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\s+(.+)$/i.exec(d.trim());
     return m ? [`${m[1]} at ${m[2]}`, `${m[2]} on ${m[1]}`, `${m[2]} on a ${m[1]}`, `${m[2]} on the ${m[1]}`] : [];
   });
-  const stated = withoutDates([...calcs.dates, ...clockForms, ...weekdays.ok, ...recurring].reduce((t, d) => t.split(d).join(" "), `${said}\n${calcCore}`), calcs.dates);
+  const stated = withoutDates([...calcs.dates, ...clockForms, ...weekdays.ok].reduce((t, d) => t.split(d).join(" "), `${said}\n${calcCore}`), calcs.dates);
   // names in text set aside (a planted note "to AI assistants") may be named when saying it was disregarded
   const setAside = excluded.map((p) => p.text);
   const nowhere = [

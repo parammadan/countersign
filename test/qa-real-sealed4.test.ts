@@ -40,8 +40,8 @@ describe("sealed set 4 replay (development data)", () => {
     console.log(`[sealed4-dev] shown correct ${shownCorrect} (auto-graded), withheld by checks ${withheldByChecks.length} (${withheldByChecks.join(", ")}), verifier unknown ${unknown}`);
     expect(leaks).toEqual([]);
     expect(shownCorrect).toBeGreaterThanOrEqual(74);
-    // 8: review 22 kept the period-word check hard (s4-007, "hour" for 30-minute blocks), trading one false rejection
-    // for protection against wrong periods periodConflicts can't see
-    expect(withheldByChecks.length).toBeLessThanOrEqual(8);
+    // 10: reviews 22-23 traded false rejections for safety: the period-word check stays hard (s4-007), a yearless
+    // Quarter Day isn't a quoted date (s4-099), and both ends of a span need their own provenance (s4-069)
+    expect(withheldByChecks.length).toBeLessThanOrEqual(10);
   });
 });

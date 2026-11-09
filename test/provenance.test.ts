@@ -134,12 +134,19 @@ describe("end to end, with the verifier", () => {
   }
   const ask = (q: string, o: Parameters<typeof model>[0]): Promise<QaResult> => answerWithModel(model(o), q, PAGES, QA_LIMITS, { verifier: approveAll() });
   const shown = (r: QaResult) => !r.warnings.some((w) => /isn['’]t shown/.test(w));
-  it("a derived date and a recurring Quarter Day are shown", async () => {
+  it("a derived date is shown", async () => {
+    const r = await ask("When does rent start?", {
+      answer: "Rent starts on 23 December 2024, 26 weeks after the Term Commencement Date of 24 June 2024.",
+      calculations: [{ expression: "24 June 2024 + 26 weeks", result: "23 December 2024" }],
+    });
+    expect(shown(r), r.warnings.join(" / ")).toBe(true);
+  });
+  it("a yearless Quarter Day put in a year is not a quoted date (review 23)", async () => {
     const r = await ask("When does rent start?", {
       answer: "Rent starts on 23 December 2024, 26 weeks after the Term Commencement Date of 24 June 2024; the next Quarter Day is 25 December 2024.",
       calculations: [{ expression: "24 June 2024 + 26 weeks", result: "23 December 2024" }],
     });
-    expect(shown(r), r.warnings.join(" / ")).toBe(true);
+    expect(shown(r)).toBe(false);
   });
   it("a wrong weekday withholds the answer", async () => {
     const r = await ask("When does rent start?", {
@@ -187,5 +194,37 @@ describe("R22 provenance can't be laundered", () => {
   it("…while a real span between two known dates still derives its count", () => {
     expect(checkSpan("24 June 2024 through 23 December 2024", "182 days")?.ok).toBe(true);
     expect(checkSpan("24 June 2024 until 23 December 2024", "183 days inclusive")?.ok).toBe(true);
+  });
+});
+
+// Review 23 (independent, of be984e8): each was shown with an approve-all verifier at be984e8 and withheld at 29e43a5.
+describe("R23 clock starts, working days and yearless dates", () => {
+  const LEASE = linesFromText([`${AGREEMENT[0]}\n6. The Term ends on 23 June 2034.\n7. A notice is deemed served at 9 a.m. on the next Working Day. Inspections may not take place on a Friday. The Tenant may respond within 26 hours.`]);
+  function model(o: { answer: string; calculations?: { expression: string; result: string }[] }): ModelProvider {
+    return {
+      name: "scripted",
+      model: "claude-opus-5-5",
+      complete: async (r) => {
+        const ps = [...(r.context ?? "").matchAll(/<passage id="(p[^"]+)" page="\d+">([\s\S]*?)<\/passage>/g)].map((m) => ({ id: m[1], text: m[2] }));
+        return { status: "answered", explanation: "", not_stated: [], calculations: [], ...o, citations: ps.filter((p) => /notice|Term|Invoices|Quarter/.test(p.text)).map((p) => ({ passage: p.id, quote: p.text.slice(0, 280) })) };
+      },
+    };
+  }
+  const ask = (q: string, o: Parameters<typeof model>[0]): Promise<QaResult> => answerWithModel(model(o), q, LEASE, QA_LIMITS, { verifier: approveAll() });
+  const shown = (r: QaResult) => !r.warnings.some((w) => /isn['’]t shown/.test(w));
+  it("a clock start stitched from a weekday and a time in unrelated clauses", async () => {
+    expect(shown(await ask("When must the Tenant respond to a notice served Monday?", { answer: "The Tenant must respond by Saturday 11 a.m.", calculations: [{ expression: "Friday 9 a.m. + 26 hours", result: "Saturday 11 a.m." }] }))).toBe(false);
+  });
+  it("a next-working-day move from a day that is already a working day", async () => {
+    expect(shown(await ask("Our invoice is dated 1 December 2024. When is it due?", { answer: "It is due on 1 January 2025.", calculations: [{ expression: "1 December 2024 + 30 days", result: "31 December 2024" }, { expression: "Next Working Day after 31 December 2024", result: "1 January 2025" }] }))).toBe(false);
+    expect(checkNextWorkingDay("Next Working Day after 31 December 2024", "31 December 2024")?.ok).toBe(true);
+  });
+  it("a yearless recurring date stated in the user's year as another event", async () => {
+    expect(shown(await ask("Today is 3 March 2029. When does the Term end?", { answer: "The Term ends on 24 June 2029." }))).toBe(false);
+  });
+  it("a clock start that is one phrase in the user's words is known", () => {
+    const r = checkCalculations([{ expression: "Monday 6:30 a.m. + 72 hours", result: "Thursday 6:30 a.m." }], AGREEMENT, "It was delivered at 6:30 a.m. on a Monday and the inspection period is 72 hours.", "", AGREEMENT);
+    expect(r.unproven).toEqual([]);
+    expect(r.dates).toContain("Thursday 6:30 a.m.");
   });
 });

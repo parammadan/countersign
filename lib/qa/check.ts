@@ -595,6 +595,8 @@ export function checkNextWorkingDay(expression: string, result: string): { ok: b
   const got = parseDate((DATE_TERM.exec(result) ?? [""])[0]);
   if (!base || !got) return null;
   const skipped = datesIn(m[m.length - 1]);
+  // the rule moves a day that isn't a working day: from a weekday that isn't skipped, the date doesn't move
+  if (base.getUTCDay() !== 0 && base.getUTCDay() !== 6 && !skipped.has(iso(base))) return { ok: got.getTime() === base.getTime(), dates: [m[2], (DATE_TERM.exec(result) ?? [""])[0]], skipped: [] };
   const d = new Date(base.getTime());
   do d.setUTCDate(d.getUTCDate() + 1);
   while (d.getUTCDay() === 0 || d.getUTCDay() === 6 || skipped.has(iso(d)));
@@ -751,8 +753,6 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
     if (!d) return false;
     const k = iso(d);
     if (quotedDates.has(k) || userDates.has(k) || derivedDates.has(k)) return true;
-    // a day and month the agreement gives without a year ("Easter Monday 6 April"), in the year of a known date
-    if (recurringDates(t, agreement.join("\n"), [...quotedDates, ...userDates, ...derivedDates]).length) return true;
     // the last day of a known date's month, or the first day of the next ("60 days from the end of the month")
     return [...quotedDates, ...userDates, ...derivedDates].some((x) => {
       const y = new Date(`${x}T00:00:00Z`);
@@ -762,10 +762,15 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
   // a clock step's start ("Monday 6:30 a.m.") is the user's or the agreement's: its weekday and time both appear there
   const said = normalize(`${question}\n${agreement.join("\n")}`.slice(0, 400_000));
   const clockKnown = (t: string) => {
-    const m = /^(\w+)\s+(\d{1,2})(?:[:.](\d{2}))?\s*(a\.?m\.?|p\.?m\.?)?/i.exec(t.trim());
+    const m = /^(\w+)\s+(\d{1,2})(?:[:.](\d{2}))?\s*(a\.?m\.?|p\.?m\.?)?\s*$/i.exec(t.trim());
     if (!m) return false;
-    const time = new RegExp(`\\b${m[2]}(?:[:.]${m[3] ?? "00"})${m[3] ? "" : "?"}\\s*${m[4] ? m[4].toLowerCase().replace(/\./g, "\\.?") : ""}`, "i");
-    return said.includes(m[1].toLowerCase()) && time.test(said);
+    // a 12-hour time needs its a.m./p.m., a 24-hour one its minutes; both must agree with the source
+    if (!m[4] && !m[3]) return false;
+    const ap = m[4] ? `\\s*${/^a/i.test(m[4]) ? "a" : "p"}\\.?\\s?m\\.?` : "(?!\\s*[ap]\\.?\\s?m)";
+    const time = `${m[2]}${m[3] ? `[:.]${m[3]}` : "(?:[:.]00)?"}${ap}`;
+    const day = m[1].toLowerCase();
+    const phrase = new RegExp(`\\b(?:${day},?\\s+(?:at\\s+)?${time}|${time},?\\s+on\\s+(?:a\\s+|the\\s+)?${day})\\b`, "i");
+    return phrase.test(said);
   };
   const countKnown = (n: string) => fromQuestion.has(n) || quotedNums.has(n) || has(everywhere, n, null).length > 0 || constant(n) || verified.has(n) || recomputed.has(n);
   const steps = calcs.slice(0, 10).map((x) => ({ ...x, expression: stripNotes(x.expression) }));
@@ -797,7 +802,9 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
       const inputsKnown =
         (base === null || dateKnown(base)) &&
         (count === null || countKnown(count)) &&
-        (working?.skipped ?? []).every(dateKnown) &&
+        // a holiday may be a day and month the agreement lists without a year ("Easter Monday 6 April"), in the base
+        // date's year
+        (working?.skipped ?? []).every((d) => dateKnown(d) || (base !== null && recurringDates(d, agreement.join("\n"), [base]).length > 0)) &&
         (span === null || span.dates.every(dateKnown)) &&
         (clock === null || clockKnown(clock.text[0]));
       if (!inputsKnown) {
