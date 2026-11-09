@@ -26,6 +26,9 @@ function digitize(s: string): string {
 // "within 2 days" can't lean on clause 2; never stripped from the answer
 // a label has a dot ("2. Term", "4.1 Fees"); "on 20 Business Days' notice" keeps its 20
 export const stripClauses = (raw: string) => raw.replace(/(^|\s)\d{1,3}\.(?:\d{1,3}\.?)*(?=\s+[A-Z(“"])/g, "$1");
+// references to a clause ("clause 6.2", "Section 4.5(b)", "Schedule 3"): a label, not a figure
+export const stripRefs = (raw: string) =>
+  raw.replace(/\b(?:clauses?|sections?|schedules?|exhibits?|annex(?:es)?|appendix|appendices|paragraphs?|articles?|parts?|sub-?clauses?)\s+[A-Z]?\d{1,3}(?:\.\d{1,3})*(?:\s*\([a-z0-9]{1,4}\))*(?:\s*(?:,|and|or|to|-|–)\s*[A-Z]?\d{1,3}(?:\.\d{1,3})*(?:\s*\([a-z0-9]{1,4}\))*)*/gi, " ");
 // digits of any script as ASCII ("٢" -> "2"); NFKC already folds fullwidth and mathematical digits
 const asciiDigits = (s: string) =>
   s.replace(/\p{Nd}/gu, (d) => {

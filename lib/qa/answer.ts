@@ -12,7 +12,7 @@ import { AnalysisError, callModel, type ModelProvider, type Usage } from "../und
 import type { Finding } from "../understand/schema";
 import type { PageLines } from "../understand/text";
 import { checkCalculations, clauses, figuresInTrueComparisons, partyRoles, ROLES, impliedCalculations, negationCheck, periodConflicts, stripRefutations, stemWord, misquoted, roleSwaps, scenarioFigures, stripPageRefs, unboundValues, unsupportedNegations, unsupportedPlaces, withoutAbsence, type Calculation } from "./check";
-import { answerParts, judge, userFigureDisowned, verifyAnswer, VerifyError, type Verdict, type VerifiedClaim } from "./verify";
+import { accept, userFigureDisowned, verifyAnswer, VerifyError, type AcceptContext, type Acceptance, type Verdict, type VerifiedClaim } from "./verify";
 import { GROUP_OF, passages, QA_INSTRUCTION_RE, retrieve, terms, type Passage, type Scored } from "./retrieve";
 
 export const QA_STATUSES = ["answered", "partial", "not_found"] as const;
@@ -71,7 +71,7 @@ export class QaModelError extends AnalysisError {
 }
 
 // ---- what an answer may state: only facts its quotes contain ----
-import { MAX_FACT_TEXT, NUMWORD, numbersIn, prep, stripClauses } from "./numbers";
+import { MAX_FACT_TEXT, NUMWORD, numbersIn, numbersInAll, prep, stripClauses, stripRefs } from "./numbers";
 export { numbersIn };
 const UNIT = /(\d[\d,]*(?:\.\d+)?)\s*\)?\s*(?:\(\s*\d[\d,]*\s*\)\s*)?(?:(?:business|calendar|working)\s+)?(hours?|days?|weeks?|months?|years?|percent|per\s?cent|%)(?![a-z])/g;
 /** Number-with-unit pairs ("20 days", "thirty (30) days", "5%"), so "2 days" can't lean on "February 2". */
@@ -221,8 +221,9 @@ export const QA_SYSTEM = [
   "- Keep each figure attached to the term the agreement attaches it to. Never move a number from one clause to",
   "  another.",
   "- If you calculate, list each step in \"calculations\" as an arithmetic expression using only numbers from the",
-  "  agreement or the question (for example \"4000 * 1.5%\"), with its result. Do not calculate calendar dates;",
-  "  state the rule (for example \"30 days after the invoice date\") instead.",
+  "  agreement or the question (for example \"4000 * 1.5%\"), with its result. When the question gives a date,",
+  "  you may calculate the date the rule leads to: list it as a step such as \"1 March 2026 + 30 days\" with the",
+  "  resulting date, and state the rule too (for example \"30 days after the invoice date\").",
   "- status: \"answered\" when the agreement answers the question; \"partial\" when it addresses the topic but",
   "  leaves something open (say what in not_stated); \"not_found\" when it doesn't address the question at all (then",
   "  say so plainly; you may cite the nearest related clause).",
@@ -370,7 +371,7 @@ export async function answerWithModel(
   question: string,
   pages: PageLines[],
   limits: QaLimits = QA_LIMITS,
-  ctx: { history?: Turn[]; title?: string; /** the second, independent check; without it the deterministic checks decide alone, strictly */ verifier?: ModelProvider | null } = {},
+  ctx: { history?: Turn[]; title?: string; /** the second, independent check; without it the deterministic checks decide alone, strictly */ verifier?: ModelProvider | null; /** evaluation only: what the acceptance rules decided, claim by claim (may quote the answer) */ onAccept?: (a: Acceptance) => void } = {},
 ): Promise<QaResult> {
   const verifier = ctx.verifier ?? null;
   const history = (ctx.history ?? []).slice(-limits.maxHistoryTurns);
@@ -465,7 +466,7 @@ export async function answerWithModel(
   // is not binding") may mention that text's figures; it's checked against that text. Only the clause is set apart,
   // and only when its figures are that text's: "the fee is 15 days' notice, and this does not change on renewal"
   // keeps its first clause, and "the $3,200 rate is superseded" (a binding figure) is checked like any other.
-  const NB_DISCLAIM = /\b(?:not binding|non-binding|nonbinding|not legally binding|not part of|isn['’]?t part of|does not form part|doesn['’]t form part|forms? no part|no legal effect|no contractual effect|does not change|doesn['’]t change|does not override|doesn['’]t override|withdrawn|superseded)\b/i;
+  const NB_DISCLAIM = /\b(?:not binding|non-binding|nonbinding|not legally binding|not part of|isn['’]?t part of|does not form part|doesn['’]t form part|forms? no part|no legal effect|no contractual effect|does not change|doesn['’]t change|does not override|doesn['’]t override|withdrawn|superseded|for (?:information|illustration|discussion)(?:al)? (?:purposes )?only|illustrative only|not incorporated|not agreed)\b/i;
   const unofficialNums = numbersIn(unofficialText.join("\n"));
   const bindingNums = numbersIn(agreementText.join("\n"));
   // its figures are in the agreement, and any it has include one found only in the text labelled not binding
@@ -530,7 +531,12 @@ export async function answerWithModel(
   const calcCore = out.calculations.map((c) => `${c.expression} = ${/^\s*[$£€]?\s*-?\d[\d,]*(?:\.\d+)?\s*%?/.exec(c.result)?.[0] ?? c.result}`).join("\n");
 
   // instructions anywhere in the output, calculations included
-  const everything = `${out.answer}\n${out.explanation}\n${notes}\n${calcText}`;
+  // saying a planted note was disregarded ("The note to AI assistants on page 3 is not a term") isn't an instruction:
+  // the note's address is dropped from a sentence that disregards it, and the rest must still pass
+  const DISREGARDS = /\b(?:disregarded|ignored|not (?:a|an|one of the) (?:\w+ )?(?:term|terms|provision)|not (?:an )?operative|not part of|no (?:contractual|legal) effect|has no effect|does not (?:change|alter|affect|form part)|not binding)\b/i;
+  const NOTE_TO = /\bnotes?\b[^.:]{0,60}?\b(?:to|for|addressed to)\b[^.:]{0,20}?\b(?:automated|ai|assistants?|language models?|llms?|chatbots?|bots?|machine|software|tools?|reviewers?|readers?)\b/gi;
+  const mentionOnly = (t: string) => t.split(/(?<=[.!?])\s+|\n+/).map((x) => (DISREGARDS.test(x) && !/:/.test(x) ? x.replace(NOTE_TO, " ") : x)).join("\n");
+  const everything = mentionOnly(`${out.answer}\n${out.explanation}\n${notes}\n${calcText}`);
   if (QA_INSTRUCTION_RE.test(normalize(everything)) || /\b(?:system prompt|my instructions|previous instructions)\b/i.test(everything)) return withheld("The answer read like instructions rather than an answer about the agreement, so it isn't shown.");
 
   // Precise checks block on their own. Imprecise ones (a figure's term, negation scope, wording, facts outside the
@@ -558,6 +564,8 @@ export async function answerWithModel(
   if (calcs.unproven.length && (blocked = soft(CALC, `A calculation uses ${[...numbersIn(calcs.unproven.join(" "))].slice(0, 6).join(", ")}; check where each input comes from and that it belongs to the term used.`))) return blocked;
   qualify.push(...calcs.qualified);
   const allowed = new Set([...fromQuestion, ...calcs.verified, ...calcs.operands]);
+  // with the second check, a result re-done here from figures the agreement states isn't invented (its term is the verifier's call)
+  if (verifier) for (const n of calcs.recomputed) allowed.add(n);
 
   const INVENTED = "The answer mentioned a figure, name or detail the agreement doesn't contain, so it isn't shown.";
   const UNOFFICIAL = "The answer used a figure from text the agreement labels as not binding, so it isn't shown.";
@@ -580,9 +588,12 @@ export async function answerWithModel(
   const unitPair = (x: string) => /^\d[\d.]*(?: [a-z]+|%)$/.test(x);
   // what the user said (this turn and earlier ones) may be repeated; whether it's used correctly is the verifier's call
   const userText = [question, ...history.map((t) => t.question)].join("\n");
-  const stated = `${said}\n${calcCore}`;
+  // dates reached by a date step that checked out are reasoning; where its base date comes from is the verifier's call
+  const stated = calcs.dates.reduce((t, d) => t.split(d).join(" "), `${said}\n${calcCore}`);
+  // names in text set aside (a planted note "to AI assistants") may be named when saying it was disregarded
+  const setAside = excluded.map((p) => p.text);
   const nowhere = [
-    ...unsupportedFacts(stated, [...agreementText, userText], allowed, question, { negations: false, periods: false, names: [...agreementText, ...unofficialText, userText] }),
+    ...unsupportedFacts(stated, [...agreementText, userText], allowed, question, { negations: false, periods: false, names: [...agreementText, ...setAside, userText] }),
     ...unsupportedPlaces(stated, agreementText, userText),
     ...quotesOff([...agreementText, ...unofficialText]),
   ];
@@ -653,8 +664,10 @@ export async function answerWithModel(
   if (used.length && (blocked = soft("The answer relied on a figure from the question that the agreement doesn't give, so it isn't shown.", `The answer uses ${used.join(", ")} from the question; the agreement may give that term a different figure.`, () => used.some((n) => premiseNums.has(n) && !refutes(n))))) return blocked;
   const wrongPeriod = periodConflicts(said, support);
   if (wrongPeriod.length) return withheld("The answer gave a figure for a different period than the agreement does, so it isn't shown.");
-  const swapped = roleSwaps(said, support, shown.map((p) => p.text).join("\n"));
-  if (swapped.length) return withheld("The answer has one party doing something the agreement gives to another, so it isn't shown.");
+  const shownText = shown.map((p) => p.text).join("\n");
+  const swapped = roleSwaps(said, support, shownText);
+  const ROLES_WHY = "The answer has one party doing something the agreement gives to another, so it isn't shown.";
+  if (swapped.length && (blocked = soft(ROLES_WHY, `The answer has the ${swapped[0]} doing something; check which party the agreement gives it to.`))) return blocked;
   if (!absent) {
     // the answer is held strictly; the explanation's conditions and contrasts ("not cured within 10 days") only
     // when they plainly contradict the clause they're about
@@ -690,7 +703,8 @@ export async function answerWithModel(
   // (the question's own words don't count: "unlimited liability" isn't supported because the user asked about liability)
   const loose = "Most of the answer's wording isn't in the text it cites, so it isn't shown.";
   if (!absent && words.length >= 2 && share(support) > LOOSE_WORDING && (blocked = soft(loose, "Most of the answer's wording isn't in the text it cites; check it says what the agreement says."))) return blocked;
-  if (!absent && share(support) > 0.5) qualify.push("much of the answer is worded differently from the quoted text");
+  // wording is no measure of meaning: with the second check, a paraphrase isn't flagged
+  if (!verifier && !absent && share(support) > 0.5) qualify.push("much of the answer is worded differently from the quoted text");
 
   const extra: Partial<QaResult> = {
     explanation: out.explanation || undefined,
@@ -721,46 +735,69 @@ export async function answerWithModel(
     return r;
   }
   const bindingIds = new Set(binding.filter((p) => !QA_INSTRUCTION_RE.test(normalize(p.text))).map((p) => p.id));
-  const judgement = judge(verdicts, {
-    parts: answerParts(reviewed),
+  // a sentence the deterministic checks doubt against the cited text: a figure on another term, a negation against its
+  // clause, a party's role, a fact the cited text doesn't hold. With the verifier these don't withhold the answer; the
+  // sentence stays only if the verifier supported a claim on it with binding evidence that checks out.
+  const doubted = (sentence: string) => {
+    const t = withoutAbsence(stripRefutations(sentence, question));
+    if (unboundValues(t, support, question, new Set([...calcs.verified, ...calcs.fromAgreement]), fromQuestion, scenario, agreementText, quoted).length) return true;
+    if (!absent && negationCheck(sentence, support, question, withoutAbsence, { lenient: true }).block.length) return true;
+    if (roleSwaps(sentence, support, shownText).length) return true;
+    return [...unsupportedFacts(sentence, support, allowed, question, { negations: false, periods: false, names: agreementText }), ...unsupportedPlaces(sentence, support, question)].length > 0;
+  };
+  const parts: AcceptContext["parts"] = [
+    { kind: "answer", text: out.answer },
+    ...(out.explanation ? [{ kind: "explanation" as const, text: out.explanation }] : []),
+    ...out.calculations.map((c) => ({ kind: "calculation" as const, text: `${c.expression} = ${c.result}` })),
+    ...out.not_stated.map((n) => ({ kind: "note" as const, text: n })),
+  ];
+  // "a month late" in the user's words is the answer's "one month late"
+  const userNums = new Set([...numbersIn(userText.replace(/\b(?:a|an)\s+(?=(?:day|week|month|year|quarter|fortnight)\b)/gi, "one "))].filter((n) => !premiseNums.has(n) || userFigureDisowned(`${out.answer} ${out.explanation}`, n)));
+  const acceptance = accept(verdicts, {
+    parts,
     bindingIds,
     unofficialIds: new Set(shown.filter((p) => p.binding === false).map((p) => p.id)),
-    userText,
-    question,
-    names,
-    calcNums: new Set([...calcs.verified, ...calcs.operands]),
-    notes: out.not_stated,
-    // a figure the question asserts about a term, in a sentence phrased as a premise ("Is the notice period 15 days?",
-    // "I was told the fee is $5,000", "Since our licence covers 50 users"); a scenario fact ("uptime was 99.3%") isn't one
-    flaggedNums: new Set(unbound.flatMap((x) => [...numbersIn(x)])),
-    premiseNums,
-    // whole sentences (a list's items stay with their heading: "Base Rent: $5,550 for Years 1 and 2; $5,790 for…")
-    bindingSentences: agreementText.flatMap((t) => t.replace(/\s*\n\s*/g, " ").split(/(?<=[.!?])\s+(?=[A-Z0-9("“])/)).filter((x) => x.length > 8),
-    docNums: numbersIn(shown.map((p) => p.text).join("\n")),
-    bindingNums: numbersIn(agreementText.join("\n")),
+    // the agreement's figures, without clause labels and references ("2. Termination", "clause 6.2")
+    bindingNums: numbersInAll(stripRefs(stripClauses(agreementText.join("\n")))),
+    calcNums: new Set([...calcs.verified, ...calcs.operands, ...calcs.recomputed]),
+    userNums,
+    doubted,
   });
-  if (judgement.show === "withheld") {
+  ctx.onAccept?.(acceptance);
+  if (acceptance.show === "withheld") {
     // what failed is described by kind and count; a claim that failed is never shown, even with a warning
-    const tally = [...new Set(judgement.failed)].map((k) => `${judgement.failed.filter((x) => x === k).length} ${k}`).join(", ");
-    return withheld(`The second check couldn't verify the answer against the agreement (${tally}), so it isn't shown.`);
+    const tally = [...new Set(acceptance.failed)].map((k) => `${acceptance.failed.filter((x) => x === k).length} ${k}`).join(", ");
+    const r = withheld(`The second check couldn't verify the answer against the agreement (${tally}), so it isn't shown.`);
+    r.checks = undefined;
+    return r;
   }
   // a doubt the verifier can't clear (a premise figure the answer doesn't refute) withholds the answer
   const unresolved = rechecks.find((r) => r.recheck([]));
   if (unresolved) return withheld(unresolved.shownWhy);
   // the clauses the verifier relied on are sources too, so the reader can check them
-  for (const e of judgement.evidence) {
+  for (const e of acceptance.evidence) {
     const p = byId.get(e.passage);
     if (!p || citations.some((x) => x.passage === p.id)) continue;
     citations.push({ page: p.page, passage: p.id, quote: e.quote.replace(/‹/g, "<").replace(/›/g, ">").trim(), context: p.text, added: true });
   }
-  // what the deterministic checks couldn't confirm stays on the record, alongside the verifier's minor doubts
-  const unverified = [...new Set([...qualify, ...judgement.qualifications])];
-  return result(out.status, out.answer, {
-    ...extra,
+  // what's shown: the sentences the checks confirmed; a removed one is noted, never shown
+  const kept = (kind: AcceptContext["parts"][number]["kind"]) => acceptance.sentences.filter((x) => parts[x.part].kind === kind && x.status === "ok");
+  const keptText = (kind: AcceptContext["parts"][number]["kind"]) => kept(kind).map((x) => x.text).join(" ");
+  const keptParts = new Set(acceptance.sentences.filter((x) => x.status === "ok").map((x) => x.part));
+  const partial = acceptance.show === "partial";
+  const unverified = [...new Set([...qualify, ...acceptance.qualifications, ...(partial ? ["a statement AgreementOS couldn't confirm against the agreement was removed from this answer"] : [])])];
+  const explanation = keptText("explanation");
+  const calculations = out.calculations.filter((_, i) => keptParts.has(parts.findIndex((x) => x.kind === "calculation") + i));
+  const firstNote = parts.findIndex((x) => x.kind === "note");
+  const notStated = out.not_stated.filter((_, i) => keptParts.has(firstNote + i));
+  return result(out.status, partial ? keptText("answer") : out.answer, {
+    explanation: explanation || undefined,
+    calculations: calculations.length ? calculations : undefined,
+    notStated: notStated.length ? notStated : undefined,
     verification: unverified.length ? "qualified" : "checked",
     unverified: unverified.length ? unverified : undefined,
     verifiedBy: verifyUsage?.model ?? verifier.model,
-    checks: judgement.checks,
+    checks: acceptance.checks.filter((c) => !acceptance.sentences.some((x) => x.status === "removed" && (x.text.includes(c.claim) || c.claim.includes(x.text)))),
   });
 }
 

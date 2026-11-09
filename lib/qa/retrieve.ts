@@ -44,6 +44,9 @@ const CAPS_HEADING = /^\s*[A-Z][A-Z &,'-]{3,60}[.:]?$/;
 // a keyword line is a heading only when short ("Schedule D.", "Section 5: Fees"), not "Section 4 of the draft set..."
 const isHeading = (t: string) => (KEYWORD_HEADING.test(t) && t.split(/\s+/).length <= 8) || CAPS_HEADING.test(t);
 export const NON_BINDING_SECTION_RE = /^(?:[a-z][\w ]{0,30}\.\s+)?(?:marketing (?:summary|copy|material|overview)|unofficial (?:faq|summary|notes?|guide|overview)|superseded (?:drafts?|versions?|terms)|draft (?:summary|version|terms|overview)|faq|sales (?:summary|sheet))\b/i;
+// a section that disclaims itself: "This Schedule is illustrative only and is not binding", "This Appendix does not
+// form part of this Agreement", "The following summary is for information only"
+export const SELF_DISCLAIM_RE = /^(?:(?:schedule|appendix|exhibit|annex|attachment|part)\b[^.]{0,80}?\s)?(?:this|the following|the above)\s+(?:[a-z-]+\s+){0,2}(?:schedule|appendix|exhibit|annex|attachment|part|section|summary|overview|illustration|sheet|page|note|notes|faq|brochure|material|document|table)\b[^.]{0,120}?\b(?:(?:is|are)\s+(?:\w+\s+){0,3}?not\s+(?:legally\s+)?binding|non-binding|(?:does|do)\s+not\s+form\s+(?:any\s+)?part|forms?\s+no\s+part|(?:is|are)\s+not\s+(?:part|incorporated|agreed|contractual)|for\s+(?:information|illustration|discussion)(?:al)?\s+(?:purposes\s+)?only|illustrative\s+only|has\s+no\s+(?:contractual|legal)\s+effect|creates?\s+no\s+(?:obligations?|rights)|(?:is|are|has\s+been)\s+superseded|(?:is|are)\s+(?:a\s+)?draft)/i;
 export const NON_BINDING_SENTENCE_RE = /\((?:not (?:legally )?binding|non-binding|unofficial|superseded|draft only|for discussion only)\)/i;
 export const NON_BINDING_RE = new RegExp(`${NON_BINDING_SECTION_RE.source}|${NON_BINDING_SENTENCE_RE.source}`, "i");
 import { pageText, type PageLines } from "../understand/text";
@@ -108,12 +111,13 @@ export function passages(pages: PageLines[]): { passages: Passage[]; excluded: P
       const num = Number((/^\s*\(?(\d{1,3})(?:\.\d{1,3})*[.)](?:\s|$)/.exec(t) ?? [])[1] ?? NaN);
       // a label sentence is itself set aside; it opens a section only when it's a heading: short with nothing after
       // a colon, ending in a colon, or right after a heading ("Schedule C.")
-      const label = NON_BINDING_SECTION_RE.test(n);
+      const selfDisclaim = SELF_DISCLAIM_RE.test(n);
+      const label = NON_BINDING_SECTION_RE.test(n) || selfDisclaim;
       const afterHeading = prev !== "" && (isHeading(prev) || prev.split(/\s+/).length <= 3);
       // an FAQ is questions and answers: its label opens a section even with a subtitle ("Unofficial FAQ: answers...")
       const headingLike = /:\s*$/.test(t) || (t.split(/\s+/).length <= 8 && (!/:\s*\S/.test(t) || /\bfaq\b/.test(n))) || afterHeading;
       prev = t;
-      if (label && headingLike) {
+      if (label && (headingLike || selfDisclaim)) {
         if (!unofficial) sectionItem = 0;
         unofficial = true;
       } else if (unofficial && !label) {

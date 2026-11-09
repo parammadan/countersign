@@ -492,6 +492,14 @@ export type CalcCheck = {
   /** the arithmetic is right but an input's origin isn't confirmed (unknown, from an unrelated clause), or its label adds figures */
   unproven: string[];
   qualified: string[];
+  /** the dates of date steps that checked out, as written (base and result): reasoning, not invented */
+  dates: string[];
+  /**
+   * figures re-done here whatever the topic: results (and their inputs) of steps whose arithmetic checks out and whose
+   * inputs are each stated somewhere in the binding agreement, in the question, an earlier such result or a calendar
+   * constant. Which term an input belongs to is left to the verifier.
+   */
+  recomputed: Set<string>;
 };
 /**
  * Re-does each calculation. It's FAILED (the answer is withheld) when the arithmetic is wrong or an input is a figure
@@ -501,8 +509,71 @@ export type CalcCheck = {
  * comes from a part of the agreement that isn't about the question, or the result's label has figures that aren't
  * checked.
  */
+// ---- dates and comparisons in calculations ----
+const MONTHS_FULL = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+const monthIndex = (m: string) => MONTHS_FULL.findIndex((x) => x.startsWith(m.toLowerCase().slice(0, 3)));
+const MONTH_NAME = "(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\\.?";
+/** A calendar date written as "2 September 2025", "September 2, 2025" or "2025-09-02", as UTC midnight; null if none. */
+export function parseDate(t: string): Date | null {
+  const s = t.trim();
+  let m = new RegExp(`^(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?${MONTH_NAME},?\\s+(\\d{4})`, "i").exec(s);
+  if (m) return mk(Number(m[3]), monthIndex(m[2]), Number(m[1]));
+  m = new RegExp(`^${MONTH_NAME}\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})`, "i").exec(s);
+  if (m) return mk(Number(m[3]), monthIndex(m[1]), Number(m[2]));
+  m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  if (m) return mk(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return null;
+}
+function mk(y: number, mo: number, d: number): Date | null {
+  if (mo < 0 || d < 1 || d > 31) return null;
+  const x = new Date(Date.UTC(y, mo, d));
+  return x.getUTCMonth() === mo ? x : null;
+}
+const DATE_TERM = new RegExp(`(\\d{1,2}(?:st|nd|rd|th)?\\s+(?:of\\s+)?${MONTH_NAME},?\\s+\\d{4}|${MONTH_NAME}\\s+\\d{1,2}(?:st|nd|rd|th)?,?\\s+\\d{4}|\\d{4}-\\d{2}-\\d{2})`, "i");
+/**
+ * "2 September 2025 + 45 days" = "17 October 2025" (also weeks, months, years, and "-"): true when right, false when
+ * wrong, null when the expression isn't a date step. Months and years keep the day, clamped to the month's length.
+ */
+export function checkDateStep(expression: string, result: string): { ok: boolean; dates: string[] } | null {
+  // "28 February 2029 − six months": any minus or dash, and a count in words
+  const COUNT = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
+  expression = expression.replace(/[−–—]/g, "-").replace(new RegExp(`\\b(${COUNT.join("|")})\\b(?=\\s*(?:\\(\\d+\\)\\s*)?(?:calendar\\s+)?(?:days?|weeks?|months?|years?)\\b)`, "gi"), (w) => String(COUNT.indexOf(w.toLowerCase()))).replace(/(\d+)\s*\(\1\)/g, "$1");
+  const m = new RegExp(`^\\s*${DATE_TERM.source}\\s*([+-])\\s*(\\d+)\\s*(?:calendar\\s+)?(days?|weeks?|months?|years?)\\s*$`, "i").exec(expression);
+  if (!m) return null;
+  const base = parseDate(m[1]);
+  const got = parseDate((DATE_TERM.exec(result) ?? [""])[0]);
+  if (!base || !got) return null;
+  const sign = m[m.length - 3] === "-" ? -1 : 1;
+  const n = Number(m[m.length - 2]) * sign;
+  const unit = m[m.length - 1].toLowerCase();
+  const d = new Date(base.getTime());
+  if (unit.startsWith("day")) d.setUTCDate(d.getUTCDate() + n);
+  else if (unit.startsWith("week")) d.setUTCDate(d.getUTCDate() + 7 * n);
+  else {
+    const months = unit.startsWith("month") ? n : 12 * n;
+    const day = d.getUTCDate();
+    d.setUTCDate(1);
+    d.setUTCMonth(d.getUTCMonth() + months);
+    const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+    d.setUTCDate(Math.min(day, last));
+  }
+  return { ok: d.getTime() === got.getTime(), dates: [m[1], (DATE_TERM.exec(result) ?? [""])[0]] };
+}
+/** "100 < 120" = "true": true when the stated truth value is right, false when wrong, null when not a comparison. */
+export function checkComparison(expression: string, result: string): boolean | null {
+  const m = /^\s*(.+?)\s*(<=|>=|<|>|=|≤|≥)\s*(.+?)\s*$/.exec(expression);
+  if (!m) return null;
+  const a = evaluate(m[1]);
+  const b = evaluate(m[3]);
+  const said = /^\s*(true|yes)\b/i.test(result) ? true : /^\s*(false|no)\b/i.test(result) ? false : null;
+  if (a === null || b === null || said === null) return null;
+  const truth = m[2] === "<" ? a < b : m[2] === ">" ? a > b : m[2] === "<=" || m[2] === "≤" ? a <= b : m[2] === ">=" || m[2] === "≥" ? a >= b : Math.abs(a - b) < 1e-9;
+  return truth === said;
+}
 export function checkCalculations(calcs: Calculation[], support: string[], question: string, topic: string, agreement: string[] = support): CalcCheck {
   const verified = new Set<string>();
+  const recomputed = new Set<string>();
+  const dates: string[] = [];
   // operands of calculations that checked out: they may appear in the answer, but (unlike results and calendar
   // constants) they're still checked for belonging to the right term, so a figure from a leading question used
   // in a calculation ("$5,000 x 12") is still caught
@@ -533,7 +604,35 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
   // a multiplier from a stated percentage about the question: 1.2 from a 20% markup, 0.015 from 1.5% interest
   const derivedRate = (n: number) => [n * 100, (n - 1) * 100, (1 - n) * 100].some((p) => percentsOnTopic.has(String(+p.toFixed(6))));
   const derivedOffTopic = (n: number) => !derivedRate(n) && [n * 100, (n - 1) * 100, (1 - n) * 100].some((p) => percentsAll.has(String(+p.toFixed(6))));
-  for (const c of calcs.slice(0, 10)) {
+  // "€48,000 − €14,400": a typographic minus or dash is a minus
+  for (const c of calcs.slice(0, 10).map((x) => ({ ...x, expression: x.expression.replace(/[−–—]/g, "-") }))) {
+    const step = checkDateStep(c.expression, c.result);
+    if (step) {
+      const label = `${c.expression} = ${c.result}`;
+      if (!step.ok) {
+        failed.push(label);
+        wrong.push(label);
+        continue;
+      }
+      // its figures (day, year, count) are re-done here; where the base date and count come from is the verifier's call
+      dates.push(...step.dates);
+      for (const d of step.dates)
+        for (const n of normalize(d).match(/\d+/g) ?? []) {
+          verified.add(String(Number(n)));
+          recomputed.add(String(Number(n)));
+        }
+      for (const n of c.expression.match(/\d+/g) ?? []) operandsOk.add(String(Number(n)));
+      continue;
+    }
+    const cmp = checkComparison(c.expression, c.result);
+    if (cmp !== null) {
+      const label = `${c.expression} = ${c.result}`;
+      if (!cmp) {
+        failed.push(label);
+        wrong.push(label);
+      }
+      continue;
+    }
     const value = evaluate(c.expression);
     const operands = [...c.expression.replace(/\b(?:min|max|round)\b/gi, " ").replace(/[×x÷]/g, " ").replace(/(?<=\d),(?=\d{3}(?!\d))/g, "").matchAll(OPERAND)].map((m) => ({ n: String(Number(m[2].replace(/,/g, ""))), kind: (m[1] ? "money" : m[3] ? "percent" : null) as Kind | null }));
     let offTopic = false;
@@ -564,24 +663,31 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
     const pct = m ? /^\s*[$£€]?\s*-?\d[\d,]*(?:\.\d+)?\s*%/.test(c.result) : false;
     const target = value !== null && pct ? value * 100 : value;
     const label = `${c.expression} = ${c.result}`;
-    const arithmeticOk = value !== null && target !== null && Number.isFinite(stated) && Math.abs(target - stated) <= 0.005 + Math.abs(target) * 1e-9;
+    // a result marked approximate or rounded may differ by rounding to the nearest unit
+    const rounded = /\b(?:approx\w*|about|around|rounded|roughly|~)\b|≈/i.test(c.result);
+    const arithmeticOk = value !== null && target !== null && Number.isFinite(stated) && Math.abs(target - stated) <= (rounded ? 0.5 : 0.005) + Math.abs(target) * 1e-9;
     if (value !== null && target !== null && Number.isFinite(stated) && !arithmeticOk) {
       failed.push(label);
       wrong.push(label);
       continue;
     }
-    const hard = (why: string) => {
-      failed.push(why);
-      wrong.push(why);
-    };
     const unprove = (why: string) => {
       failed.push(why);
       unproven.push(why);
     };
-    // nothing to re-do: an expression that doesn't parse, or has no figures, is never taken on trust
+    // nothing to re-do (prose, units, a comparison of words): the verifier judges it; its figures still face the checks
+    // on the answer's text
     if (!arithmeticOk || operands.length === 0) {
-      hard(label);
+      unprove(label);
       continue;
+    }
+    const stated_ = (o: { n: string; kind: Kind | null }) =>
+      recomputed.has(o.n) || verified.has(o.n) || fromQuestion.has(o.n) || has(everywhere, o.n, null).length > 0 || (o.kind === null && (CONSTANTS.some(([c]) => c === o.n) || o.n === "100" || [Number(o.n) * 100, (Number(o.n) - 1) * 100, (1 - Number(o.n)) * 100].some((p) => percentsAll.has(String(+p.toFixed(6))))));
+    if (operands.every(stated_)) {
+      for (const o of operands) recomputed.add(o.n);
+      recomputed.add(String(Number(stated)));
+      recomputed.add(String(Number(value!.toFixed(2))));
+      recomputed.add(String(Math.round(value!)));
     }
     if (!operands.every(known)) {
       unprove(label);
@@ -607,7 +713,7 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
     verified.add(String(Number(value!.toFixed(2))));
     verified.add(String(Math.round(value!)));
   }
-  return { verified, operands: operandsOk, fromAgreement: agreementInputs, failed, wrong, unproven, qualified };
+  return { verified, operands: operandsOk, fromAgreement: agreementInputs, failed, wrong, unproven, qualified, recomputed, dates };
 }
 
 // ---- quotations inside the answer ----
