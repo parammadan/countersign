@@ -28,7 +28,7 @@ function digitize(s: string): string {
 export const stripClauses = (raw: string) => raw.replace(/(^|\s)\d{1,3}\.(?:\d{1,3}\.?)*(?=\s+[A-Z(“"])/g, "$1");
 // references to a clause ("clause 6.2", "Section 4.5(b)", "Schedule 3"): a label, not a figure
 export const stripRefs = (raw: string) =>
-  raw.replace(/\b(?:clauses?|sections?|schedules?|exhibits?|annex(?:es)?|appendix|appendices|paragraphs?|articles?|parts?|sub-?clauses?)\s+[A-Z]?\d{1,3}(?:\.\d{1,3})*(?:\s*\([a-z0-9]{1,4}\))*(?:\s*(?:,|and|or|to|-|–)\s*[A-Z]?\d{1,3}(?:\.\d{1,3})*(?:\s*\([a-z0-9]{1,4}\))*(?![\d.,]*\s*(?:%|per\b|percent|days?|weeks?|months?|years?|hours?|minutes?|business|calendar|working|times\b|[$£€])))*/gi, " ");
+  raw.replace(/\b(?:clauses?|sections?|schedules?|exhibits?|annex(?:es)?|appendix|appendices|paragraphs?|articles?|parts?|sub-?clauses?)\s+[A-Z]?\d{1,3}(?:\.\d{1,3})*(?:\s*\([a-z0-9]{1,4}\))*(?:\s*(?:,|and|or|to|-|–)\s*[A-Z]?\d{1,3}(?:\.\d{1,3})*(?:\s*\([a-z0-9]{1,4}\))*(?![\d.,-]*\s*(?:%|per\b|percent|-?\s*(?:days?|weeks?|months?|years?|hours?|minutes?)|business|calendar|working|times\b|dollars?|pounds?|euros?|usd|gbp|eur|[$£€])))*/gi, " ");
 // ("clause 2 or 60 days" keeps its 60: a number followed by a unit isn't another clause)
 // digits of any script as ASCII ("٢" -> "2"); NFKC already folds fullwidth and mathematical digits
 const asciiDigits = (s: string) =>

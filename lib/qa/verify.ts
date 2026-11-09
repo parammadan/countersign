@@ -229,7 +229,7 @@ export type Acceptance = {
 
 // what makes a claim material whatever the verifier says: a figure, an obligation or money term, a negation, a party
 const NEGATION = /\b(?:not|no|never|neither|nor|none|nothing|without|cannot|non-refundable|nonrefundable|rather than|instead of)\b|n['’]t\b/i;
-const OBLIGATION = /\b(?:pays?|paid|payable|owes?|owed|must|shall|may|can|cannot|entitled|required|requires?|liable|liability|responsible|terminat\w*|due|charges?|fees?|refund\w*|notice|bears?|indemnif\w*|renew\w*|penalt\w*|interest|deposit|capped|caps?|limit\w*|deadline|within|rates?|costs?|prices?|rent|periods?|amounts?|totals?|discounts?|credits?|minimum|maximum|surcharges?|premiums?|commissions?|salary|wages?|bonus\w*|royalt\w*|retainer|expenses?|reimburs\w*|warrant\w*|guarantee\w*|insur\w*)\b/i;
+const OBLIGATION = /\b(?:pays?|paid|payable|owes?|owed|must|shall|may|can|cannot|entitled|required|requires?|liable|liability|responsible|terminat\w*|due|charges?|fees?|refund\w*|notice|bears?|indemnif\w*|renew\w*|penalt\w*|interest|deposit|capped|caps?|limit\w*|deadline|within|rates?|costs?|prices?|rent|periods?|amounts?|totals?|discounts?|credits?|minimum|maximum|surcharges?|premiums?|commissions?|salary|wages?|bonus\w*|royalt\w*|retainer|expenses?|reimburs\w*|warrant\w*|guarantee\w*|insur\w*|expir\w*|ends?|ended|ending|arbitrat\w*|exclusiv\w*|govern\w*|assign\w*|owns?|owned|ownership|perpetual\w*|licen[cs]\w*|renew\w*|binding|waiv\w*|consent\w*|approv\w*|breach\w*|default\w*|confidential\w*|jurisdiction|venue|law)\b/i;
 const PARTY = /\b(?:client|provider|consultant|firm|company|customer|supplier|contractor|vendor|agency|licensor|licensee|landlord|tenant|buyer|seller|employer|employee|party|parties|hirer|lessor|lessee|recipient|discloser|either|each)\b/i;
 /** Material if the verifier says so, or if it states a figure, an obligation, a negation or a party, or is a calculation. */
 export const isMaterial = (c: Pick<VerifiedClaim, "material" | "kind" | "claim">) =>
@@ -260,9 +260,12 @@ export function accept(claims: VerifiedClaim[], ctx: AcceptContext): Acceptance 
   if (!claims.length) return withheld("nothing checked", "no claims");
 
   // where each claim sits: the sentences its span is in, or that are in it
+  // a span must be the answer's own words (within one part, or across the whole answer); one that isn't places nowhere
+  const whole = trim(ctx.parts.map((p) => p.text).join(" "));
+  const ownWords = (span: string) => ctx.parts.some((p) => within(trim(p.text), span)) || within(whole, span);
   const placed = claims.map((c) => {
     const span = trim(c.span || c.claim);
-    const at = span.length < 2 ? [] : sentences.filter((s) => within(trim(s.text), span) || within(span, trim(s.text)));
+    const at = span.length < 2 || !ownWords(span) ? [] : sentences.filter((s) => within(trim(s.text), span) || within(span, trim(s.text)));
     // material if the claim or the answer's own words (its span) are: a claim can't talk its span down
     return { c, at, material: isMaterial(c) || isMaterial({ ...c, claim: c.span || c.claim }) };
   });
@@ -309,8 +312,10 @@ export function accept(claims: VerifiedClaim[], ctx: AcceptContext): Acceptance 
       continue;
     }
     // a minor point (not material by the claim or by its own words) isn't removed; it may be noted as unconfirmed
+    // a minor point (not material by the claim or its own words) the verifier couldn't confirm stays, noted as
+    // unconfirmed; one it calls supported without grounding vouches for nothing (it would be shown unqualified)
     if (!material && c.verdict !== "contradicted") {
-      for (const s of at) minorAt.set(s, [...(minorAt.get(s) ?? []), trim(c.span || c.claim)]);
+      if (c.verdict !== "supported") for (const s of at) minorAt.set(s, [...(minorAt.get(s) ?? []), trim(c.span || c.claim)]);
       continue;
     }
     // a material claim that isn't grounded: its sentences are removed; one we can't place leaves the answer unconfirmed
@@ -337,13 +342,13 @@ export function accept(claims: VerifiedClaim[], ctx: AcceptContext): Acceptance 
     // negation, a leading Yes/No, and most of its words; a claim about "15" or "not" alone doesn't vouch for the rest
     const text = trim(s.text);
     const minor = minorAt.get(s) ?? [];
-    const whole = good.some((g) => within(g.span, text)) || minor.some((m) => within(m, text));
+    const spanCovers = good.some((g) => within(g.span, text)) || minor.some((m) => within(m, text));
     const spans = [...good.map((g) => g.span), ...minor].join(" | ");
     const words = content(s.text);
     const coveredWords = words.filter((w) => content(spans).includes(w)).length;
     const spanOk =
       !substantive ||
-      whole ||
+      spanCovers ||
       ([...nums(s.text)].every((n) => nums(spans).has(n) || ctx.calcNums.has(n) || ctx.userNums.has(n)) &&
         (!NEGATION.test(s.text) || NEGATION.test(spans)) &&
         !(/^(?:yes|no)\b/i.test(text) && !good.some((g) => /^(?:yes|no)\b/i.test(g.span))) &&
@@ -358,8 +363,10 @@ export function accept(claims: VerifiedClaim[], ctx: AcceptContext): Acceptance 
   // (placed by the same normalized match, never by raw text), so nothing removed reappears there
   for (const { c, at, material } of placed) {
     if (!at.length || at.some((s) => s.status === "removed")) continue;
-    checks.push({ claim: c.span || c.claim, verdict: c.verdict, material, passages: c.evidenceChecked ? [...new Set(c.evidence.map((e) => e.passage))] : [] });
-    if (!material && c.verdict !== "supported" && c.verdict !== "contradicted") qualifications.push(`${(c.span || c.claim).slice(0, 160)} (${c.verdict})`);
+    // what's shown is the answer's own sentences the claim sits on, never the verifier's text
+    const own = at.map((s) => s.text).join(" ");
+    checks.push({ claim: own, verdict: c.verdict, material, passages: c.evidenceChecked ? [...new Set(c.evidence.map((e) => e.passage))] : [] });
+    if (!material && c.verdict !== "supported" && c.verdict !== "contradicted") qualifications.push(`${own.slice(0, 160)} (${c.verdict})`);
   }
   // the answer itself must survive; its explanation, calculations and notes may lose a sentence
   const answerLeft = sentences.some((s) => ctx.parts[s.part].kind === "answer" && s.status === "ok");
