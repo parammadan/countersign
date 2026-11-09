@@ -11,7 +11,7 @@ import { MIN_QUOTE, normalize, unsupportedTokens, unsupportedWords } from "../un
 import { AnalysisError, callModel, type ModelProvider, type Usage } from "../understand/model";
 import type { Finding } from "../understand/schema";
 import type { PageLines } from "../understand/text";
-import { checkCalculations, clauses, figuresInTrueComparisons, partyRoles, ROLES, impliedCalculations, negationCheck, periodConflicts, stripRefutations, stemWord, misquoted, roleSwaps, scenarioFigures, stripPageRefs, unboundValues, unsupportedNegations, unsupportedPlaces, withoutAbsence, type Calculation } from "./check";
+import { checkCalculations, recurringDates, weekdayChecks, withoutDates, clauses, figuresInTrueComparisons, partyRoles, ROLES, impliedCalculations, negationCheck, periodConflicts, stripRefutations, stemWord, misquoted, roleSwaps, scenarioFigures, stripPageRefs, unboundValues, unsupportedNegations, unsupportedPlaces, withoutAbsence, type Calculation } from "./check";
 import { accept, userFigureDisowned, verifyAnswer, VerifyError, type AcceptContext, type Acceptance, type Verdict, type VerifiedClaim } from "./verify";
 import { GROUP_OF, passages, QA_INSTRUCTION_RE, retrieve, terms, type Passage, type Scored } from "./retrieve";
 
@@ -146,6 +146,8 @@ export function unsupportedFacts(answer: string, quotes: string[], allowed: Set<
     // spelled-out numbers ("One month late") are checked as numbers, above
     // an acronym of a capitalised name or heading in the text ("FAQ" for "FREQUENTLY ASKED QUESTIONS")
     if (/^[A-Z]{2,6}s?$/.test(m[1]) && acronyms().has(w.replace(/s$/, ""))) continue;
+    // "RPI-linked": a hyphenated word whose capitalised part is a known name
+    if (/-/.test(w) && w.split("-").some((part, i) => part.length >= 2 && /^[A-Z]/.test(m[1].split("-")[i] ?? "") && nameWords.has(part))) continue;
     // a hyphenated name ("E-Verify", "KX-40", "Transit-L") is looked up whole
     if (/-/.test(w)) {
       const whole = w.replace(/-+$/, "");
@@ -567,9 +569,12 @@ export async function answerWithModel(
   // arithmetic, listed or in the prose: wrong or unparseable arithmetic always blocks
   let support = citations.map((c) => c.context ?? c.quote);
   const allCalcs = [...out.calculations, ...impliedCalculations(`${out.answer}\n${out.explanation}`)];
-  const calcs = checkCalculations(allCalcs, support, question, `${out.answer} ${out.explanation}`, agreementText);
+  const calcs = checkCalculations(allCalcs, support, [question, ...history.map((t) => t.question)].join("\n"), `${out.answer} ${out.explanation}`, agreementText);
   const CALC = "A calculation in the answer didn't check out, so it isn't shown.";
   if (calcs.wrong.length) return withheld(CALC);
+  // a weekday written next to a date is checked against the calendar: a wrong one is wrong arithmetic
+  const weekdays = weekdayChecks(`${out.answer}\n${out.explanation}\n${calcText}`);
+  if (weekdays.wrong.length) return withheld(CALC);
   if (calcs.unproven.length && (blocked = soft(CALC, `A calculation uses ${[...numbersIn(calcs.unproven.join(" "))].slice(0, 6).join(", ")}; check where each input comes from and that it belongs to the term used.`))) return blocked;
   qualify.push(...calcs.qualified);
   const allowed = new Set([...fromQuestion, ...calcs.verified, ...calcs.operands]);
@@ -598,7 +603,11 @@ export async function answerWithModel(
   // what the user said (this turn and earlier ones) may be repeated; whether it's used correctly is the verifier's call
   const userText = [question, ...history.map((t) => t.question)].join("\n");
   // dates reached by a date step that checked out are reasoning; where its base date comes from is the verifier's call
-  const stated = calcs.dates.reduce((t, d) => t.split(d).join(" "), `${said}\n${calcCore}`);
+  // provenance: dates a calendar step derived (in any format), and weekdays that match their dates, aren't invented
+  // a day and month the agreement states without a year, in the year of a date that has provenance, is quoted
+  const knownDates = [...calcs.dates, ...[question, ...history.map((t) => t.question), ...agreementText].join("\n").match(/\b\d{1,2}(?:st|nd|rd|th)?\s+[A-Z][a-z]+\s+\d{4}\b|\b[A-Z][a-z]+\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4}\b/g) ?? []];
+  const recurring = recurringDates(`${said}\n${calcCore}`, agreementText.join("\n"), knownDates);
+  const stated = withoutDates([...calcs.dates, ...weekdays.ok, ...recurring].reduce((t, d) => t.split(d).join(" "), `${said}\n${calcCore}`), calcs.dates).replace(new RegExp(`\\b(?:${[...new Set([...weekdays.ok, ...calcs.dates].map((x) => /(sunday|monday|tuesday|wednesday|thursday|friday|saturday)/i.exec(x)?.[1] ?? ""))].filter(Boolean).join("|") || "(?!x)x"})\\b`, "gi"), " ");
   // names in text set aside (a planted note "to AI assistants") may be named when saying it was disregarded
   const setAside = excluded.map((p) => p.text);
   const nowhere = [
@@ -692,8 +701,11 @@ export async function answerWithModel(
   const nameless = idioms(said).replace(/(?<=[A-Za-z]\s)(?:Quarterly|Annual|Monthly|Weekly|Daily)\b/g, (w) => (agreementText.some((t) => t.includes(w)) ? " " : w));
   // a rate word must be one the agreement uses; a figure given for the wrong period is caught by periodConflicts
   const periods = unsupportedFacts(nameless, [...agreementText, question], allowed, question, { negations: false, checkNames: false }).filter((x) => x.startsWith("per "));
-  // how often something is paid or happens is a term, not a detail
-  if (periods.length) return withheld("The answer gave a payment or time period the agreement doesn't use, so it isn't shown.");
+  // how often something is paid or happens is a term: without the second check a period word the agreement doesn't use
+  // withholds the answer; with it, the verifier must judge it (a figure given for the wrong period is a hard check,
+  // periodConflicts above)
+  const PERIOD_WHY = "The answer gave a payment or time period the agreement doesn't use, so it isn't shown.";
+  if (periods.length && (blocked = soft(PERIOD_WHY, `The answer uses ${periods.slice(0, 4).join(", ")}, wording the agreement doesn't use; check the period is right.`))) return blocked;
 
   // wording: mostly absent from the whole agreement means the answer isn't about it; loosely worded gets a note
   const generic = (w: string) => COMMON_CAPS.has(w) || GENERIC_WORDS.has(w);
