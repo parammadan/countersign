@@ -144,8 +144,10 @@ describe("AI budget: new workspaces share a smaller pool", () => {
     const spentBefore = Q.aiSpentToday();
     for (let i = 1; i <= 4; i++) for (let k = 1; k <= 5; k++) await ask(`ws_alias${i}`, timesOut, `What does clause ${k} say?`);
     const added = Q.aiSpentToday() - spentBefore;
-    // aiSpentToday is in micro-USD
+    // aiSpentToday is in micro-USD; the pool let some calls through, then refused the rest
     expect(added).toBeLessThanOrEqual(Q.aiNewWorkspaceDailyBudgetUsd() * 1e6);
+    expect(calls).toBeGreaterThan(0);
+    expect(calls).toBeLessThan(20);
     expect(Q.recentAnswers("ws_alias4", versions.ws_alias4)[0].result.warnings.join(" ")).toMatch(/new workspaces have reached today's limit|workspace has reached today's AI spending limit/);
   });
 
