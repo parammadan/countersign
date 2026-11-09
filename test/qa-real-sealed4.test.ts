@@ -40,6 +40,8 @@ describe("sealed set 4 replay (development data)", () => {
     console.log(`[sealed4-dev] shown correct ${shownCorrect} (auto-graded), withheld by checks ${withheldByChecks.length} (${withheldByChecks.join(", ")}), verifier unknown ${unknown}`);
     expect(leaks).toEqual([]);
     expect(shownCorrect).toBeGreaterThanOrEqual(74);
-    expect(withheldByChecks.length).toBeLessThanOrEqual(7);
+    // 8: review 22 kept the period-word check hard (s4-007, "hour" for 30-minute blocks), trading one false rejection
+    // for protection against wrong periods periodConflicts can't see
+    expect(withheldByChecks.length).toBeLessThanOrEqual(8);
   });
 });

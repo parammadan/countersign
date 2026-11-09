@@ -607,7 +607,12 @@ export async function answerWithModel(
   // a day and month the agreement states without a year, in the year of a date that has provenance, is quoted
   const knownDates = [...calcs.dates, ...[question, ...history.map((t) => t.question), ...agreementText].join("\n").match(/\b\d{1,2}(?:st|nd|rd|th)?\s+[A-Z][a-z]+\s+\d{4}\b|\b[A-Z][a-z]+\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4}\b/g) ?? []];
   const recurring = recurringDates(`${said}\n${calcCore}`, agreementText.join("\n"), knownDates);
-  const stated = withoutDates([...calcs.dates, ...weekdays.ok, ...recurring].reduce((t, d) => t.split(d).join(" "), `${said}\n${calcCore}`), calcs.dates).replace(new RegExp(`\\b(?:${[...new Set([...weekdays.ok, ...calcs.dates].map((x) => /(sunday|monday|tuesday|wednesday|thursday|friday|saturday)/i.exec(x)?.[1] ?? ""))].filter(Boolean).join("|") || "(?!x)x"})\\b`, "gi"), " ");
+  // a checked clock time may be written "Thursday at 6:30 a.m." or "6:30 a.m. on Thursday": exactly that day and time
+  const clockForms = calcs.dates.flatMap((d) => {
+    const m = /^(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\s+(.+)$/i.exec(d.trim());
+    return m ? [`${m[1]} at ${m[2]}`, `${m[2]} on ${m[1]}`, `${m[2]} on a ${m[1]}`, `${m[2]} on the ${m[1]}`] : [];
+  });
+  const stated = withoutDates([...calcs.dates, ...clockForms, ...weekdays.ok, ...recurring].reduce((t, d) => t.split(d).join(" "), `${said}\n${calcCore}`), calcs.dates);
   // names in text set aside (a planted note "to AI assistants") may be named when saying it was disregarded
   const setAside = excluded.map((p) => p.text);
   const nowhere = [
@@ -701,11 +706,9 @@ export async function answerWithModel(
   const nameless = idioms(said).replace(/(?<=[A-Za-z]\s)(?:Quarterly|Annual|Monthly|Weekly|Daily)\b/g, (w) => (agreementText.some((t) => t.includes(w)) ? " " : w));
   // a rate word must be one the agreement uses; a figure given for the wrong period is caught by periodConflicts
   const periods = unsupportedFacts(nameless, [...agreementText, question], allowed, question, { negations: false, checkNames: false }).filter((x) => x.startsWith("per "));
-  // how often something is paid or happens is a term: without the second check a period word the agreement doesn't use
-  // withholds the answer; with it, the verifier must judge it (a figure given for the wrong period is a hard check,
-  // periodConflicts above)
-  const PERIOD_WHY = "The answer gave a payment or time period the agreement doesn't use, so it isn't shown.";
-  if (periods.length && (blocked = soft(PERIOD_WHY, `The answer uses ${periods.slice(0, 4).join(", ")}, wording the agreement doesn't use; check the period is right.`))) return blocked;
+  // how often something is paid or happens is a term, not a detail (periodConflicts doesn't know quarters, units or
+  // derived figures, so this stays a hard check)
+  if (periods.length) return withheld("The answer gave a payment or time period the agreement doesn't use, so it isn't shown.");
 
   // wording: mostly absent from the whole agreement means the answer isn't about it; loosely worded gets a note
   const generic = (w: string) => COMMON_CAPS.has(w) || GENERIC_WORDS.has(w);

@@ -65,7 +65,10 @@ describe("calendar steps", () => {
   it("spans of whole months and of days", () => {
     expect(checkSpan("March 1, 2027 to June 30, 2027", "4 whole calendar months")?.ok).toBe(true);
     expect(checkSpan("March 1, 2027 to June 30, 2027", "5 months")?.ok).toBe(false);
-    expect(checkSpan("1 March 2027 to 31 March 2027", "31 days")?.ok).toBe(true);
+    // days are counted exactly; counting the end day too needs "inclusive"
+    expect(checkSpan("1 March 2027 to 31 March 2027", "30 days")?.ok).toBe(true);
+    expect(checkSpan("1 March 2027 to 31 March 2027", "31 days")?.ok).toBe(false);
+    expect(checkSpan("1 March 2027 to 31 March 2027", "31 days inclusive")?.ok).toBe(true);
   });
   it("weekdays next to dates are checked", () => {
     expect(weekdayChecks("payable on Tuesday 7 April 2026").wrong).toEqual([]);
@@ -148,5 +151,41 @@ describe("end to end, with the verifier", () => {
   it("an invented date with no step behind it is withheld", async () => {
     const r = await ask("When does rent start?", { answer: "Rent starts on 2 January 2025, after the Term Commencement Date of 24 June 2024." });
     expect(shown(r)).toBe(false);
+  });
+});
+
+// Review 22 (independent, of 7aa6485): each was shown with an approve-all verifier at 7aa6485 and withheld at 29e43a5.
+describe("R22 provenance can't be laundered", () => {
+  const LEASE = linesFromText([`${AGREEMENT[0]}\n6. The Term ends on 23 June 2034.`]);
+  function model(o: { answer: string; explanation?: string; calculations?: { expression: string; result: string }[] }): ModelProvider {
+    return {
+      name: "scripted",
+      model: "claude-opus-5-5",
+      complete: async (r) => {
+        const ps = [...(r.context ?? "").matchAll(/<passage id="(p[^"]+)" page="\d+">([\s\S]*?)<\/passage>/g)].map((m) => ({ id: m[1], text: m[2] }));
+        return { status: "answered", explanation: "", calculations: [], not_stated: [], ...o, citations: ps.filter((p) => /26 weeks|Term|Quarter Days|Volume/.test(p.text)).map((p) => ({ passage: p.id, quote: p.text.slice(0, 280) })) };
+      },
+    };
+  }
+  const ask = (q: string, o: Parameters<typeof model>[0]): Promise<QaResult> => answerWithModel(model(o), q, LEASE, QA_LIMITS, { verifier: approveAll() });
+  const shown = (r: QaResult) => !r.warnings.some((w) => /isn['’]t shown/.test(w));
+  for (const [what, q, o] of [
+    ["a span vouching for its own end date", "When does rent start?", { answer: "Rent starts on 24 October 2024.", calculations: [{ expression: "24 June 2024 to 24 October 2024", result: "122 days" }] }],
+    ["an 'until' span computing 0 days", "When does the Term end?", { answer: "The Term ends on 30 March 2029.", calculations: [{ expression: "24 June 2024 until 30 March 2029", result: "0 days" }] }],
+    ["a skipped 'holiday' far outside the window", "When does the Term end?", { answer: "The Term ends on 1 January 2031.", calculations: [{ expression: "Next Working Day after 24 June 2024, skipping 1 January 2031", result: "25 June 2024" }] }],
+    ["invented holidays pushing a deadline", "When does rent start?", { answer: "Rent starts on 30 December 2024.", calculations: [{ expression: "Next Working Day after 23 December 2024, skipping 24 December 2024, 25 December 2024, 26 December 2024 and 27 December 2024", result: "30 December 2024" }] }],
+    ["a dated day and month made 'recurring' in another year", "Today is 3 March 2026. When does the Term end?", { answer: "The Term ends on 23 June 2026." }],
+    ["a quotation glued to its colon", "Can the Tenant assign?", { answer: 'The lease says:"the Tenant may assign the lease without the Landlord consent".' }],
+    ["a period the agreement doesn't use", "What do units cost?", { answer: "Units 1 to 5,000 cost £38.40 per hour." }],
+    ["a clock step from an invented start", "When is the inspection?", { answer: "The inspection ends on Saturday 11 a.m.", calculations: [{ expression: "Friday 9 a.m. + 26 hours", result: "Saturday 11 a.m." }] }],
+    ["one right weekday hiding another use of its name", "When is rent paid?", { answer: "Rent is paid every Monday; rent starts on Monday 23 December 2024.", calculations: [{ expression: "24 June 2024 + 26 weeks", result: "23 December 2024" }] }],
+    ["an off-by-one day span", "How long is March 2027?", { answer: "From 1 March 2027 to 30 March 2027 is 30 days.", calculations: [{ expression: "1 March 2027 to 30 March 2027", result: "30 days" }] }],
+  ] as const)
+    it(what, async () => {
+      expect(shown(await ask(q, { ...o, calculations: o.calculations ? [...o.calculations] : [] }))).toBe(false);
+    });
+  it("…while a real span between two known dates still derives its count", () => {
+    expect(checkSpan("24 June 2024 through 23 December 2024", "182 days")?.ok).toBe(true);
+    expect(checkSpan("24 June 2024 until 23 December 2024", "183 days inclusive")?.ok).toBe(true);
   });
 });
