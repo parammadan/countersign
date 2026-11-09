@@ -8,6 +8,7 @@
 // All of it is deterministic and bounded; none of it calls a model.
 import { normalize } from "../understand/evidence";
 import { GROUP_OF } from "./retrieve";
+import { numbersInAll, stripClauses, stripRefs } from "./numbers";
 
 const MAX_TEXT = 6000;
 
@@ -395,8 +396,16 @@ export type Calculation = { expression: string; result: string };
  * Evaluates + - * / ( ), "n%" (n/100) and min(...), max(...), round(x[, digits]) with a tiny parser. Thousands
  * separators ("1,500,000") are read as such; a comma followed by a space separates arguments. Null for anything else.
  */
+/** "26 weeks * 7" is "26 * 7": one unit, each time right after a number, and no other words; otherwise unchanged. */
+function dropUnit(expr: string): string {
+  const UNIT = /(?<=\d\s*)(days?|weeks?|months?|years?|hours?|minutes?|units?|items?|bottles?|users?|seats?|licen[cs]es?|pieces?|tins?|shifts?)\b/gi;
+  const words = expr.toLowerCase().match(/\b(?!(?:min|max|round|x)\b)[a-z][a-z'’-]*\b/g) ?? [];
+  const units = [...expr.matchAll(UNIT)].map((m) => m[1].toLowerCase().replace(/s$/, ""));
+  if (!words.length || units.length !== words.length || new Set(units).size !== 1) return expr;
+  return expr.replace(UNIT, "");
+}
 export function evaluate(expr: string): number | null {
-  const s = expr
+  const s = dropUnit(expr)
     .toLowerCase()
     .replace(/(?<=\d),(?=\d{3}(?!\d))/g, "")
     .replace(/[$£€\s]/g, "")
@@ -559,6 +568,125 @@ export function checkDateStep(expression: string, result: string): { ok: boolean
   }
   return { ok: d.getTime() === got.getTime(), dates: [m[1], (DATE_TERM.exec(result) ?? [""])[0]], count: String(Math.abs(n)) };
 }
+const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+const WEEKDAY = "(sunday|monday|tuesday|wednesday|thursday|friday|saturday)";
+const DATE_TERM_G = new RegExp(DATE_TERM.source, "gi");
+const iso = (d: Date) => d.toISOString().slice(0, 10);
+/** Every calendar date written in a text, as yyyy-mm-dd. */
+export function datesIn(text: string): Set<string> {
+  const out = new Set<string>();
+  for (const m of text.slice(0, MAX_TEXT).matchAll(DATE_TERM_G)) {
+    const d = parseDate(m[0]);
+    if (d) out.add(iso(d));
+  }
+  return out;
+}
+/** A step's notes ("(second anniversary)", "(discount forgone)") aren't part of it: parentheses holding words are dropped. */
+export const stripNotes = (t: string) => t.replace(/[−–—]/g, "-").replace(/\s*\((?=[^)]*\p{L}{2})[^()]*\)/gu, " ").replace(/\s+/g, " ").trim();
+/**
+ * "Next Working Day after Sunday 5 April 2026, skipping Easter Monday 6 April 2026" = "Tuesday 7 April 2026": the
+ * first weekday after the base date that isn't a listed skipped date. Null when the expression isn't such a step.
+ * (Whether a skipped date really is a holiday is the verifier's call: it can only make the date later.)
+ */
+export function checkNextWorkingDay(expression: string, result: string): { ok: boolean; dates: string[] } | null {
+  const m = new RegExp(`^\\s*(?:the\\s+)?next\\s+(?:working|business)\\s+day\\s+(?:after|following)\\s+(?:${WEEKDAY},?\\s+)?(${DATE_TERM.source})(.*)$`, "i").exec(expression);
+  if (!m) return null;
+  const base = parseDate(m[2]);
+  const got = parseDate((DATE_TERM.exec(result) ?? [""])[0]);
+  if (!base || !got) return null;
+  const skipped = datesIn(m[m.length - 1]);
+  const d = new Date(base.getTime());
+  do d.setUTCDate(d.getUTCDate() + 1);
+  while (d.getUTCDay() === 0 || d.getUTCDay() === 6 || skipped.has(iso(d)));
+  const skippedText = [...m[m.length - 1].matchAll(DATE_TERM_G)].map((x) => x[0]);
+  return { ok: d.getTime() === got.getTime(), dates: [m[2], (DATE_TERM.exec(result) ?? [""])[0], ...skippedText] };
+}
+const CLOCK = `${WEEKDAY}\\s+(\\d{1,2})(?:[:.](\\d{2}))?\\s*(a\\.?m\\.?|p\\.?m\\.?)?`;
+const minutesOf = (day: string, h: string, mi: string | undefined, ap: string | undefined) => {
+  let hh = Number(h) % (ap ? 12 : 24);
+  if (ap && /^p/i.test(ap)) hh += 12;
+  return WEEKDAYS.indexOf(day.toLowerCase()) * 1440 + hh * 60 + Number(mi ?? 0);
+};
+/** "Monday 6:30 a.m. + 72 hours" = "Thursday 6:30 a.m.": weekday-and-clock arithmetic. Null when not such a step. */
+export function checkClockStep(expression: string, result: string): { ok: boolean; count: string; text: string[] } | null {
+  const m = new RegExp(`^\\s*${CLOCK}\\s*([+-])\\s*(\\d+(?:\\.\\d+)?)\\s*(?:working\\s+|business\\s+)?(hours?|minutes?)\\s*$`, "i").exec(expression);
+  const r = new RegExp(`^\\s*${CLOCK}`, "i").exec(result);
+  if (!m || !r) return null;
+  const n = Number(m[6]) * (m[7].toLowerCase().startsWith("hour") ? 60 : 1) * (m[5] === "-" ? -1 : 1);
+  // "working hours" are only re-done when they stay within one day (a working-day calendar isn't known here)
+  if (/working|business/i.test(expression) && r[1].toLowerCase() !== m[1].toLowerCase()) return null;
+  const want = (((minutesOf(m[1], m[2], m[3], m[4]) + n) % 10080) + 10080) % 10080;
+  return { ok: want === minutesOf(r[1], r[2], r[3], r[4]), count: String(Number(m[6])), text: [m[0].split(/\s*[+-]\s*\d/)[0].trim(), r[0].trim()] };
+}
+/**
+ * "March 1, 2027 to June 30, 2027" = "4 whole calendar months" (or N days/weeks): the span between two dates. Months
+ * count whole calendar months from a first day to a last day; days may be counted either way (with or without the
+ * end day). Null when not such a step.
+ */
+export function checkSpan(expression: string, result: string): { ok: boolean; dates: string[]; count: string } | null {
+  const m = new RegExp(`^\\s*(?:from\\s+)?(${DATE_TERM.source})\\s+(?:to|until|through|-)\\s+(${DATE_TERM.source})\\s*$`, "i").exec(expression);
+  const r = /^\s*(\d+(?:\.\d+)?)\s*(?:whole\s+|full\s+|complete\s+)?(?:calendar\s+)?(days?|weeks?|months?)\b/i.exec(result);
+  if (!m || !r) return null;
+  const a = parseDate(m[1]);
+  const b = parseDate(m[m.length - 2] ?? "") ?? parseDate((new RegExp(DATE_TERM.source, "i").exec(expression.slice(expression.toLowerCase().indexOf(" to ") + 1)) ?? [""])[0]);
+  if (!a || !b) return null;
+  const n = Number(r[1]);
+  const days = Math.round((b.getTime() - a.getTime()) / 86400000);
+  let ok: boolean;
+  if (/^month/i.test(r[2])) {
+    const lastDay = new Date(Date.UTC(b.getUTCFullYear(), b.getUTCMonth() + 1, 0)).getUTCDate() === b.getUTCDate();
+    ok = a.getUTCDate() === 1 && lastDay && (b.getUTCFullYear() - a.getUTCFullYear()) * 12 + b.getUTCMonth() - a.getUTCMonth() + 1 === n;
+  } else if (/^week/i.test(r[2])) ok = days === 7 * n || days + 1 === 7 * n;
+  else ok = days === n || days + 1 === n;
+  const texts = [...expression.matchAll(DATE_TERM_G)].map((x) => x[0]);
+  return { ok, dates: texts, count: String(n) };
+}
+/**
+ * Weekdays written next to a date ("Sunday 5 April 2026", "5 April 2026 (Sunday)", "February 10, 2029, a Saturday"):
+ * the ones that match their date, and the ones that don't.
+ */
+/** The text with every date (in any format) that falls on one of the given dates replaced by a space. */
+export function withoutDates(text: string, dates: string[]): string {
+  const keys = new Set(dates.map((d) => parseDate(d)).filter((d): d is Date => d !== null).map(iso));
+  if (!keys.size) return text;
+  return text.replace(DATE_TERM_G, (m) => {
+    const d = parseDate(m);
+    return d && keys.has(iso(d)) ? " " : m;
+  });
+}
+/**
+ * Dates in an answer that put a day and month the agreement states without a year ("Quarter Days: 25 March, 24 June,
+ * 29 September and 25 December") in the year of a date that already has provenance.
+ */
+export function recurringDates(answer: string, agreement: string, known: string[]): string[] {
+  const years = new Set(known.map((d) => parseDate(d)?.getUTCFullYear()).filter((y): y is number => y !== undefined));
+  if (!years.size) return [];
+  const dm = new Set<string>();
+  for (const m of agreement.slice(0, 200_000).matchAll(new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?${MONTH_NAME}(?!,?\\s+\\d{4})|${MONTH_NAME}\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?!,?\\s+\\d{4})`, "gi"))) {
+    const day = Number(m[1] ?? m[4]);
+    const mon = monthIndex(m[2] ?? m[3]);
+    if (day >= 1 && day <= 31 && mon >= 0) dm.add(`${mon}-${day}`);
+  }
+  const out: string[] = [];
+  for (const m of answer.slice(0, MAX_TEXT).matchAll(DATE_TERM_G)) {
+    const d = parseDate(m[0]);
+    if (d && dm.has(`${d.getUTCMonth()}-${d.getUTCDate()}`) && years.has(d.getUTCFullYear())) out.push(m[0]);
+  }
+  return out;
+}
+export function weekdayChecks(text: string): { ok: string[]; wrong: string[] } {
+  const ok: string[] = [];
+  const wrong: string[] = [];
+  const t = text.slice(0, MAX_TEXT);
+  const check = (w: string, dt: string, whole: string) => {
+    const d = parseDate(dt);
+    if (!d) return;
+    (WEEKDAYS[d.getUTCDay()] === w.toLowerCase() ? ok : wrong).push(whole);
+  };
+  for (const m of t.matchAll(new RegExp(`\\b${WEEKDAY},?\\s+(?:the\\s+)?(${DATE_TERM.source})`, "gi"))) check(m[1], m[2], m[0]);
+  for (const m of t.matchAll(new RegExp(`(${DATE_TERM.source}),?\\s*(?:\\(\\s*|which is\\s+|is\\s+|,\\s*)?(?:a\\s+)?${WEEKDAY}\\b`, "gi"))) check(m[m.length - 1], m[1], m[0]);
+  return { ok, wrong };
+}
 /** "100 < 120" = "true": true when the stated truth value is right, false when wrong, null when not a comparison. */
 export function checkComparison(expression: string, result: string): boolean | null {
   const m = /^\s*(.+?)\s*(<=|>=|<|>|=|≤|≥)\s*(.+?)\s*$/.exec(expression);
@@ -604,31 +732,68 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
   // a multiplier from a stated percentage about the question: 1.2 from a 20% markup, 0.015 from 1.5% interest
   const derivedRate = (n: number) => [n * 100, (n - 1) * 100, (1 - n) * 100].some((p) => percentsOnTopic.has(String(+p.toFixed(6))));
   const derivedOffTopic = (n: number) => !derivedRate(n) && [n * 100, (n - 1) * 100, (1 - n) * 100].some((p) => percentsAll.has(String(+p.toFixed(6))));
-  // "€48,000 − €14,400": a typographic minus or dash is a minus
-  for (const c of calcs.slice(0, 10).map((x) => ({ ...x, expression: x.expression.replace(/[−–—]/g, "-") }))) {
-    const step = checkDateStep(c.expression, c.result);
-    if (step) {
-      const label = `${c.expression} = ${c.result}`;
-      if (!step.ok) {
+  // Provenance: a figure or date is QUOTED (the binding agreement), the USER's (the question and earlier turns), or
+  // DERIVED (the result of a step re-done here whose inputs each have provenance). Steps are re-done until nothing
+  // new is learned, so a chain works in any order; a derived result is never accepted for being in the text.
+  const quotedDates = datesIn(agreement.join("\n"));
+  // QUOTED figures: anywhere in the binding agreement, without clause labels and references
+  const quotedNums = numbersInAll(stripRefs(stripClauses(agreement.join("\n"))));
+  const userDates = datesIn(question);
+  const derivedDates = new Set<string>();
+  const dateKnown = (t: string) => {
+    const d = parseDate(t);
+    if (!d) return false;
+    const k = iso(d);
+    if (quotedDates.has(k) || userDates.has(k) || derivedDates.has(k)) return true;
+    // the last day of a known date's month, or the first day of the next ("60 days from the end of the month")
+    return [...quotedDates, ...userDates, ...derivedDates].some((x) => {
+      const y = new Date(`${x}T00:00:00Z`);
+      return iso(new Date(Date.UTC(y.getUTCFullYear(), y.getUTCMonth() + 1, 0))) === k || iso(new Date(Date.UTC(y.getUTCFullYear(), y.getUTCMonth() + 1, 1))) === k;
+    });
+  };
+  const countKnown = (n: string) => fromQuestion.has(n) || quotedNums.has(n) || has(everywhere, n, null).length > 0 || constant(n) || verified.has(n) || recomputed.has(n);
+  const steps = calcs.slice(0, 10).map((x) => ({ ...x, expression: stripNotes(x.expression) }));
+  let size = -1;
+  for (let pass = 0; pass < 4 && size !== verified.size + recomputed.size + derivedDates.size; pass++) {
+    size = verified.size + recomputed.size + derivedDates.size;
+    failed.length = 0;
+    wrong.length = 0;
+    unproven.length = 0;
+    qualified.length = 0;
+  for (const c of steps) {
+    const label = `${c.expression} = ${c.result}`;
+    // calendar steps: re-done here; the count and the base date need provenance, and the dates they reach are derived
+    const calendar = checkDateStep(c.expression, c.result);
+    const working = calendar ? null : checkNextWorkingDay(c.expression, c.result);
+    const clock = calendar || working ? null : checkClockStep(c.expression, c.result);
+    const span = calendar || working || clock ? null : checkSpan(c.expression, c.result);
+    if (calendar || working || clock || span) {
+      const ok = (calendar ?? working ?? clock ?? span)!.ok;
+      if (!ok) {
         failed.push(label);
         wrong.push(label);
         continue;
       }
-      // the count ("+ 60 days") must be stated in the agreement or the question, like any input; the dates are then
-      // re-done here (whole dates only: their day and year digits vouch for no other figure). Where the base date
-      // comes from (an invoice date, the end of a month) is the verifier's call.
-      if (!fromQuestion.has(step.count) && !has(everywhere, step.count, null).length && !constant(step.count)) {
+      const base = calendar ? calendar.dates[0] : working ? working.dates[0] : null;
+      const count = calendar?.count ?? clock?.count ?? span?.count ?? null;
+      const inputsKnown = (base === null || dateKnown(base)) && (count === null || countKnown(count) || (span !== null && span.dates.some(dateKnown)));
+      if (!inputsKnown) {
         failed.push(label);
         unproven.push(label);
         continue;
       }
-      dates.push(...step.dates);
-      operandsOk.add(step.count);
+      const reached = calendar?.dates ?? working?.dates ?? span?.dates ?? clock!.text;
+      for (const d of reached) {
+        dates.push(d);
+        const p = parseDate(d);
+        if (p) derivedDates.add(iso(p));
+      }
+      if (count !== null) operandsOk.add(count);
+      if (span) recomputed.add(span.count);
       continue;
     }
     const cmp = checkComparison(c.expression, c.result);
     if (cmp !== null) {
-      const label = `${c.expression} = ${c.result}`;
       if (!cmp) {
         failed.push(label);
         wrong.push(label);
@@ -664,7 +829,6 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
     // "1.5% * 12 = 18%": the parser gives 0.18; a result written as a percentage is compared as one
     const pct = m ? /^\s*[$£€]?\s*-?\d[\d,]*(?:\.\d+)?\s*%/.test(c.result) : false;
     const target = value !== null && pct ? value * 100 : value;
-    const label = `${c.expression} = ${c.result}`;
     // a result marked as rounded ("≈ 1,067", "3.33 (rounded)") may differ by half a unit of its own last digit;
     // "not rounded" isn't a marker, and "0.94 (rounded)" for 0.45 is wrong
     const rounded = (/\b(?:approx\w*|about|around|rounded|roughly)\b|≈|~/i.test(c.result) && !/\b(?:not|un)[\s-]*rounded\b|\bexact(?:ly)?\b/i.test(c.result));
@@ -687,7 +851,7 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
       continue;
     }
     const stated_ = (o: { n: string; kind: Kind | null }) =>
-      recomputed.has(o.n) || verified.has(o.n) || fromQuestion.has(o.n) || has(everywhere, o.n, null).length > 0 || (o.kind === null && (CONSTANTS.some(([c]) => c === o.n) || o.n === "100" || [Number(o.n) * 100, (Number(o.n) - 1) * 100, (1 - Number(o.n)) * 100].some((p) => percentsAll.has(String(+p.toFixed(6))))));
+      recomputed.has(o.n) || verified.has(o.n) || fromQuestion.has(o.n) || quotedNums.has(o.n) || has(everywhere, o.n, null).length > 0 || (o.kind === null && (CONSTANTS.some(([c]) => c === o.n) || o.n === "100" || [Number(o.n) * 100, (Number(o.n) - 1) * 100, (1 - Number(o.n)) * 100].some((p) => percentsAll.has(String(+p.toFixed(6))))));
     if (operands.every(stated_)) {
       for (const o of operands) recomputed.add(o.n);
       recomputed.add(String(Number(stated)));
@@ -704,7 +868,8 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
       continue;
     }
     // a label may restate known figures ("9500 (monthly cap; 3800 is below it)"), not add new ones ("48 plus a $900 fee")
-    if (labelFigures.some((n) => !verified.has(n) && !fromQuestion.has(n) && !has(everywhere, n, null).length)) {
+    const knownFig = (n: string) => verified.has(n) || recomputed.has(n) || fromQuestion.has(n) || quotedNums.has(n) || has(everywhere, n, null).length > 0 || n === String(Number(stated));
+    if (labelFigures.some((n) => !knownFig(n) && !knownFig(String(Number(n) - 1)) && !knownFig(String(Number(n) + 1)))) {
       unprove(label);
       continue;
     }
@@ -718,6 +883,7 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
     verified.add(String(Number(value!.toFixed(2))));
     verified.add(String(Math.round(value!)));
   }
+  }
   return { verified, operands: operandsOk, fromAgreement: agreementInputs, failed, wrong, unproven, qualified, recomputed, dates };
 }
 
@@ -726,7 +892,7 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
 export function misquoted(answer: string, support: string[]): string[] {
   const hay = normalize(support.join(" \n "));
   const out: string[] = [];
-  for (const m of answer.slice(0, MAX_TEXT).matchAll(/["“]([^"“”]{8,300})["”]|(?:^|[\s(])['‘]([^'‘’]{8,300})['’](?=[\s.,;:)!?]|$)/g)) {
+  for (const m of answer.slice(0, MAX_TEXT).matchAll(/(?:^|(?<=[\s(\[—–-]))["“](?![\s),.;:])([^"“”]{8,300})["”]|(?:^|[\s(])['‘]([^'‘’]{8,300})['’](?=[\s.,;:)!?]|$)/g)) {
     m[1] = m[1] ?? m[2];
     const q = normalize(m[1]).replace(/[.,;:!?]+$/, "");
     if (q.split(" ").length >= 3 && !hay.includes(q)) out.push(`"${m[1].slice(0, 60)}"`);
