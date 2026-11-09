@@ -804,7 +804,13 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
         (count === null || countKnown(count)) &&
         // a holiday may be a day and month the agreement lists without a year ("Easter Monday 6 April"), in the base
         // date's year
-        (working?.skipped ?? []).every((d) => dateKnown(d) || (base !== null && recurringDates(d, agreement.join("\n"), [base]).length > 0)) &&
+        // a skipped date counts only if a source gives it: quoted in the agreement, in the user's words, or a day and
+        // month the agreement lists without a year (in the base date's year). Reaching it by calculation isn't evidence
+        // that it's a holiday.
+        (working?.skipped ?? []).every((d) => {
+          const p = parseDate(d);
+          return !!p && (quotedDates.has(iso(p)) || userDates.has(iso(p)) || (base !== null && recurringDates(d, agreement.join("\n"), [base]).length > 0));
+        }) &&
         (span === null || span.dates.every(dateKnown)) &&
         (clock === null || clockKnown(clock.text[0]));
       if (!inputsKnown) {

@@ -219,6 +219,9 @@ describe("R23 clock starts, working days and yearless dates", () => {
     expect(shown(await ask("Our invoice is dated 1 December 2024. When is it due?", { answer: "It is due on 1 January 2025.", calculations: [{ expression: "1 December 2024 + 30 days", result: "31 December 2024" }, { expression: "Next Working Day after 31 December 2024", result: "1 January 2025" }] }))).toBe(false);
     expect(checkNextWorkingDay("Next Working Day after 31 December 2024", "31 December 2024")?.ok).toBe(true);
   });
+  it("a derived date listed as its own holiday (review 24)", async () => {
+    expect(shown(await ask("Our invoice is dated 1 December 2024. When is it due?", { answer: "It is due on 1 January 2025.", calculations: [{ expression: "1 December 2024 + 30 days", result: "31 December 2024" }, { expression: "Next Working Day after 31 December 2024, skipping 31 December 2024", result: "1 January 2025" }] }))).toBe(false);
+  });
   it("a yearless recurring date stated in the user's year as another event", async () => {
     expect(shown(await ask("Today is 3 March 2029. When does the Term end?", { answer: "The Term ends on 24 June 2029." }))).toBe(false);
   });
