@@ -6,7 +6,7 @@ import { emit } from "./webhooks";
 import { getBlob, putBlob } from "./storage";
 import { seal, unseal } from "./secret";
 import { appUrl } from "./paths";
-import { addDays, escapeHtml, id, now, sha256, token } from "./util";
+import { addDays, escapeHtml, id, now, safeEqual, sha256, token } from "./util";
 import { appendCertificate, stampFields, type StampValue } from "./pdf/stamp";
 import type { Field, PageSize } from "./fields";
 import type { FileRow, Template, TemplateVersion, Workspace } from "./types";
@@ -264,14 +264,23 @@ export async function sendOtp(f: FileRow, ws: Workspace, ctx: Ctx): Promise<bool
 }
 
 export function verifyOtp(f: FileRow, ws: Workspace, code: string, ctx: Ctx): boolean {
-  if (!f.otp_hash || !f.otp_expires_at || f.otp_expires_at < now()) throw new AppError("The code has expired. Send a new one.", 400);
-  if (f.otp_attempts >= 5) throw new AppError("Too many wrong codes. Send a new one.", 429);
-  if (sha256(f.id + ":" + code.trim()) !== f.otp_hash) {
-    run("UPDATE files SET otp_attempts = otp_attempts + 1 WHERE id = ?", f.id);
+  const expired = () => new AppError("The code has expired. Send a new one.", 400);
+  if (!f.otp_hash || !f.otp_expires_at || f.otp_expires_at < now()) throw expired();
+  // each try takes one of the 5 from the row itself, atomically, for this same code: `f` may be stale (loaded before
+  // the request body was read), so concurrent requests can't each see the old count
+  const took = run("UPDATE files SET otp_attempts = otp_attempts + 1 WHERE id = ? AND otp_hash = ? AND otp_attempts < 5", f.id, f.otp_hash);
+  if (Number(took.changes) !== 1) {
+    const cur = one<{ otp_hash: string | null; otp_attempts: number }>("SELECT otp_hash, otp_attempts FROM files WHERE id = ?", f.id);
+    if (cur?.otp_hash === f.otp_hash && cur.otp_attempts >= 5) throw new AppError("Too many wrong codes. Send a new one.", 429);
+    throw expired(); // used, or replaced by a new code, meanwhile
+  }
+  if (!safeEqual(sha256(f.id + ":" + code.trim()), f.otp_hash)) {
     audit(ws.id, f.id, "file.otp_failed", f.client_email, ctx);
     return false;
   }
-  run("UPDATE files SET otp_verified_at = ?, otp_hash = NULL WHERE id = ?", now(), f.id);
+  // single use: only the request that clears this code verifies with it
+  const used = run("UPDATE files SET otp_verified_at = ?, otp_hash = NULL WHERE id = ? AND otp_hash = ?", now(), f.id, f.otp_hash);
+  if (Number(used.changes) !== 1) throw expired();
   audit(ws.id, f.id, "file.otp_verified", f.client_email, ctx);
   return true;
 }
