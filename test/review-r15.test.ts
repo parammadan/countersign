@@ -1,12 +1,13 @@
 // Review 15 (independent, of 15607e0) and the first real verifier run: a leading "Yes" is always judged, and an
 // absence claim isn't exempt when the binding text does say it. Regression tests; scripted models, no network.
-import { describe, expect, it } from "vitest";
+import { describe, expect } from "vitest";
 import { answerWithModel, QA_LIMITS, type QaResult } from "@/lib/qa/answer";
 import { type VerifiedClaim } from "@/lib/qa/verify";
 
 import { linesFromText } from "@/lib/understand/text";
 import type { ModelProvider, ModelRequest } from "@/lib/understand/model";
 import { scripted } from "./support/stub-verifier";
+import { probe } from "./support/exposures";
 
 const PAGES = linesFromText([
   `CONSULTING AGREEMENT between Harrow Example Ltd ("Provider") and Quill Sample Inc ("Client").
@@ -47,23 +48,23 @@ const judgedAs = (a: string, claim: string, kind: VerifiedClaim["kind"] = "term"
 
 describe("R15 a leading Yes is judged as an answer to the question", () => {
   for (const a of ["Yes — fees already paid are dealt with in clause 2.", "Yes clause 2 deals with fees already paid."])
-    it(a, async () => {
+    probe(a, async () => {
       const v = claims((req) => ({ span: a.replace(/^Yes\W*/, ""), claim: a.replace(/^Yes\W*/, ""), kind: "context", evidence: [evidenceFor(req, /not refundable/)] }));
       expect(shown(await ask("Are fees already paid refundable?", { answer: a }, v, /refundable/))).toBe(false);
     });
 });
 
 describe("F-a an absence claim the binding text contradicts isn't exempt", () => {
-  it("'doesn't state whether fees already paid are refundable' (they aren't)", async () => {
+  probe("'doesn't state whether fees already paid are refundable' (they aren't)", async () => {
     const a = "The agreement does not state whether fees already paid are refundable.";
     expect(shown(await ask("Are fees refundable?", { answer: a }, judgedAs(a, a, "absence"), /refundable/))).toBe(false);
   });
-  it("a true absence with the agreement's figures is shown", async () => {
+  probe("a true absence with the agreement's figures is shown", async () => {
     const a = "The agreement does not say whether the $3,200 monthly fee includes VAT.";
     const r = await ask("Does the fee include VAT?", { answer: a }, judgedAs(a, a, "absence"), /\$3,200/);
     expect(shown(r), r.warnings.join(" / ")).toBe(true);
   });
-  it("…but not with a figure the term check doubts", async () => {
+  probe("…but not with a figure the term check doubts", async () => {
     const a = "The agreement does not say whether the 15 days' notice to terminate is in business days.";
     expect(shown(await ask("How much notice is needed to terminate?", { answer: a }, judgedAs(a, a, "absence"), /terminate/))).toBe(false);
   });

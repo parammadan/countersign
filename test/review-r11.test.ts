@@ -1,13 +1,14 @@
 // Review 11 (independent, of 18d8b4a): premise figures in other phrasings, a count backed by an unrelated clause, a
 // figure paired by its absence of rivals, a repeated figure, and money worked out from unrelated figures. Regression
 // tests; scripted models, no network. The verifier here approves each answer with one whole-sentence claim.
-import { describe, expect, it } from "vitest";
+import { describe, expect } from "vitest";
 import { answerWithModel, QA_LIMITS, type QaResult } from "@/lib/qa/answer";
 import { type VerifiedClaim } from "@/lib/qa/verify";
 
 import { linesFromText } from "@/lib/understand/text";
 import type { ModelProvider, ModelRequest } from "@/lib/understand/model";
 import { scripted } from "./support/stub-verifier";
+import { probe } from "./support/exposures";
 
 const PAGES = linesFromText([
   `CONSULTING AGREEMENT between Harrow Example Ltd ("Provider") and Quill Sample Inc ("Client").
@@ -58,11 +59,11 @@ const cases: [string, string, string, RegExp[], RegExp][] = [
 ];
 describe("R11 a wrong figure approved by the verifier is still withheld", () => {
   for (const [what, q, a, res, cite] of cases)
-    it(what, async () => {
+    probe(what, async () => {
       expect(shown(await ask(q, { answer: a }, null, cite)), "strict").toBe(false);
       expect(shown(await ask(q, { answer: a }, ev(a, res), cite)), "two-pass").toBe(false);
     });
-  it("the right figure, approved with the right clause, is shown", async () => {
+  probe("the right figure, approved with the right clause, is shown", async () => {
     const a = "Either party may terminate on 45 days' written notice.";
     expect(shown(await ask("How much notice is needed to terminate?", { answer: a }, ev(a, [/45 days/]), /terminate/))).toBe(true);
   });

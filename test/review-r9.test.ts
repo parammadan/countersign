@@ -1,13 +1,14 @@
 // Review 9 (independent, of 4eca687): fragments that cover a sentence without judging it, a figure moved into a
 // claim from other evidence, a "Yes" judged as something else, and reported speech that states a term. Regression
 // tests; scripted models, no network.
-import { describe, expect, it } from "vitest";
+import { describe, expect } from "vitest";
 import { answerWithModel, QA_LIMITS, type QaResult } from "@/lib/qa/answer";
 import { type VerifiedClaim } from "@/lib/qa/verify";
 
 import { linesFromText } from "@/lib/understand/text";
 import type { ModelProvider, ModelRequest } from "@/lib/understand/model";
 import { scripted } from "./support/stub-verifier";
+import { probe } from "./support/exposures";
 
 const PAGES = linesFromText([
   `CONSULTING AGREEMENT between Harrow Example Ltd ("Provider") and Quill Sample Inc ("Client").
@@ -46,7 +47,7 @@ const fee = (req: ModelRequest) => evidenceFor(req, /\$3,200/);
 const term = (req: ModelRequest) => evidenceFor(req, /45 days/);
 
 describe("R9-1 a figure the claim states must be in its evidence", () => {
-  it("'15 days' judged as the payment term", async () => {
+  probe("'15 days' judged as the payment term", async () => {
     const a = { answer: "The Client must give 15 days' written notice to terminate." };
     const v = claims(
       (req) => ({ span: "The Client must give", claim: "The Client must give written notice to terminate.", evidence: [term(req)] }),
@@ -55,25 +56,25 @@ describe("R9-1 a figure the claim states must be in its evidence", () => {
     );
     expect(shown(await ask("How much notice?", a, v, /terminate/))).toBe(false);
   });
-  it("a whole sentence supported with evidence that has a different figure", async () => {
+  probe("a whole sentence supported with evidence that has a different figure", async () => {
     const a = { answer: "The Client must give 15 days' written notice to terminate." };
     expect(shown(await ask("How much notice?", a, claims((req) => ({ span: a.answer, claim: a.answer, evidence: [term(req)] })), /terminate/))).toBe(false);
   });
-  it("a negated clause can't be split across claims", async () => {
+  probe("a negated clause can't be split across claims", async () => {
     const v = claims(
       (req) => ({ span: "Either party may", claim: "Either party may terminate on 45 days' written notice.", evidence: [term(req)] }),
       (req) => ({ span: "not terminate on notice", claim: "A party may not terminate without notice.", evidence: [term(req)] }),
     );
     expect(shown(await ask("Can either party terminate?", { answer: "Either party may not terminate on notice." }, v, /terminate/))).toBe(false);
   });
-  it("the same figure with the right evidence is shown", async () => {
+  probe("the same figure with the right evidence is shown", async () => {
     const a = { answer: "Either party may terminate on 45 days' written notice." };
     expect(shown(await ask("How much notice?", a, claims((req) => ({ span: a.answer, claim: a.answer, evidence: [term(req)] })), /terminate/))).toBe(true);
   });
 });
 
 describe("R9-2 a 'Yes' restates what it affirms", () => {
-  it("'Yes' judged as 'fees are dealt with in clause 2'", async () => {
+  probe("'Yes' judged as 'fees are dealt with in clause 2'", async () => {
     const o = { answer: "Yes.", explanation: "Clause 2 deals with termination and refunds." };
     const v = claims(
       (req) => ({ span: "Yes", claim: "Yes, fees already paid are dealt with in clause 2.", kind: "context", evidence: [evidenceFor(req, /not refundable/)] }),
@@ -89,7 +90,7 @@ describe("R9-3 reported speech states a term only as '<that text> says <term>'",
     "Per the marketing summary, which says so, the Client pays $450 per month; that summary is not binding.",
     "The marketing summary is not binding, so the Client pays $450 per month.",
   ])
-    it(a, async () => {
+    probe(a, async () => {
       expect(shown(await ask("What is the monthly fee?", { answer: a }, null, /Fees|Marketing/))).toBe(false);
       expect(shown(await ask("What is the monthly fee?", { answer: a }, claims((req) => ({ span: a, claim: a, kind: "context", evidence: [evidenceFor(req, /\$450/)] })), /Fees|Marketing/))).toBe(false);
     });

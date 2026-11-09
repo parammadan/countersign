@@ -1,12 +1,13 @@
 // Review 17 (independent, of cb94c12): a trailing clause with an unlisted verb, a leading 'Apart from …' phrase, and a
 // negated right dressed as an absence. Regression tests; scripted models, no network.
-import { describe, expect, it } from "vitest";
+import { describe, expect } from "vitest";
 import { answerWithModel, QA_LIMITS, type QaResult } from "@/lib/qa/answer";
 import { type VerifiedClaim } from "@/lib/qa/verify";
 
 import { linesFromText } from "@/lib/understand/text";
 import type { ModelProvider, ModelRequest } from "@/lib/understand/model";
 import { scripted } from "./support/stub-verifier";
+import { probe } from "./support/exposures";
 
 const PAGES = linesFromText([
   `CONSULTING AGREEMENT between Harrow Example Ltd ("Provider") and Quill Sample Inc ("Client").
@@ -47,7 +48,7 @@ describe("R17 an absence claim that also states a term needs evidence", () => {
     ["Is the Provider's liability capped?", "No clause limits or mentions the Provider's exposure for damages.", /liability/],
   ] as const)
     for (const kind of ["absence", "term"] as const)
-      it(`${a} (${kind})`, async () => {
+      probe(`${a} (${kind})`, async () => {
         expect(shown(await ask(q, { answer: a }, unproved(a, kind), cite))).toBe(false);
       });
 });

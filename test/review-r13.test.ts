@@ -1,12 +1,13 @@
 // Review 13 (independent, of 0575a33): a figure the deterministic term check doubts can't be backed by the user's
 // word for it or by the verifier's "scenario" label, however the answer is worded. Regression tests; no network.
-import { describe, expect, it } from "vitest";
+import { describe, expect } from "vitest";
 import { answerWithModel, QA_LIMITS, type QaResult } from "@/lib/qa/answer";
 import { type VerifiedClaim } from "@/lib/qa/verify";
 
 import { linesFromText } from "@/lib/understand/text";
 import type { ModelProvider, ModelRequest } from "@/lib/understand/model";
 import { scripted } from "./support/stub-verifier";
+import { probe } from "./support/exposures";
 
 const PAGES = linesFromText([
   `CONSULTING AGREEMENT between Harrow Example Ltd ("Provider") and Quill Sample Inc ("Client").
@@ -54,11 +55,11 @@ describe("R13 a doubted figure from the user is backed only by a quote about the
     ["Once 15 days have passed after written notice, either party may terminate.", "term"],
     ["After 15 days from giving written notice, either party may terminate.", "term"],
   ] as const)
-    it(`${a} (${kind})`, async () => {
+    probe(`${a} (${kind})`, async () => {
       expect(shown(await ask(Q, { answer: a }, null, /terminate/)), "strict").toBe(false);
       expect(shown(await ask(Q, { answer: a }, ev(a, [/45 days/], kind), /terminate/)), "two-pass").toBe(false);
     });
-  it("For the $5,000 monthly bill, the Client must pay within 15 days of invoice.", async () => {
+  probe("For the $5,000 monthly bill, the Client must pay within 15 days of invoice.", async () => {
     const a = "For the $5,000 monthly bill, the Client must pay within 15 days of invoice.";
     const q = "What happens after my $5,000 monthly fee is invoiced?";
     expect(shown(await ask(q, { answer: a }, null, /Fees/)), "strict").toBe(false);

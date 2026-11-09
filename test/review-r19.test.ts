@@ -1,12 +1,13 @@
 // Review 19 (independent, of 137a14e): the object of an absence is allow-listed — only list commas and harmless
 // glosses, no verb in a noun phrase, one verb group in a question. Regression tests; no network.
-import { describe, expect, it } from "vitest";
+import { describe, expect } from "vitest";
 import { answerWithModel, QA_LIMITS, type QaResult } from "@/lib/qa/answer";
 import { type VerifiedClaim } from "@/lib/qa/verify";
 
 import { linesFromText } from "@/lib/understand/text";
 import type { ModelProvider, ModelRequest } from "@/lib/understand/model";
 import { scripted } from "./support/stub-verifier";
+import { probe } from "./support/exposures";
 
 const PAGES = linesFromText([
   `CONSULTING AGREEMENT between Harrow Example Ltd ("Provider") and Quill Sample Inc ("Client").
@@ -51,7 +52,7 @@ describe("R19 nothing rides along on an absence", () => {
     "The agreement does not mention a refund deadline (fees already paid are refundable on request).",
   ])
     for (const kind of ["absence", "term"] as const)
-      it(`${a} (${kind})`, async () => {
+      probe(`${a} (${kind})`, async () => {
         expect(shown(await ask("Are fees refundable?", { answer: a }, unproved(a, kind), /refundable/))).toBe(false);
       });
   for (const a of [
@@ -60,7 +61,7 @@ describe("R19 nothing rides along on an absence", () => {
     "The agreement does not state the amount of filing costs or how they will be billed.",
     "The agreement does not state a specific number of days for payment after an invoice is issued.",
   ])
-    it(`still shown: ${a}`, async () => {
+    probe(`still shown: ${a}`, async () => {
       const r = await ask("What else does it say?", { answer: a }, unproved(a, "absence"), /Fees/);
       expect(shown(r), r.warnings.join(" / ")).toBe(true);
     });

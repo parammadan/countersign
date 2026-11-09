@@ -1,12 +1,13 @@
 // Review 12 (independent, of fe5751a): where the answer puts a comma must not decide whether the user's figure for a
 // term is taken as a fact of their situation. Regression tests; scripted models, no network.
-import { describe, expect, it } from "vitest";
+import { describe, expect } from "vitest";
 import { answerWithModel, QA_LIMITS, type QaResult } from "@/lib/qa/answer";
 import { type VerifiedClaim } from "@/lib/qa/verify";
 
 import { linesFromText } from "@/lib/understand/text";
 import type { ModelProvider, ModelRequest } from "@/lib/understand/model";
 import { scripted } from "./support/stub-verifier";
+import { probe } from "./support/exposures";
 
 const PAGES = linesFromText([
   `CONSULTING AGREEMENT between Harrow Example Ltd ("Provider") and Quill Sample Inc ("Client").
@@ -50,13 +51,13 @@ describe("R12 the user's figure for a term isn't a fact of their situation, wher
     ["How do I give the 15 days' notice to terminate?", "With 15 days' written notice, either party may terminate.", [/45 days/], /terminate/],
     ["What happens after my $5,000 monthly fee is invoiced?", "At $5,000 per month, the Client's invoices are payable within 15 days.", [/\$3,200/], /Fees/],
   ] as const)
-    it(a, async () => {
+    probe(a, async () => {
       expect(shown(await ask(q, { answer: a }, null, cite)), "strict").toBe(false);
       expect(shown(await ask(q, { answer: a }, ev(a, [...res]), cite)), "two-pass").toBe(false);
     });
   // a figure of the user's situation that the term check doubts is withheld too (known cost, sealed set 3 measures it);
   // the same answer without restating it is shown
-  it("an answer about the user's situation that doesn't restate a doubted figure is shown", async () => {
+  probe("an answer about the user's situation that doesn't restate a doubted figure is shown", async () => {
     const a = "Overdue amounts accrue interest at 1.5% per month, so interest accrues for each month the invoice is late.";
     const r = await ask("My invoice was paid 2 months late. Does interest apply?", { answer: a }, ev(a, [/1\.5%/]), /Overdue/);
     expect(shown(r), r.warnings.join(" / ")).toBe(true);

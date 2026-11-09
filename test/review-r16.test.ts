@@ -1,12 +1,13 @@
 // Review 16 (independent, of 3cf3964): an absence or a disclaimer is exempt from evidence only when every clause of
 // it is one; a negated duty or right is a term. Regression tests; scripted models, no network.
-import { describe, expect, it } from "vitest";
+import { describe, expect } from "vitest";
 import { answerWithModel, QA_LIMITS, type QaResult } from "@/lib/qa/answer";
 import { type VerifiedClaim } from "@/lib/qa/verify";
 
 import { linesFromText } from "@/lib/understand/text";
 import type { ModelProvider, ModelRequest } from "@/lib/understand/model";
 import { scripted } from "./support/stub-verifier";
+import { probe } from "./support/exposures";
 
 const PAGES = linesFromText([
   `CONSULTING AGREEMENT between Harrow Example Ltd ("Provider") and Quill Sample Inc ("Client").
@@ -52,10 +53,10 @@ describe("R16 a term inside an absence or a disclaimer still needs evidence", ()
     ["Are fees refundable?", "The marketing summary says otherwise but it is not binding, so fees already paid are refundable.", "context", [/\$450/], /Fees|Marketing/],
     ["Are fees refundable?", "The agreement does not specify a deadline for refunds, and fees already paid are refundable.", "absence", [], /refundable/],
   ] as const)
-    it(a, async () => {
+    probe(a, async () => {
       expect(shown(await ask(q, { answer: a }, unproved(a, kind, [...res]), cite))).toBe(false);
     });
-  it("a plain absence, over several clauses, is still shown", async () => {
+  probe("a plain absence, over several clauses, is still shown", async () => {
     const a = "The agreement does not say how invoices are delivered and does not mention late fees beyond interest.";
     const r = await ask("How are invoices delivered?", { answer: a }, unproved(a, "absence"), /Fees/);
     expect(shown(r), r.warnings.join(" / ")).toBe(true);

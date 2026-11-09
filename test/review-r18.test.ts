@@ -1,12 +1,13 @@
 // Review 18 (independent, of 493e3ba): an absence is a whole sentence of one shape — <the agreement> <does not say>
 // <a thing | a question> — with no reason, new clause or right attached. Regression tests; no network.
-import { describe, expect, it } from "vitest";
+import { describe, expect } from "vitest";
 import { answerWithModel, QA_LIMITS, type QaResult } from "@/lib/qa/answer";
 import { type VerifiedClaim } from "@/lib/qa/verify";
 
 import { linesFromText } from "@/lib/understand/text";
 import type { ModelProvider, ModelRequest } from "@/lib/understand/model";
 import { scripted } from "./support/stub-verifier";
+import { probe } from "./support/exposures";
 
 const PAGES = linesFromText([
   `CONSULTING AGREEMENT between Harrow Example Ltd ("Provider") and Quill Sample Inc ("Client").
@@ -49,7 +50,7 @@ describe("R18 a term attached to an absence needs evidence", () => {
     ["Are fees refundable?", "The agreement does not specify a deadline for refunds and fees already paid are refundable.", /refundable/],
   ] as const)
     for (const kind of ["absence", "term"] as const)
-      it(`${a} (${kind})`, async () => {
+      probe(`${a} (${kind})`, async () => {
         expect(shown(await ask(q, { answer: a }, unproved(a, kind), cite))).toBe(false);
       });
   for (const a of [
@@ -57,7 +58,7 @@ describe("R18 a term attached to an absence needs evidence", () => {
     "The agreement does not define what counts as late payment.",
     "The agreement does not specify how, or to what address, written notice must be delivered.",
   ])
-    it(`still shown: ${a}`, async () => {
+    probe(`still shown: ${a}`, async () => {
       const r = await ask("What else does it say?", { answer: a }, unproved(a, "absence"), /Fees/);
       expect(shown(r), r.warnings.join(" / ")).toBe(true);
     });
