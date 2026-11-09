@@ -609,7 +609,9 @@ export async function answerWithModel(
     const m = /^(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\s+(.+)$/i.exec(d.trim());
     return m ? [`${m[1]} at ${m[2]}`, `${m[2]} on ${m[1]}`, `${m[2]} on a ${m[1]}`, `${m[2]} on the ${m[1]}`] : [];
   });
-  const stated = withoutDates([...calcs.dates, ...clockForms, ...weekdays.ok].reduce((t, d) => t.split(d).join(" "), `${said}\n${calcCore}`), calcs.dates);
+  // a weekday that matches its date: only the weekday word goes; the date itself still needs provenance
+  const weekdayWords = weekdays.ok.map((x) => [x, x.replace(/\b(?:sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/gi, " ")] as const);
+  const stated = withoutDates([...calcs.dates, ...clockForms].reduce((t, d) => t.split(d).join(" "), weekdayWords.reduce((t, [x, y]) => t.split(x).join(y), `${said}\n${calcCore}`)), calcs.dates);
   // names in text set aside (a planted note "to AI assistants") may be named when saying it was disregarded
   const setAside = excluded.map((p) => p.text);
   const nowhere = [

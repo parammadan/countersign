@@ -589,7 +589,9 @@ export const stripNotes = (t: string) => t.replace(/[−–—]/g, "-").replace(
  * meaning), so its result gets no provenance and the verifier must judge it. From a weekday the date doesn't move.
  * Null when the expression isn't such a step, or names holidays to skip.
  */
-export function checkNextWorkingDay(expression: string, result: string): { ok: boolean; dates: string[] } | null {
+export function checkNextWorkingDay(expression: string, result: string, agreement = ""): { ok: boolean; dates: string[] } | null {
+  // where the agreement has holidays, the next weekday may be one: the roll isn't re-done here
+  if (/\bholidays?\b/i.test(agreement)) return null;
   const m = new RegExp(`^\\s*(?:the\\s+)?next\\s+(?:working|business)\\s+day\\s+(?:after|following)\\s+(?:${WEEKDAY},?\\s+)?(${DATE_TERM.source})\\s*$`, "i").exec(expression);
   if (!m) return null;
   const base = parseDate(m[2]);
@@ -779,7 +781,7 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
     const label = `${c.expression} = ${c.result}`;
     // calendar steps: re-done here; the count and the base date need provenance, and the dates they reach are derived
     const calendar = checkDateStep(c.expression, c.result);
-    const working = calendar ? null : checkNextWorkingDay(c.expression, c.result);
+    const working = calendar ? null : checkNextWorkingDay(c.expression, c.result, agreementText);
     const clock = calendar || working ? null : checkClockStep(c.expression, c.result);
     const span = calendar || working || clock ? null : checkSpan(c.expression, c.result);
     if (calendar || working || clock || span) {

@@ -248,3 +248,28 @@ describe("R23 clock starts, working days and yearless dates", () => {
     expect(r.dates).toContain("Thursday 6:30 a.m.");
   });
 });
+
+// Review 27 (independent, of 4921fa1): a right weekday must not hide its (invented) date; a weekend roll isn't re-done
+// where the agreement has holidays.
+describe("R27 a weekday doesn't vouch for its date", () => {
+  const LEASE = linesFromText([AGREEMENT[0]]);
+  function model(o: { answer: string; calculations?: { expression: string; result: string }[] }): ModelProvider {
+    return {
+      name: "scripted",
+      model: "claude-opus-5-5",
+      complete: async (r) => {
+        const ps = [...(r.context ?? "").matchAll(/<passage id="(p[^"]+)" page="\d+">([\s\S]*?)<\/passage>/g)].map((m) => ({ id: m[1], text: m[2] }));
+        return { status: "answered", explanation: "", not_stated: [], calculations: [], ...o, citations: ps.filter((p) => /26 weeks|Term/.test(p.text)).map((p) => ({ passage: p.id, quote: p.text.slice(0, 280) })) };
+      },
+    };
+  }
+  const shown = (r: QaResult) => !r.warnings.some((w) => /isn['’]t shown/.test(w));
+  for (const answer of ["Rent starts on Monday 30 December 2024.", "Rent starts on 30 December 2024, a Monday.", "Rent starts on 30 December 2024 (Monday).", "Rent starts on Monday, December 30, 2024."])
+    it(answer, async () => {
+      expect(shown(await answerWithModel(model({ answer }), "When does rent start?", LEASE, QA_LIMITS, { verifier: approveAll() }))).toBe(false);
+    });
+  it("a weekend roll isn't re-done where the agreement has holidays", () => {
+    expect(checkNextWorkingDay("Next Working Day after Sunday 5 April 2026", "6 April 2026", "Working Day excludes bank holidays.")).toBeNull();
+    expect(checkNextWorkingDay("Next Working Day after Sunday 5 April 2026", "6 April 2026", "Working Day means Monday to Friday.")?.ok).toBe(true);
+  });
+});
