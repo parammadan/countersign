@@ -584,22 +584,21 @@ export function datesIn(text: string, limit = MAX_TEXT): Set<string> {
 /** A step's notes ("(second anniversary)", "(discount forgone)") aren't part of it: parentheses holding words are dropped. */
 export const stripNotes = (t: string) => t.replace(/[−–—]/g, "-").replace(/\s*\((?=[^)]*\p{L}{2})[^()]*\)/gu, " ").replace(/\s+/g, " ").trim();
 /**
- * "Next Working Day after Sunday 5 April 2026" = "Monday 6 April 2026": re-done across weekends only. A step that
- * skips holidays isn't re-done here (whether a date is a holiday can't be confirmed without reading the agreement's
- * meaning), so its result gets no provenance and the verifier must judge it. From a weekday the date doesn't move.
- * Null when the expression isn't such a step, or names holidays to skip.
+ * "Next Working Day after <date>": what counts as a working day is the agreement's definition (holidays, days banks
+ * are closed, the parties' own closures), which can't be confirmed without reading it, so a roll is never re-done here
+ * and its result gets no provenance; the verifier judges it. Only a step where nothing moves ("next working day after
+ * Tuesday 31 December 2024" = "31 December 2024") is checked: a date that does move is unproven. Null when the
+ * expression isn't such a step.
  */
-export function checkNextWorkingDay(expression: string, result: string, agreement = ""): { ok: boolean; dates: string[] } | null {
-  // where the agreement has holidays, the next weekday may be one: the roll isn't re-done here
-  if (/\bholidays?\b/i.test(agreement)) return null;
-  const m = new RegExp(`^\\s*(?:the\\s+)?next\\s+(?:working|business)\\s+day\\s+(?:after|following)\\s+(?:${WEEKDAY},?\\s+)?(${DATE_TERM.source})\\s*$`, "i").exec(expression);
+export function checkNextWorkingDay(expression: string, result: string): { ok: boolean; dates: string[] } | null {
+  const m = new RegExp(`^\\s*(?:the\\s+)?next\\s+(?:working|business)\\s+day\\s+(?:after|following)\\s+(?:${WEEKDAY},?\\s+)?(${DATE_TERM.source})(.*)$`, "i").exec(expression);
   if (!m) return null;
   const base = parseDate(m[2]);
   const got = parseDate((DATE_TERM.exec(result) ?? [""])[0]);
   if (!base || !got) return null;
-  const d = new Date(base.getTime());
-  while (d.getUTCDay() === 0 || d.getUTCDay() === 6) d.setUTCDate(d.getUTCDate() + 1);
-  return { ok: d.getTime() === got.getTime(), dates: [m[2], (DATE_TERM.exec(result) ?? [""])[0]] };
+  // a weekday the date stays on is checked; a moved date (weekend, holiday, closure) isn't re-done here
+  if (base.getUTCDay() === 0 || base.getUTCDay() === 6 || got.getTime() !== base.getTime()) return null;
+  return { ok: true, dates: [m[2], (DATE_TERM.exec(result) ?? [""])[0]] };
 }
 const CLOCK = `${WEEKDAY}\\s+(\\d{1,2})(?:[:.](\\d{2}))?\\s*(a\\.?m\\.?|p\\.?m\\.?)?`;
 const minutesOf = (day: string, h: string, mi: string | undefined, ap: string | undefined) => {
@@ -781,7 +780,7 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
     const label = `${c.expression} = ${c.result}`;
     // calendar steps: re-done here; the count and the base date need provenance, and the dates they reach are derived
     const calendar = checkDateStep(c.expression, c.result);
-    const working = calendar ? null : checkNextWorkingDay(c.expression, c.result, agreementText);
+    const working = calendar ? null : checkNextWorkingDay(c.expression, c.result);
     const clock = calendar || working ? null : checkClockStep(c.expression, c.result);
     const span = calendar || working || clock ? null : checkSpan(c.expression, c.result);
     if (calendar || working || clock || span) {

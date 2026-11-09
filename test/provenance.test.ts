@@ -50,10 +50,11 @@ describe("calendar steps", () => {
     expect(r.recomputed.has("182")).toBe(true);
     expect(r.dates).toContain("23 December 2024");
   });
-  it("next working day: re-done across weekends only; a step that skips holidays isn't re-done (review 26)", () => {
-    expect(checkNextWorkingDay("Next Working Day after Sunday 5 April 2026", "Tuesday 7 April 2026")?.ok).toBe(false);
-    expect(checkNextWorkingDay("next business day after 5 April 2026", "6 April 2026")?.ok).toBe(true);
+  it("next working day: a moved date is never re-done here, only a weekday that stays (reviews 26-28)", () => {
+    expect(checkNextWorkingDay("Next Working Day after Sunday 5 April 2026", "Tuesday 7 April 2026")).toBeNull();
+    expect(checkNextWorkingDay("next business day after 5 April 2026", "6 April 2026")).toBeNull();
     expect(checkNextWorkingDay("Next Working Day after Sunday 5 April 2026, skipping Easter Monday 6 April 2026", "Tuesday 7 April 2026")).toBeNull();
+    expect(checkNextWorkingDay("Next Working Day after Tuesday 31 December 2024", "31 December 2024")?.ok).toBe(true);
   });
   it("clock arithmetic", () => {
     expect(checkClockStep("Monday 6:30 a.m. + 72 hours", "Thursday 6:30 a.m.")?.ok).toBe(true);
@@ -268,8 +269,9 @@ describe("R27 a weekday doesn't vouch for its date", () => {
     it(answer, async () => {
       expect(shown(await answerWithModel(model({ answer }), "When does rent start?", LEASE, QA_LIMITS, { verifier: approveAll() }))).toBe(false);
     });
-  it("a weekend roll isn't re-done where the agreement has holidays", () => {
-    expect(checkNextWorkingDay("Next Working Day after Sunday 5 April 2026", "6 April 2026", "Working Day excludes bank holidays.")).toBeNull();
-    expect(checkNextWorkingDay("Next Working Day after Sunday 5 April 2026", "6 April 2026", "Working Day means Monday to Friday.")?.ok).toBe(true);
+  it("a weekend roll is never derived: the agreement's working-day definition may exclude the next weekday (review 28)", async () => {
+    const lease = linesFromText([`${AGREEMENT[0]}\n7. Working Day: a day other than a Saturday, Sunday or a day on which banks in London are closed.`]);
+    const r = await answerWithModel(model({ answer: "You must pay by 6 April 2026.", calculations: [{ expression: "Next Working Day after Sunday 5 April 2026", result: "6 April 2026" }] }), "Our invoice is due Sunday 5 April 2026. When must we pay?", lease, QA_LIMITS, { verifier: approveAll() });
+    expect(shown(r)).toBe(false);
   });
 });
