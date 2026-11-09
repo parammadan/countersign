@@ -56,4 +56,5 @@ export const EVENT_TEXT: Record<string, string> = {
   "file.downloaded": "Signed copy downloaded",
   "file.email_failed": "Email to client failed",
   "file.copy_resent": "Signed copy emailed again",
+  "document.fingerprint_mismatch": "Stored PDF didn't match its fingerprint; refused",
 };

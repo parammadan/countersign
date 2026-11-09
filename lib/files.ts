@@ -37,6 +37,20 @@ export function getVersion(versionId: string): TemplateVersion {
   return v;
 }
 
+/**
+ * A stored PDF, re-hashed against the fingerprint recorded when it was stored, before it is signed, sealed or
+ * served. If the bytes on disk changed, they aren't used: the attempt is audited and refused (409).
+ */
+export async function verifiedBlob(rel: string, expected: string, at: { wsId: string; fileId: string | null; document: string; actor: string; ctx?: Ctx }): Promise<Buffer> {
+  const buf = await getBlob(rel);
+  const actual = sha256(buf);
+  if (actual !== expected) {
+    audit(at.wsId, at.fileId, "document.fingerprint_mismatch", at.actor, at.ctx ?? {}, { document: at.document, expected_sha256: expected, actual_sha256: actual });
+    throw new AppError("The stored PDF doesn't match its recorded fingerprint, so it wasn't used.", 409);
+  }
+  return buf;
+}
+
 export function versionFields(v: TemplateVersion): Field[] {
   return JSON.parse(v.fields_json) as Field[];
 }
@@ -336,7 +350,7 @@ export async function completeClientSigning(tok: string, input: SignInput, ctx: 
       }
     }
     if (!sigPng) sigPng = input.signature ? parsePng(input.signature, "signature") : undefined;
-    const original = await getBlob(version.pdf_path);
+    const original = await verifiedBlob(version.pdf_path, version.sha256, { wsId: ws.id, fileId: f.id, document: "original", actor: f.client_email, ctx });
     const signedPdf = Buffer.from(await stampFields(original, fields.filter((x) => x.role !== "firm"), values));
     const hash = sha256(signedPdf);
     const docPath = await putBlob(`ws/${ws.id}/files/${f.id}/client-signed.pdf`, signedPdf);
@@ -402,7 +416,7 @@ async function countersignOnce(f: FileRow, ws: Workspace, actor: Actor, ctx: Ctx
     else if (fl.type === "email" && ws.countersigner_email) values.set(fl.id, { kind: "text", text: ws.countersigner_email });
     else if (fl.type === "checkbox") values.set(fl.id, { kind: "check", on: true });
   }
-  const base = await getBlob(doc.path);
+  const base = await verifiedBlob(doc.path, doc.sha256, { wsId: ws.id, fileId: f.id, document: "client_signed", actor: actor.label, ctx });
   const stamped = await stampFields(base, fields.filter((x) => x.role === "firm"), values);
   const method = actor.kind === "system" ? "adopted signature, applied automatically" : "applied by " + actor.label;
 
