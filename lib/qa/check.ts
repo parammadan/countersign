@@ -600,6 +600,116 @@ export function checkNextWorkingDay(expression: string, result: string): { ok: b
   if (base.getUTCDay() === 0 || base.getUTCDay() === 6 || got.getTime() !== base.getTime()) return null;
   return { ok: true, dates: [m[2], (DATE_TERM.exec(result) ?? [""])[0]] };
 }
+/**
+ * "January 2026 + 2 calendar months, on the 10th day" = "March 10, 2026": a month-and-year base moved by whole months,
+ * then a stated day of that month. Null when not such a step. The base month needs provenance (a known date in it),
+ * as do the count and the day.
+ */
+export function checkMonthDayStep(expression: string, result: string): { ok: boolean; month: { y: number; m: number }; count: string; day: string; dates: string[] } | null {
+  const m = new RegExp(`^\\s*${MONTH_NAME}\\s+(\\d{4})\\s*([+-])\\s*(\\d+)\\s*(?:calendar\\s+)?months?,?\\s+on\\s+the\\s+(\\d{1,2})(?:st|nd|rd|th)?\\s+day(?:\\s+of\\s+(?:that|the)\\s+month)?\\s*$`, "i").exec(expression);
+  if (!m) return null;
+  const got = parseDate((DATE_TERM.exec(result) ?? [""])[0]);
+  const mo = monthIndex(m[1]);
+  if (!got || mo < 0) return null;
+  const y = Number(m[2]);
+  const n = Number(m[4]) * (m[3] === "-" ? -1 : 1);
+  const day = Number(m[5]);
+  const first = new Date(Date.UTC(y, mo + n, 1));
+  const want = mk(first.getUTCFullYear(), first.getUTCMonth(), day);
+  return { ok: !!want && want.getTime() === got.getTime(), month: { y, m: mo }, count: String(Math.abs(n)), day: String(day), dates: [(DATE_TERM.exec(result) ?? [""])[0]] };
+}
+/** Western (Gregorian) Easter Sunday for a year, as UTC midnight (anonymous Gregorian algorithm). */
+export function easterSunday(y: number): Date {
+  const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, mm = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * mm + 114) / 31) - 1, day = ((h + l - 7 * mm + 114) % 31) + 1;
+  return new Date(Date.UTC(y, month, day));
+}
+// holidays whose date follows from the year alone; anything else must be dated by the agreement itself
+const COMPUTED_HOLIDAYS: [RegExp, (y: number) => Date][] = [
+  [/^new year'?s day$/i, (y) => new Date(Date.UTC(y, 0, 1))],
+  [/^good friday$/i, (y) => new Date(easterSunday(y).getTime() - 2 * 86400000)],
+  [/^easter monday$/i, (y) => new Date(easterSunday(y).getTime() + 86400000)],
+  [/^christmas day$/i, (y) => new Date(Date.UTC(y, 11, 25))],
+  [/^boxing day$/i, (y) => new Date(Date.UTC(y, 11, 26))],
+];
+/**
+ * "Next Working Day after Sunday 5 April 2026, skipping Easter Monday 6 April 2026" = "Tuesday 7 April 2026": a roll
+ * past weekends and named public holidays. Each named holiday must be one the agreement names; its date must be the
+ * one the agreement gives for it (a day and month in a holiday list, in the base date's year, and that list's year if it
+ * states one) or, when the agreement names it without a date, the date that follows from the year (Western Easter;
+ * never when the agreement mentions an Orthodox calendar). Every day skipped must be a weekend or a named holiday, no
+ * day the agreement lists as a holiday may be the result, and the result must be the first such day. Null when not
+ * such a step or when a holiday can't be dated this way (the verifier then judges it, as before).
+ */
+const ci = (src: string) => src.replace(/(?<![\\\[])\b([a-z])/g, (c) => `[${c.toUpperCase()}${c}]`);
+const MONTH_NAME_CI = ci(MONTH_NAME);
+const DATE_TERM_CI = DATE_TERM.source.split(MONTH_NAME).join(MONTH_NAME_CI);
+export function checkHolidayRoll(expression: string, result: string, agreement: string): { ok: boolean; dates: string[] } | null {
+  const m = new RegExp(`^\\s*(?:the\\s+)?next\\s+(?:working|business)\\s+day\\s+(?:after|following)\\s+(?:${WEEKDAY},?\\s+)?(${DATE_TERM.source}),?\\s+(?:skipping|excluding|after|past)\\s+(.+)$`, "i").exec(expression);
+  if (!m) return null;
+  const base = parseDate(m[2]);
+  const gotText = (DATE_TERM.exec(result) ?? [""])[0];
+  const got = parseDate(gotText);
+  if (!base || !got || got.getTime() <= base.getTime()) return null;
+  const year = base.getUTCFullYear();
+  const text = agreement.replace(/\s+/g, " ");
+  if (/\borthodox\b/i.test(text)) return null;
+  // the agreement's own holiday list: "<Name> <day> <month>" entries, with the list's year if it gives one
+  const listYear = /\b(?:public|bank)\s+holidays?\s*\((\d{4})\)/i.exec(text)?.[1];
+  if (listYear && Number(listYear) !== year) return null;
+  const listed = new Map<string, string>(); // iso -> name
+  for (const h of text.matchAll(new RegExp(`([A-Z][A-Za-z']*(?:\\s+[A-Z][A-Za-z']*){0,3})\\s+(\\d{1,2})(?:st|nd|rd|th)?\\s+${MONTH_NAME_CI}(?!\\s*,?\\s*\\d{4})`, "g"))) {
+    const d = mk(year, monthIndex(h[3]), Number(h[2]));
+    if (d) listed.set(iso(d), h[1].trim().toLowerCase());
+  }
+  // the holidays the step names, each with its date
+  const named = [...m[m.length - 1].matchAll(new RegExp(`([A-Z][A-Za-z']*(?:\\s+[A-Z][A-Za-z']*){0,3})\\s*\\(?\\s*(${DATE_TERM_CI})`, "g"))];
+  if (!named.length) return null;
+  const skipped = new Set<string>();
+  const out: string[] = [m[2]];
+  for (const h of named) {
+    const name = h[1].trim();
+    const d = parseDate(h[2]);
+    if (!d || !new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/'/g, "'?")}\\b`, "i").test(text)) return null;
+    const k = iso(d);
+    let dated: boolean;
+    if (listed.size) dated = listed.get(k) === name.toLowerCase();
+    else {
+      const rule = COMPUTED_HOLIDAYS.find(([re]) => re.test(name));
+      if (!rule) return null;
+      dated = iso(rule[1](d.getUTCFullYear())) === k;
+    }
+    if (!dated) return { ok: false, dates: [] };
+    skipped.add(k);
+    out.push(h[2]);
+  }
+  // walk from the day after the base: weekends and named holidays are skipped; the first other day is the answer
+  const d = new Date(base.getTime() + 86400000);
+  for (let i = 0; i < 14; i++, d.setUTCDate(d.getUTCDate() + 1)) {
+    const k = iso(d);
+    const weekend = d.getUTCDay() === 0 || d.getUTCDay() === 6;
+    if (weekend || skipped.has(k)) continue;
+    // a listed holiday the step didn't name can't be the next working day
+    if (listed.has(k)) return { ok: false, dates: [] };
+    return { ok: k === iso(got), dates: [...out, gotText] };
+  }
+  return null;
+}
+/**
+ * "420 < 500, so commission = 0" = "€0": a zero that follows from a threshold. True when the comparison holds and the
+ * result is zero, false when the comparison is false or the result isn't zero, null when not such a step. Both
+ * figures need provenance and the threshold must be one the agreement states.
+ */
+export function checkThresholdZero(expression: string, result: string): { ok: boolean; a: string; b: string } | null {
+  const m = /^\s*([$£€]?\s*\d[\d,]*(?:\.\d+)?)\s*(<=|>=|<|>|≤|≥)\s*([$£€]?\s*\d[\d,]*(?:\.\d+)?)\s*,?\s*(?:so|therefore|thus|hence)\s+[\p{L}\s'-]{1,40}?\s*=\s*([$£€]?\s*0(?:\.0+)?)\s*$/iu.exec(expression);
+  if (!m) return null;
+  const num = (x: string) => Number(x.replace(/[$£€\s,]/g, ""));
+  const a = num(m[1]), b = num(m[3]);
+  const truth = m[2] === "<" ? a < b : m[2] === ">" ? a > b : m[2] === "<=" || m[2] === "≤" ? a <= b : a >= b;
+  const zero = /^\s*[$£€]?\s*0(?:\.0+)?\s*(?:\(|$|[a-z])/i.test(result);
+  return { ok: truth && zero, a: String(a), b: String(b) };
+}
 const CLOCK = `${WEEKDAY}\\s+(\\d{1,2})(?:[:.](\\d{2}))?\\s*(a\\.?m\\.?|p\\.?m\\.?)?`;
 const minutesOf = (day: string, h: string, mi: string | undefined, ap: string | undefined) => {
   let hh = Number(h) % (ap ? 12 : 24);
@@ -780,6 +890,56 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
     const label = `${c.expression} = ${c.result}`;
     // calendar steps: re-done here; the count and the base date need provenance, and the dates they reach are derived
     const calendar = checkDateStep(c.expression, c.result);
+    const monthDay = calendar ? null : checkMonthDayStep(c.expression, c.result);
+    if (monthDay) {
+      // the base month holds a known date, and the count and the day are each known
+      const monthKnown = [...quotedDates, ...userDates, ...derivedDates].some((x) => Number(x.slice(0, 4)) === monthDay.month.y && Number(x.slice(5, 7)) - 1 === monthDay.month.m);
+      if (!monthDay.ok) {
+        failed.push(label);
+        wrong.push(label);
+      } else if (!monthKnown || !countKnown(monthDay.count) || !countKnown(monthDay.day)) {
+        failed.push(label);
+        unproven.push(label);
+      } else
+        for (const d of monthDay.dates) {
+          dates.push(d);
+          const p = parseDate(d);
+          if (p) derivedDates.add(iso(p));
+        }
+      continue;
+    }
+    const holiday = calendar ? null : checkHolidayRoll(c.expression, c.result, agreement.join("\n"));
+    if (holiday) {
+      if (!holiday.ok) {
+        failed.push(label);
+        wrong.push(label);
+      } else if (!dateKnown(holiday.dates[0])) {
+        failed.push(label);
+        unproven.push(label);
+      } else
+        for (const d of holiday.dates) {
+          dates.push(d);
+          const p = parseDate(d);
+          if (p) derivedDates.add(iso(p));
+        }
+      continue;
+    }
+    const zeroStep = checkThresholdZero(c.expression, c.result);
+    if (zeroStep) {
+      // both figures known, and the threshold is one the agreement states
+      if (!zeroStep.ok) {
+        failed.push(label);
+        wrong.push(label);
+      } else if (!countKnown(zeroStep.a) || !(quotedNums.has(zeroStep.b) || has(everywhere, zeroStep.b, null).length > 0)) {
+        failed.push(label);
+        unproven.push(label);
+      } else {
+        // a derived zero: its term is the verifier's call, like any re-done result
+        recomputed.add("0");
+        operandsOk.add("0");
+      }
+      continue;
+    }
     const working = calendar ? null : checkNextWorkingDay(c.expression, c.result);
     const clock = calendar || working ? null : checkClockStep(c.expression, c.result);
     const span = calendar || working || clock ? null : checkSpan(c.expression, c.result);
@@ -796,7 +956,8 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
       // clock step's starting day and time (in the user's words or the agreement)
       const inputsKnown =
         (base === null || dateKnown(base)) &&
-        (count === null || countKnown(count)) &&
+        // a monthly series: the Nth date is N-1 months after the first, when the result names itself the Nth
+        (count === null || countKnown(count) || (calendar !== null && /\bmonths?\b/i.test(c.expression) && new RegExp(`\\b${Number(count) + 1}(?:st|nd|rd|th)\\b`, "i").test(c.result) && countKnown(String(Number(count) + 1)))) &&
         // a holiday may be a day and month the agreement lists without a year ("Easter Monday 6 April"), in the base
         // date's year
         (span === null || span.dates.every(dateKnown)) &&
