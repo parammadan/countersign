@@ -47,6 +47,10 @@ export function Button({
   );
 }
 
+// A submit button that shows a spinner and disables itself while its form's server action runs. It's a client
+// component (useFormStatus), kept in its own module so this one stays usable from server components.
+export { SubmitButton } from "./SubmitButton";
+
 export function LinkButton({
   variant = "primary",
   size: s = "md",
