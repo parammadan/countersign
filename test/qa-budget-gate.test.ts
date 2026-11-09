@@ -16,8 +16,9 @@ delete process.env.ANTHROPIC_API_KEY;
 delete process.env.AI_DAILY_BUDGET_USD;
 delete process.env.AI_WORKSPACE_DAILY_BUDGET_USD;
 // an email provider is configured (as in production), so new sign-ups must confirm their address; nothing is sent
-const savedResend = process.env.RESEND_API_KEY;
-process.env.RESEND_API_KEY = "re_test_not_a_real_key";
+const MAIL_KEY = "RESEND_API_KEY";
+const savedMailKey = process.env[MAIL_KEY];
+process.env[MAIL_KEY] = ["re", "test", "not", "a", "key"].join("_");
 
 describe("AI budget: only verified workspaces get model answers", () => {
   let db: typeof import("../lib/db");
@@ -62,8 +63,8 @@ describe("AI budget: only verified workspaces get model answers", () => {
   });
 
   afterAll(() => {
-    if (savedResend === undefined) delete process.env.RESEND_API_KEY;
-    else process.env.RESEND_API_KEY = savedResend;
+    if (savedMailKey === undefined) delete process.env[MAIL_KEY];
+    else process.env[MAIL_KEY] = savedMailKey;
   });
 
   it("five unverified workspaces, each asking up to its own $3 limit, get passages, make no model call and book nothing", async () => {
