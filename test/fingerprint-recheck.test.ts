@@ -137,7 +137,7 @@ describe("stored PDFs are re-checked against their fingerprint", () => {
 
     it("the API download refuses a tampered sealed copy, and its X-Content-SHA256 is the hash of the bytes served", async () => {
       const { GET } = await import("../app/api/v1/files/[id]/document/route");
-      const key = "cs_live_fingerprinttestkey0000000000";
+      const key = "cs_live_" + "x".repeat(24); // a test key (built, so it can't look like a real one)
       db.run("INSERT INTO api_keys (id, workspace_id, name, prefix, key_hash, created_at) VALUES (?,?,?,?,?,?)", "key_fp", ws.id, "test", key.slice(0, 12), sha(Buffer.from(key)), new Date().toISOString());
       const req = () => new Request(`http://localhost:3000/api/v1/files/${f.id}/document`, { headers: { authorization: `Bearer ${key}` } });
       const bad = await tampered(final.path, () => GET(req(), params({ id: f.id })));
