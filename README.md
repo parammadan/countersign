@@ -137,7 +137,7 @@ E2E_BASE_URL=http://localhost:8080 E2E_FIXTURES=15-docx-table-two-column.docx,16
 |---|---|---|
 | `APP_URL` | `http://localhost:3000` | Public base URL, used in emails and signing links |
 | `DATA_DIR` | `./data` | SQLite database + stored PDFs (mount a volume here) |
-| `APP_SECRET` | generated into `DATA_DIR/.secret` | Encrypts signing tokens at rest (`lib/secret.ts`) |
+| `APP_SECRET` | required in production; generated into `DATA_DIR/.secret` in development | Encrypts signing tokens at rest (`lib/secret.ts`). Must never change once links are sent |
 | `SMTP_USER` / `SMTP_PASS` (+ `SMTP_HOST`, `SMTP_PORT`) | unset; host defaults to `smtp.gmail.com:465` | Send through any SMTP server. A Gmail account with an app password works with no domain of your own |
 | `RESEND_API_KEY` / `EMAIL_FROM` | unset | Send through Resend instead (needs a verified domain). With neither set, emails are recorded in the Email log instead of sent |
 | `APP_TZ` | `America/New_York` | Time zone for dates written into agreements |
