@@ -8,6 +8,7 @@ import { extractPdf } from "../pdf/extract";
 import { AppError } from "../files";
 import { audit } from "../audit";
 import { limited } from "../ratelimit";
+import { verificationRequired, workspaceVerified } from "../emailverify";
 import { id, now, sha256 } from "../util";
 import { pageLines } from "../understand/text";
 import { latestAnalysis, MAX_PAGES } from "../understand/store";
@@ -32,6 +33,16 @@ export const aiWorkspaceDailyBudgetUsd = (env: Record<string, string | undefined
   const v = Number(env.AI_WORKSPACE_DAILY_BUDGET_USD);
   return Number.isFinite(v) && v >= 0 ? v : 3;
 };
+/**
+ * Spend on AI answers per 24 hours (USD) shared by all workspaces created in the last 7 days. Verifying an email
+ * proves a mailbox, not a person: one inbox can verify many "+alias" sign-ups, so new workspaces together get a
+ * smaller pool and can't use up the global budget that established customers rely on.
+ */
+export const aiNewWorkspaceDailyBudgetUsd = (env: Record<string, string | undefined> = process.env) => {
+  const v = Number(env.AI_NEW_WORKSPACE_DAILY_BUDGET_USD);
+  return Number.isFinite(v) && v >= 0 ? v : 2;
+};
+export const NEW_WORKSPACE_DAYS = 7;
 const COMPLETED = "('passages', 'model', 'model_failed')";
 
 export type QaEntry = { id: string; threadId: string; question: string; result: QaResult; askedBy: string; createdAt: string };
@@ -85,6 +96,12 @@ export async function askQuestion(
   const useModel = tx(() => {
     const since = new Date(Date.now() - 86400_000).toISOString();
     let model = !!provider;
+    // a sign-up gets a session straight away, so AI spend is only for workspaces whose owner confirmed their email
+    // (the rule invites and outbound mail use); otherwise throwaway workspaces could use up everyone's budget
+    if (model && verificationRequired() && !workspaceVerified(wsId)) {
+      model = false;
+      notes.push("Confirm your email address to get AI answers. Until the workspace owner does, these are the most relevant passages instead.");
+    }
     if (model) {
       const all = one<{ n: number | null }>("SELECT SUM(cost_microusd) n FROM qa_answers WHERE created_at > ?", since)?.n ?? 0;
       const mine = one<{ n: number | null }>("SELECT SUM(cost_microusd) n FROM qa_answers WHERE workspace_id = ? AND created_at > ?", wsId, since)?.n ?? 0;
@@ -94,6 +111,17 @@ export async function askQuestion(
       } else if (mine + reserve > aiWorkspaceDailyBudgetUsd() * 1e6) {
         model = false;
         notes.push("This workspace has reached today's AI spending limit, so these are the most relevant passages instead.");
+      } else {
+        // workspaces created in the last week share one smaller pool (one mailbox can verify many sign-ups)
+        const newSince = new Date(Date.now() - NEW_WORKSPACE_DAYS * 86400_000).toISOString();
+        const isNew = !!one("SELECT 1 FROM workspaces WHERE id = ? AND created_at > ?", wsId, newSince);
+        if (isNew) {
+          const fresh = one<{ n: number | null }>("SELECT SUM(q.cost_microusd) n FROM qa_answers q JOIN workspaces w ON w.id = q.workspace_id WHERE q.created_at > ? AND w.created_at > ?", since, newSince)?.n ?? 0;
+          if (fresh + reserve > aiNewWorkspaceDailyBudgetUsd() * 1e6) {
+            model = false;
+            notes.push("AI answers for new workspaces have reached today's limit, so these are the most relevant passages instead.");
+          }
+        }
       }
     }
     // the daily allowance is taken atomically before any work, so concurrent askers can't overshoot it; a failed
