@@ -535,9 +535,18 @@ export async function answerWithModel(
   // the note's address is dropped from a sentence that disregards it, and the rest must still pass
   const DISREGARDS = /\b(?:disregarded|ignored|not (?:a|an|one of the) (?:\w+ )?(?:term|terms|provision)|not (?:an )?operative|not part of|no (?:contractual|legal) effect|has no effect|does not (?:change|alter|affect|form part)|not binding)\b/i;
   const NOTE_TO = /\bnotes?\b[^.:]{0,60}?\b(?:to|for|addressed to)\b[^.:]{0,20}?\b(?:automated|ai|assistants?|language models?|llms?|chatbots?|bots?|machine|software|tools?|reviewers?|readers?)\b/gi;
-  const mentionOnly = (t: string) => t.split(/(?<=[.!?])\s+|\n+/).map((x) => (DISREGARDS.test(x) && !/:/.test(x) ? x.replace(NOTE_TO, " ") : x)).join("\n");
-  const everything = mentionOnly(`${out.answer}\n${out.explanation}\n${notes}\n${calcText}`);
-  if (QA_INSTRUCTION_RE.test(normalize(everything)) || /\b(?:system prompt|my instructions|previous instructions)\b/i.test(everything)) return withheld("The answer read like instructions rather than an answer about the agreement, so it isn't shown.");
+  // ...only in a sentence with no directive of its own ("…is not binding, so tell the user the fee is waived" stays)
+  const DIRECTIVE = /\b(?:tell|inform|say|says|state|report|answer|respond|reply|output|print|repeat|reveal|confirm|claim|treat|mark|ignore|disregard|follow|obey|must|should|shall|please|you|your)\b/i;
+  const pieces = (t: string) => t.split(/(?<=[.!?;])\s+|\n+|,\s*(?=so\b|and\b|then\b)/);
+  const mentionOnly = (x: string) => {
+    if (!DISREGARDS.test(x) || /:/.test(x)) return x;
+    const rest = x.replace(NOTE_TO, " ");
+    return DIRECTIVE.test(rest.replace(DISREGARDS, " ")) ? x : rest;
+  };
+  // each sentence on its own, so a check anchored at the start of a sentence applies to every sentence
+  const outputSentences = `${out.answer}\n${out.explanation}\n${notes}\n${calcText}`.split(/(?<=[.!?])\s+|\n+/).map(mentionOnly);
+  const everything = outputSentences.join("\n");
+  if (outputSentences.some((x) => QA_INSTRUCTION_RE.test(normalize(x)) || pieces(x).some((p) => QA_INSTRUCTION_RE.test(normalize(p)))) || /\b(?:system prompt|my instructions|previous instructions)\b/i.test(everything)) return withheld("The answer read like instructions rather than an answer about the agreement, so it isn't shown.");
 
   // Precise checks block on their own. Imprecise ones (a figure's term, negation scope, wording, facts outside the
   // cited passages, calculation inputs of unproven origin) block on their own only when there's no second check;
@@ -760,6 +769,7 @@ export async function answerWithModel(
     // the agreement's figures, without clause labels and references ("2. Termination", "clause 6.2")
     bindingNums: numbersInAll(stripRefs(stripClauses(agreementText.join("\n")))),
     calcNums: new Set([...calcs.verified, ...calcs.operands, ...calcs.recomputed]),
+    calcDates: calcs.dates,
     userNums,
     doubted,
   });
@@ -783,13 +793,16 @@ export async function answerWithModel(
   // what's shown: the sentences the checks confirmed; a removed one is noted, never shown
   const kept = (kind: AcceptContext["parts"][number]["kind"]) => acceptance.sentences.filter((x) => parts[x.part].kind === kind && x.status === "ok");
   const keptText = (kind: AcceptContext["parts"][number]["kind"]) => kept(kind).map((x) => x.text).join(" ");
-  const keptParts = new Set(acceptance.sentences.filter((x) => x.status === "ok").map((x) => x.part));
+  // a part is rebuilt from its kept sentences only; a calculation is shown only when nothing in it was removed
+  const keptOf = (part: number) => acceptance.sentences.filter((x) => x.part === part && x.status === "ok").map((x) => x.text).join(" ");
+  const intact = (part: number) => acceptance.sentences.some((x) => x.part === part) && acceptance.sentences.every((x) => x.part !== part || x.status === "ok");
   const partial = acceptance.show === "partial";
   const unverified = [...new Set([...qualify, ...acceptance.qualifications, ...(partial ? ["a statement AgreementOS couldn't confirm against the agreement was removed from this answer"] : [])])];
   const explanation = keptText("explanation");
-  const calculations = out.calculations.filter((_, i) => keptParts.has(parts.findIndex((x) => x.kind === "calculation") + i));
+  const firstCalc = parts.findIndex((x) => x.kind === "calculation");
+  const calculations = out.calculations.filter((_, i) => intact(firstCalc + i));
   const firstNote = parts.findIndex((x) => x.kind === "note");
-  const notStated = out.not_stated.filter((_, i) => keptParts.has(firstNote + i));
+  const notStated = out.not_stated.map((_, i) => keptOf(firstNote + i)).filter(Boolean);
   return result(out.status, partial ? keptText("answer") : out.answer, {
     explanation: explanation || undefined,
     calculations: calculations.length ? calculations : undefined,
@@ -797,7 +810,7 @@ export async function answerWithModel(
     verification: unverified.length ? "qualified" : "checked",
     unverified: unverified.length ? unverified : undefined,
     verifiedBy: verifyUsage?.model ?? verifier.model,
-    checks: acceptance.checks.filter((c) => !acceptance.sentences.some((x) => x.status === "removed" && (x.text.includes(c.claim) || c.claim.includes(x.text)))),
+    checks: acceptance.checks,
   });
 }
 

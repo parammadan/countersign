@@ -534,7 +534,7 @@ const DATE_TERM = new RegExp(`(\\d{1,2}(?:st|nd|rd|th)?\\s+(?:of\\s+)?${MONTH_NA
  * "2 September 2025 + 45 days" = "17 October 2025" (also weeks, months, years, and "-"): true when right, false when
  * wrong, null when the expression isn't a date step. Months and years keep the day, clamped to the month's length.
  */
-export function checkDateStep(expression: string, result: string): { ok: boolean; dates: string[] } | null {
+export function checkDateStep(expression: string, result: string): { ok: boolean; dates: string[]; count: string } | null {
   // "28 February 2029 − six months": any minus or dash, and a count in words
   const COUNT = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
   expression = expression.replace(/[−–—]/g, "-").replace(new RegExp(`\\b(${COUNT.join("|")})\\b(?=\\s*(?:\\(\\d+\\)\\s*)?(?:calendar\\s+)?(?:days?|weeks?|months?|years?)\\b)`, "gi"), (w) => String(COUNT.indexOf(w.toLowerCase()))).replace(/(\d+)\s*\(\1\)/g, "$1");
@@ -557,7 +557,7 @@ export function checkDateStep(expression: string, result: string): { ok: boolean
     const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
     d.setUTCDate(Math.min(day, last));
   }
-  return { ok: d.getTime() === got.getTime(), dates: [m[1], (DATE_TERM.exec(result) ?? [""])[0]] };
+  return { ok: d.getTime() === got.getTime(), dates: [m[1], (DATE_TERM.exec(result) ?? [""])[0]], count: String(Math.abs(n)) };
 }
 /** "100 < 120" = "true": true when the stated truth value is right, false when wrong, null when not a comparison. */
 export function checkComparison(expression: string, result: string): boolean | null {
@@ -614,14 +614,16 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
         wrong.push(label);
         continue;
       }
-      // its figures (day, year, count) are re-done here; where the base date and count come from is the verifier's call
+      // the count ("+ 60 days") must be stated in the agreement or the question, like any input; the dates are then
+      // re-done here (whole dates only: their day and year digits vouch for no other figure). Where the base date
+      // comes from (an invoice date, the end of a month) is the verifier's call.
+      if (!fromQuestion.has(step.count) && !has(everywhere, step.count, null).length && !constant(step.count)) {
+        failed.push(label);
+        unproven.push(label);
+        continue;
+      }
       dates.push(...step.dates);
-      for (const d of step.dates)
-        for (const n of normalize(d).match(/\d+/g) ?? []) {
-          verified.add(String(Number(n)));
-          recomputed.add(String(Number(n)));
-        }
-      for (const n of c.expression.match(/\d+/g) ?? []) operandsOk.add(String(Number(n)));
+      operandsOk.add(step.count);
       continue;
     }
     const cmp = checkComparison(c.expression, c.result);
@@ -663,9 +665,12 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
     const pct = m ? /^\s*[$£€]?\s*-?\d[\d,]*(?:\.\d+)?\s*%/.test(c.result) : false;
     const target = value !== null && pct ? value * 100 : value;
     const label = `${c.expression} = ${c.result}`;
-    // a result marked approximate or rounded may differ by rounding to the nearest unit
-    const rounded = /\b(?:approx\w*|about|around|rounded|roughly|~)\b|≈/i.test(c.result);
-    const arithmeticOk = value !== null && target !== null && Number.isFinite(stated) && Math.abs(target - stated) <= (rounded ? 0.5 : 0.005) + Math.abs(target) * 1e-9;
+    // a result marked as rounded ("≈ 1,067", "3.33 (rounded)") may differ by half a unit of its own last digit;
+    // "not rounded" isn't a marker, and "0.94 (rounded)" for 0.45 is wrong
+    const rounded = (/\b(?:approx\w*|about|around|rounded|roughly)\b|≈|~/i.test(c.result) && !/\b(?:not|un)[\s-]*rounded\b|\bexact(?:ly)?\b/i.test(c.result));
+    const places = m ? (/\.(\d+)/.exec(m[1])?.[1].length ?? 0) : 0;
+    const tolerance = rounded ? 0.5 * 10 ** -places : 0.005;
+    const arithmeticOk = value !== null && target !== null && Number.isFinite(stated) && Math.abs(target - stated) <= tolerance + Math.abs(target) * 1e-9;
     if (value !== null && target !== null && Number.isFinite(stated) && !arithmeticOk) {
       failed.push(label);
       wrong.push(label);

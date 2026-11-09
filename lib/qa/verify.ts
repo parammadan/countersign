@@ -204,6 +204,8 @@ export type AcceptContext = {
   bindingNums: Set<string>;
   /** figures the deterministic checks re-did: calculation inputs and results, and dates they computed */
   calcNums: Set<string>;
+  /** dates a date step re-did (base and result, as written): whole dates, never their digits, are vouched for */
+  calcDates?: string[];
   /** the user's own figures that aren't a premise about a term */
   userNums: Set<string>;
   /** whether a deterministic check doubts the sentence (a figure on another term, a negation, a role, a fact outside the cited text) */
@@ -251,6 +253,9 @@ export function accept(claims: VerifiedClaim[], ctx: AcceptContext): Acceptance 
   const checks: Acceptance["checks"] = [];
   const evidence: Acceptance["evidence"] = [];
   const sentences = sentencesOf(ctx.parts);
+  // a re-done date counts as a whole: "16 March 2026" vouches for that date, not for a figure 16
+  const dated = (t: string) => (ctx.calcDates ?? []).reduce((x, d) => (d ? x.split(d).join(" ") : x), t);
+  const nums = (t: string) => numbersInAll(stripRefs(stripPageRefs(dated(t))));
   const withheld = (kind: string, why: string): Acceptance => ({ show: "withheld", reasons: [...reasons, why], failed: [...failed, kind], qualifications, sentences, checks, evidence });
   if (!claims.length) return withheld("nothing checked", "no claims");
 
@@ -258,7 +263,8 @@ export function accept(claims: VerifiedClaim[], ctx: AcceptContext): Acceptance 
   const placed = claims.map((c) => {
     const span = trim(c.span || c.claim);
     const at = span.length < 2 ? [] : sentences.filter((s) => within(trim(s.text), span) || within(span, trim(s.text)));
-    return { c, at, material: isMaterial(c) };
+    // material if the claim or the answer's own words (its span) are: a claim can't talk its span down
+    return { c, at, material: isMaterial(c) || isMaterial({ ...c, claim: c.span || c.claim }) };
   });
   // a claim is good when the verifier supported it and it's grounded: evidence quoted verbatim from binding text; a
   // disclaimer quoting the non-binding text; an absence (the verifier read the whole agreement; no quote can show
@@ -290,10 +296,9 @@ export function accept(claims: VerifiedClaim[], ctx: AcceptContext): Acceptance 
 
   const goodAt = new Map<Sentence, { clears: boolean; nums: Set<string>; span: string }[]>();
   const coveredAt = new Set<Sentence>();
+  const minorAt = new Map<Sentence, string[]>();
   for (const { c, at, material } of placed) {
     for (const s of at) coveredAt.add(s);
-    if (at.length) checks.push({ claim: c.span || c.claim, verdict: c.verdict, material, passages: c.evidenceChecked ? [...new Set(c.evidence.map((e) => e.passage))] : [] });
-    // the agreement says otherwise: the answer isn't shown
     // the agreement says otherwise: never shown. In the answer itself (or where it can't be placed) the answer isn't
     // shown; in the explanation, a calculation or a note, its sentences are removed
     if (c.verdict === "contradicted" && material && (!at.length || at.some((s) => ctx.parts[s.part].kind === "answer"))) return withheld("contradicted", `"${c.claim.slice(0, 120)}" (contradicted)`);
@@ -303,8 +308,9 @@ export function accept(claims: VerifiedClaim[], ctx: AcceptContext): Acceptance 
       for (const s of at) goodAt.set(s, [...(goodAt.get(s) ?? []), { clears: g.clears, nums: nums(c.claim), span: trim(c.span || c.claim) }]);
       continue;
     }
+    // a minor point (not material by the claim or by its own words) isn't removed; it may be noted as unconfirmed
     if (!material && c.verdict !== "contradicted") {
-      if (c.verdict !== "supported") qualifications.push(`${(c.span || c.claim).slice(0, 160)} (${c.verdict})`);
+      for (const s of at) minorAt.set(s, [...(minorAt.get(s) ?? []), trim(c.span || c.claim)]);
       continue;
     }
     // a material claim that isn't grounded: its sentences are removed; one we can't place leaves the answer unconfirmed
@@ -330,8 +336,9 @@ export function accept(claims: VerifiedClaim[], ctx: AcceptContext): Acceptance 
     // the verified claims' spans (the answer's own words, copied by the verifier) cover the sentence: its figures, a
     // negation, a leading Yes/No, and most of its words; a claim about "15" or "not" alone doesn't vouch for the rest
     const text = trim(s.text);
-    const whole = good.some((g) => within(g.span, text));
-    const spans = good.map((g) => g.span).join(" | ");
+    const minor = minorAt.get(s) ?? [];
+    const whole = good.some((g) => within(g.span, text)) || minor.some((m) => within(m, text));
+    const spans = [...good.map((g) => g.span), ...minor].join(" | ");
     const words = content(s.text);
     const coveredWords = words.filter((w) => content(spans).includes(w)).length;
     const spanOk =
@@ -346,6 +353,13 @@ export function accept(claims: VerifiedClaim[], ctx: AcceptContext): Acceptance 
       reasons.push(`"${s.text.slice(0, 120)}" (${!coveredAt.has(s) ? "not checked" : !figuresOk ? "figure not vouched for" : doubt ? "doubted, no binding evidence" : "verified spans cover only part of it"})`);
       failed.push("unconfirmed");
     }
+  }
+  // what's listed as checked, and minor points noted as unconfirmed: only claims whose sentences are all still shown
+  // (placed by the same normalized match, never by raw text), so nothing removed reappears there
+  for (const { c, at, material } of placed) {
+    if (!at.length || at.some((s) => s.status === "removed")) continue;
+    checks.push({ claim: c.span || c.claim, verdict: c.verdict, material, passages: c.evidenceChecked ? [...new Set(c.evidence.map((e) => e.passage))] : [] });
+    if (!material && c.verdict !== "supported" && c.verdict !== "contradicted") qualifications.push(`${(c.span || c.claim).slice(0, 160)} (${c.verdict})`);
   }
   // the answer itself must survive; its explanation, calculations and notes may lose a sentence
   const answerLeft = sentences.some((s) => ctx.parts[s.part].kind === "answer" && s.status === "ok");
