@@ -125,4 +125,15 @@ describe("AI budget in outbox mode: unverified workspaces get passages", () => {
     expect(r.mode).toBe("passages");
     expect(r.warnings.join(" ")).not.toMatch(/email/i);
   });
+
+  it("the ask page's mode matches the gate: an unconfirmed workspace isn't promised AI answers", () => {
+    const ids = Object.keys(versions);
+    const unverified = ids.find((w) => !db.one("SELECT 1 FROM members m JOIN users u ON u.id = m.user_id WHERE m.workspace_id = ? AND u.email_verified_at IS NOT NULL", w))!;
+    const verified = ids.find((w) => w !== unverified && !!db.one("SELECT 1 FROM members m JOIN users u ON u.id = m.user_id WHERE m.workspace_id = ? AND u.email_verified_at IS NOT NULL", w))!;
+    expect(Q.assistantMode(answers, unverified)).toEqual({ kind: "locked", model: answers.model, canConfirm: false });
+    expect(Q.assistantMode(answers, verified)).toEqual({ kind: "model", model: answers.model });
+    // without a workspace (and with no provider) the mode is as before
+    expect(Q.assistantMode(answers)).toEqual({ kind: "model", model: answers.model });
+    expect(Q.assistantMode(null, unverified)).toEqual({ kind: "passages" });
+  });
 });

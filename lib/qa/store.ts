@@ -319,7 +319,12 @@ export function conversations(wsId: string, versionId: string, limit = 20): QaTh
   ).map((r) => ({ id: r.id, firstQuestion: r.first, turns: r.turns, askedBy: r.asked_by, lastAt: r.last_at }));
 }
 
-/** Whether answers come from a model on this server (shown on the page; never the key). */
-export function assistantMode(provider: ModelProvider | null = configuredProvider()) {
-  return provider ? { kind: "model" as const, model: provider.model } : { kind: "passages" as const };
+/**
+ * Whether answers come from a model on this server (shown on the page; never the key). With a workspace, a model
+ * that the AI gate keeps from it (an unconfirmed owner) is "locked", so the page doesn't promise AI answers it won't give.
+ */
+export function assistantMode(provider: ModelProvider | null = configuredProvider(), wsId?: string) {
+  if (!provider) return { kind: "passages" as const };
+  if (wsId && aiNeedsVerifiedWorkspace() && !workspaceVerified(wsId)) return { kind: "locked" as const, model: provider.model, canConfirm: verificationRequired() };
+  return { kind: "model" as const, model: provider.model };
 }
