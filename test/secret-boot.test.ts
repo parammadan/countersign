@@ -84,13 +84,15 @@ describe("a secret that fails at use changes nothing", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cs-secretuse-"));
   const tok = "tok_file_otp";
 
-  // the modules as a production server without APP_SECRET would load them, or as a test run normally does
-  async function load(broken: boolean) {
+  // the modules as a production server without APP_SECRET ("missing") or with a different one ("changed") would load
+  // them, or as a test run normally does ("ok", the generated secret the rows below were sealed with)
+  async function load(mode: "missing" | "changed" | "ok") {
     vi.resetModules();
     env.DATA_DIR = dir;
     env.APP_URL = "http://localhost:3000";
-    delete env.APP_SECRET;
-    env.NODE_ENV = broken ? "production" : "test";
+    if (mode === "changed") env.APP_SECRET = FAKE;
+    else delete env.APP_SECRET;
+    env.NODE_ENV = mode === "ok" ? "test" : "production";
     return { files: await import("../lib/files"), db: await import("../lib/db") };
   }
   const row = (db: typeof import("../lib/db"), id: string) =>
@@ -100,70 +102,81 @@ describe("a secret that fails at use changes nothing", () => {
     );
   const emails = (db: typeof import("../lib/db"), id: string) => db.all("SELECT 1 FROM emails WHERE file_id = ?", id).length;
   const events = (db: typeof import("../lib/db"), id: string) => db.all("SELECT 1 FROM audit_events WHERE file_id = ?", id).length;
+  async function quietly<T>(fn: () => Promise<T>): Promise<T> {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      return await fn();
+    } finally {
+      err.mockRestore();
+    }
+  }
 
   beforeAll(async () => {
-    const { db } = await load(false);
+    const { db } = await load("ok");
     const s = await import("../lib/secret");
     const sha = (x: string) => crypto.createHash("sha256").update(x).digest("hex");
     const t = new Date().toISOString();
     db.run("INSERT INTO workspaces (id, name, legal_name, sender_name, countersigner_name, countersigner_email, inbound_token, require_otp, created_at) VALUES ('ws_b','Northwind','Northwind Advisory, LLC','Northwind','Avery Tester','avery@example.com','inb_b',1,?)", t);
     db.run("INSERT INTO templates (id, workspace_id, name, created_at) VALUES ('tpl_b','ws_b','MSA',?)", t);
     db.run("INSERT INTO template_versions (id, template_id, workspace_id, version, source_name, source_path, pdf_path, sha256, pages_json, fields_json, detection_json, status, created_at) VALUES ('tv_b','tpl_b','ws_b',1,'a.pdf','x','x','0','[]','[]','{}','published',?)", t);
-    const ins = (id: string, status: string, sentAt: string | null, otpHash: string | null = null) =>
+    const ins = (id: string, status: string, sentAt: string | null, otpHash: string | null = null, sealed = true) =>
       db.run(
         "INSERT INTO files (id, workspace_id, template_version_id, title, client_name, client_email, status, sent_at, expires_at, reminders_sent, token_hash, token_enc, otp_hash, otp_expires_at, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         id, "ws_b", "tv_b", "MSA: Jordan Sample", "Jordan Sample", "jordan@example.com", status, sentAt, sentAt ? "2099-01-01T00:00:00.000Z" : null, sentAt ? 1 : 0,
-        sha(`tok_${id}`), s.seal(`tok_${id}`), otpHash, otpHash ? new Date(Date.now() + 10 * 60_000).toISOString() : null, t,
+        sha(`tok_${id}`), sealed ? s.seal(`tok_${id}`) : null, otpHash, otpHash ? new Date(Date.now() + 10 * 60_000).toISOString() : null, t,
       );
     ins("file_draft", "draft", null);
     ins("file_sent", "sent", "2026-01-01T00:00:00.000Z");
+    ins("file_notoken", "sent", "2026-01-01T00:00:00.000Z", null, false); // no stored token: no link can be built
     ins("file_otp", "sent", "2026-01-01T00:00:00.000Z", sha("file_otp:123456")); // a code for 123456, hashed as sendOtp stores it
   });
   afterEach(restoreAll);
 
-  for (const [id, kind] of [
-    ["file_draft", "invite"],
-    ["file_sent", "reminder"],
-    ["file_sent", "resend"],
+  for (const [mode, id, kind] of [
+    ["missing", "file_draft", "invite"],
+    ["missing", "file_sent", "reminder"],
+    ["missing", "file_sent", "resend"],
+    ["changed", "file_draft", "invite"],
+    ["changed", "file_sent", "reminder"],
+    ["ok", "file_notoken", "reminder"],
   ] as const) {
-    it(`sendFile (${kind}, ${id.slice(5)} file) fails before marking anything sent, and emails nothing`, async () => {
-      const { files, db } = await load(true);
+    it(`sendFile (${kind}, ${id.slice(5)} file, secret ${mode}) fails before marking anything sent, and emails nothing`, async () => {
+      const { files, db } = await load(mode);
       const ws = files.getWorkspace("ws_b");
       const before = row(db, id);
-      const ev = events(db, id);
-      const err = vi.spyOn(console, "error").mockImplementation(() => {});
-      await expect(files.sendFile(files.getFile(ws.id, id), ws, kind, { kind: "system", label: "test" }, {})).rejects.toThrow(/signing link can't be built/);
-      err.mockRestore();
+      const [em, ev] = [emails(db, id), events(db, id)];
+      await quietly(() => expect(files.sendFile(files.getFile(ws.id, id), ws, kind, { kind: "system", label: "test" }, {})).rejects.toThrow(/signing link can't be built/));
       expect(row(db, id)).toEqual(before);
-      expect(emails(db, id)).toBe(0);
+      expect(emails(db, id)).toBe(em);
       expect(events(db, id)).toBe(ev);
     });
   }
 
   it("with a working secret, the same send goes out (the setup above is sound)", async () => {
-    const { files, db } = await load(false);
+    const { files, db } = await load("ok");
     const ws = files.getWorkspace("ws_b");
-    const r = await files.sendFile(files.getFile(ws.id, "file_draft"), ws, "invite", { kind: "system", label: "test" }, {});
-    expect(r.status).toBe("sent");
-    expect(r.sent_at).not.toBeNull();
-    expect(emails(db, "file_draft")).toBe(1);
+    const em = emails(db, "file_sent");
+    const before = row(db, "file_sent")!;
+    const r = await files.sendFile(files.getFile(ws.id, "file_sent"), ws, "reminder", { kind: "system", label: "test" }, {});
+    expect(r.reminders_sent).toBe(before.reminders_sent + 1);
+    expect(emails(db, "file_sent")).toBe(em + 1);
   });
 
   it("checking an emailed code fails before the try is counted or the code used up", async () => {
-    const { db } = await load(true);
+    const { db } = await load("missing");
     const { POST } = await import("../app/api/sign/[token]/verify/route");
     const otp = () => db.one<{ otp_hash: string | null; otp_attempts: number; otp_verified_at: string | null }>("SELECT otp_hash, otp_attempts, otp_verified_at FROM files WHERE id = 'file_otp'")!;
     const before = otp();
     expect(before.otp_hash).not.toBeNull();
-    const err = vi.spyOn(console, "error").mockImplementation(() => {});
-    const res = await POST(new Request(`http://localhost:3000/api/sign/${tok}/verify`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: "123456" }) }), {
-      params: Promise.resolve({ token: tok }),
-    });
-    err.mockRestore();
+    const res = await quietly(() =>
+      POST(new Request(`http://localhost:3000/api/sign/${tok}/verify`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: "123456" }) }), {
+        params: Promise.resolve({ token: tok }),
+      }),
+    );
     expect(res.status).toBe(500);
     expect(otp()).toEqual(before);
     // and the code still works once the secret does
-    const ok = await load(false);
+    const ok = await load("ok");
     const ws = ok.files.getWorkspace("ws_b");
     expect(ok.files.verifyOtp(ok.files.getFile(ws.id, "file_otp"), ws, "123456", {})).toBe(true);
   });
