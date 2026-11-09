@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PdfPages, pct } from "./PdfPages";
-import { Modal, SignaturePad, type Adopted } from "./SignaturePad";
+import { Modal, SignaturePad, signerInputCls, touchFirst, type Adopted } from "./SignaturePad";
 import { Button, Notice, cx, inputCls } from "./ui";
 import { CONSENT_FULL, CONSENT_SUMMARY, SIGN_INTENT } from "@/lib/consent";
 import type { Field, PageSize } from "@/lib/fields";
@@ -127,6 +127,15 @@ export function SigningRoom(p: Props) {
     (el as HTMLElement | null)?.focus({ preventScroll: true });
   }
 
+  // "Next field" goes to the field. On a touch screen it also opens its pad or text box, so a box on the page
+  // that is hard to hit with a finger needn't be tapped; a checkbox is only shown, never ticked for them. With a
+  // mouse or keyboard the field is focused and Enter (or a click) opens it.
+  function next(f: SignerField | undefined) {
+    if (!f) return;
+    goTo(f);
+    if (f.type !== "checkbox" && touchFirst()) activate(f);
+  }
+
   function activate(f: SignerField) {
     if (f.type === "signature") {
       pendingField.current = f.id;
@@ -229,7 +238,7 @@ export function SigningRoom(p: Props) {
             </div>
           </div>
           {remaining.length > 0 ? (
-            <Button onClick={() => goTo(remaining[0])}>Next field</Button>
+            <Button onClick={() => next(remaining[0])}>Next field</Button>
           ) : (
             <>
               {optionalLeft.length > 0 && (
@@ -289,7 +298,8 @@ export function SigningRoom(p: Props) {
                     data-fid={f.id}
                     type="button"
                     onClick={() => activate(f)}
-                    aria-label={signFieldName(f, img ? "" : text ? text : f.type === "signature" ? "Sign here" : f.type === "initials" ? "Initial" : `${f.label}${f.required ? " *" : ""}`)}
+                    {...(f.type === "checkbox" ? { role: "checkbox", "aria-checked": done } : {})}
+                    aria-label={signFieldName(f, img || f.type === "checkbox" ? "" : text ? text : f.type === "signature" ? "Sign here" : f.type === "initials" ? "Initial" : `${f.label}${f.required ? " *" : ""}`)}
                     className={cx(
                       "absolute flex items-center overflow-hidden rounded-[3px] border text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand",
                       done ? "border-transparent bg-emerald-50/40 hover:border-emerald-300" : "animate-[pulse_2.5s_ease-in-out_infinite] border-brand bg-brand/10 hover:bg-brand/20",
@@ -317,13 +327,15 @@ export function SigningRoom(p: Props) {
           fields={mine.filter((f) => f.type !== "date")}
           isDone={isDone}
           onPick={(f) => {
+            // a checkbox row is a checkbox: it ticks in place, like the box on the page; other rows open their field
+            if (f.type === "checkbox") return activate(f);
             goTo(f);
-            if (f.type !== "checkbox") activate(f);
+            activate(f);
           }}
         />
         <div className="mx-auto mt-6 max-w-xl text-center">
           {remaining.length ? (
-            <Button onClick={() => goTo(remaining[0])}>Go to the next required field ({remaining.length} left)</Button>
+            <Button onClick={() => next(remaining[0])}>Go to the next required field ({remaining.length} left)</Button>
           ) : (
             <>
               {optionalLeft.length > 0 && (
@@ -418,7 +430,10 @@ function TextModal({ field, value, onSave, onClose }: { field: SignerField; valu
   const [v, setV] = useState(value);
   const [shown, setShown] = useState<string | null>(null);
   const ref = useRef<HTMLInputElement>(null);
-  useEffect(() => ref.current?.focus(), []);
+  // on a touch screen the keyboard opens only when the person taps the box (Modal focuses the dialog instead)
+  useEffect(() => {
+    if (!touchFirst()) ref.current?.focus();
+  }, []);
   const name = fieldName(field);
   const needed = mustComplete(field);
   const id = `fill-${field.id}`;
@@ -445,7 +460,7 @@ function TextModal({ field, value, onSave, onClose }: { field: SignerField; valu
           <input
             ref={ref}
             id={id}
-            className={cx(inputCls, shown && "border-bad")}
+            className={cx(signerInputCls, shown && "border-bad")}
             value={v}
             onChange={(e) => {
               setV(e.target.value);
@@ -471,7 +486,7 @@ function TextModal({ field, value, onSave, onClose }: { field: SignerField; valu
 
 /** Every field the client completes, with its state: a way to reach each one without hunting through the PDF. */
 function FieldList({ fields, isDone, onPick }: { fields: SignerField[]; isDone: (f: SignerField) => boolean; onPick: (f: SignerField) => void }) {
-  if (fields.length < 2) return null;
+  if (!fields.length) return null;
   return (
     <section aria-labelledby="your-fields" className="mx-auto mt-6 max-w-xl rounded-xl border border-line bg-white p-4 text-left">
       <h2 id="your-fields" className="text-sm font-semibold">Your fields</h2>
@@ -479,13 +494,14 @@ function FieldList({ fields, isDone, onPick }: { fields: SignerField[]; isDone: 
         {fields.map((f) => {
           const done = isDone(f);
           const state = done ? "done" : mustComplete(f) ? "to do" : "optional";
+          const box = f.type === "checkbox";
           return (
             <li key={f.id}>
-              <button type="button" onClick={() => onPick(f)} className="flex min-h-11 w-full items-center gap-3 py-2 text-left text-sm hover:text-brand">
-                <span aria-hidden="true" className={cx("flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[11px]", done ? "border-ok bg-ok-bg text-ok" : "border-line-strong text-transparent")}>✓</span>
+              <button type="button" onClick={() => onPick(f)} {...(box ? { role: "checkbox", "aria-checked": done } : {})} className="flex min-h-11 w-full items-center gap-3 py-2 text-left text-sm hover:text-brand">
+                <span aria-hidden="true" className={cx("flex h-5 w-5 shrink-0 items-center justify-center border text-[11px]", box ? "rounded-[4px]" : "rounded-full", done ? "border-ok bg-ok-bg text-ok" : "border-line-strong text-transparent")}>✓</span>
                 <span className="min-w-0 flex-1 truncate">{fieldName(f)}</span>
                 <span className="shrink-0 text-xs text-muted">Page {f.page + 1}</span>
-                <span className={cx("w-16 shrink-0 text-right text-xs font-medium", done ? "text-ok" : mustComplete(f) ? "text-brand" : "text-muted")}>
+                <span aria-hidden={box && done ? true : undefined} className={cx("w-16 shrink-0 text-right text-xs font-medium", done ? "text-ok" : mustComplete(f) ? "text-brand" : "text-muted")}>
                   <span className="sr-only">, </span>
                   {state === "done" ? "Done" : state === "to do" ? "Required" : "Optional"}
                 </span>
@@ -534,7 +550,7 @@ function Decline({ token, onClose, onDeclined }: { token: string; onClose: () =>
           }}
         >
           <p className="text-sm text-muted">Tell the sender why. They&apos;ll get your message and can send a revised agreement.</p>
-          <textarea className={cx(inputCls, "min-h-24")} value={reason} onChange={(e) => setReason(e.target.value)} maxLength={1000} required />
+          <textarea className={cx(signerInputCls, "min-h-24")} aria-label="Why you're declining" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={1000} required />
           {err && <Notice tone="error">{err}</Notice>}
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
