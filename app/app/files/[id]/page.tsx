@@ -9,6 +9,8 @@ import { fileStages, nextStep, reminderPlan, type Stage } from "@/lib/filepage";
 import { Badge, Card, Notice, StatusBadge, cx } from "@/components/ui";
 import { Icon } from "@/components/icons";
 import { CopyButton, FileActions, VoidFile } from "@/components/FileActions";
+import { AutoRefresh } from "@/components/AutoRefresh";
+import { isLiveStatus } from "@/components/poll";
 import { emailMode } from "@/lib/email";
 import type { FileRow } from "@/lib/types";
 
@@ -82,6 +84,8 @@ export default async function Page({ params, searchParams }: { params: Promise<{
 
   return (
     <>
+      {/* while the file waits on the client or a countersignature, its status updates without a reload */}
+      <AutoRefresh active={isLiveStatus(f.status)} />
       <div className="mb-2 text-sm text-muted">
         <Link href="/app/files" className="hover:text-ink">Files</Link> / {f.ref || f.id}
       </div>

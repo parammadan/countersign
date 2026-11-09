@@ -2,7 +2,7 @@ import Link from "next/link";
 import { requireSession } from "@/lib/auth";
 import { agreementLibrary, filterLibrary, libraryCounts, LIBRARY_VIEWS, type LibraryAgreement, type LibraryView } from "@/lib/library";
 import { fmtDay } from "@/lib/time";
-import { Badge, Button, Card, EmptyState, LinkButton, Notice, PageHeader, cx, inputCls } from "@/components/ui";
+import { Badge, Card, EmptyState, LinkButton, Notice, PageHeader, SubmitButton, cx, inputCls } from "@/components/ui";
 import { UploadAgreement } from "@/components/UploadAgreement";
 import { UploadPanelButton } from "@/components/UploadPanelButton";
 import { TemplateMenu } from "@/components/TemplateMenu";
@@ -165,7 +165,7 @@ function AgreementCard({ a, admin }: { a: LibraryAgreement; admin: boolean }) {
           {usable && admin && !a.draft && (
             <form action={newDraftAction}>
               <input type="hidden" name="versionId" value={live!.id} />
-              <Button variant="secondary" icon="pen">Edit fields</Button>
+              <SubmitButton variant="secondary" icon="pen">Edit fields</SubmitButton>
             </form>
           )}
         </div>
@@ -201,9 +201,9 @@ function AgreementCard({ a, admin }: { a: LibraryAgreement; admin: boolean }) {
             {usable && (
               <form action={testFileAction}>
                 <input type="hidden" name="templateId" value={a.id} />
-                <Button size="sm" variant="ghost" icon="send" title="Opens a file with you as the client, so you can see exactly what clients see">
+                <SubmitButton size="sm" variant="ghost" icon="send" title="Opens a file with you as the client, so you can see exactly what clients see">
                   Send a test to me
-                </Button>
+                </SubmitButton>
               </form>
             )}
             <TemplateMenu templateId={a.id} name={a.name} isDefault={a.isDefault} archived={a.state === "archived"} />

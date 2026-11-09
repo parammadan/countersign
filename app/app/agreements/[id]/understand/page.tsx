@@ -6,7 +6,7 @@ import { getTemplateVersion } from "@/lib/templates";
 import { latestAnalysis, MAX_PAGES, RUNS_PER_HOUR } from "@/lib/understand/store";
 import { CATEGORIES, CATEGORY_LABEL, STATUS_LABEL, type Finding, type Status } from "@/lib/understand/schema";
 import { analyzeAgreementAction, reviewFindingAction } from "@/app/understand-actions";
-import { Badge, Button, Card, EmptyState, Notice, timeAgo } from "@/components/ui";
+import { Badge, Card, EmptyState, Notice, SubmitButton, timeAgo } from "@/components/ui";
 import { fmtDay } from "@/lib/time";
 
 export const metadata = { title: "What this agreement says" };
@@ -42,7 +42,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const readForm = (label: string, variant: "primary" | "secondary") => (
     <form action={analyzeAgreementAction}>
       <input type="hidden" name="versionId" value={version.id} />
-      <Button variant={variant} icon="spark">{label}</Button>
+      <SubmitButton variant={variant} icon="spark" pendingLabel="Reading…">{label}</SubmitButton>
     </form>
   );
 
@@ -131,7 +131,7 @@ function FindingRow({ f, review, admin, analysisId, versionId }: { f: Finding; r
       <input type="hidden" name="versionId" value={versionId} />
       <input type="hidden" name="findingId" value={f.id} />
       <input type="hidden" name="decision" value={decision} />
-      <Button size="sm" variant={variant} aria-label={`${label}: ${f.label}`}>{label}</Button>
+      <SubmitButton size="sm" variant={variant} aria-label={`${label}: ${f.label}`}>{label}</SubmitButton>
     </form>
   );
   return (

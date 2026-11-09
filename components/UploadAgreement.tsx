@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Notice, cx } from "./ui";
 import { Icon } from "./icons";
+import { fetchJson } from "./fetchTimeout";
 
 // Same rules the server enforces (lib/convert.ts, app/api/agreements/upload), checked first so a wrong file
 // fails in a second instead of after the upload.
@@ -98,7 +99,20 @@ export function UploadAgreement({ templateId, compact }: { templateId?: string; 
   const input = useRef<HTMLInputElement>(null);
   const { phase, err, setErr, setPhase, start, cancel } = useUpload(templateId);
   const [over, setOver] = useState(false);
+  // the sample's own error, so "Try again" is offered for it and not for an upload error shown later
+  const [sampleErr, setSampleErr] = useState<string | null>(null);
   const router = useRouter();
+  async function loadSample() {
+    setErr(null);
+    setSampleErr(null);
+    setPhase({ kind: "reading", name: "Sample engagement letter" });
+    const r = await fetchJson<{ versionId: string }>("/api/agreements/sample", { method: "POST" }, { timeoutMs: 30_000 });
+    if (r.ok && r.data.versionId) return router.push(`/app/agreements/${r.data.versionId}`);
+    const msg = r.ok ? "Couldn't load the sample. Try again." : r.error;
+    setErr(msg);
+    setSampleErr(msg);
+    setPhase({ kind: "idle" });
+  }
   const busy = phase.kind !== "idle";
   const picker = (
     <input
@@ -170,15 +184,7 @@ export function UploadAgreement({ templateId, compact }: { templateId?: string; 
               <button
                 type="button"
                 className="mt-3 text-sm font-medium text-brand hover:underline"
-                onClick={async () => {
-                  setErr(null);
-                  setPhase({ kind: "reading", name: "Sample engagement letter" });
-                  const r = await fetch("/api/agreements/sample", { method: "POST" });
-                  const j = (await r.json().catch(() => ({}))) as { versionId?: string; error?: string };
-                  if (r.ok && j.versionId) return router.push(`/app/agreements/${j.versionId}`);
-                  setErr(j.error || "Couldn't load the sample");
-                  setPhase({ kind: "idle" });
-                }}
+                onClick={loadSample}
               >
                 No agreement handy? Try a sample one
               </button>
@@ -188,7 +194,14 @@ export function UploadAgreement({ templateId, compact }: { templateId?: string; 
       </div>
       {err && (
         <div className="mt-3">
-          <Notice tone="error">{err}</Notice>
+          <Notice tone="error">
+            {err}
+            {err === sampleErr && !busy && (
+              <button type="button" className="ml-2 font-medium underline underline-offset-2" onClick={loadSample}>
+                Try again
+              </button>
+            )}
+          </Notice>
         </div>
       )}
     </div>

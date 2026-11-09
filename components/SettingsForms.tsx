@@ -7,6 +7,7 @@ import { inviteAction, memberAction, settingsAction, type FormState } from "@/ap
 import { Button, Field, Input, Notice } from "./ui";
 import { SignaturePad, type Adopted } from "./SignaturePad";
 import { CopyButton } from "./FileActions";
+import { fetchJson } from "./fetchTimeout";
 import type { Workspace } from "@/lib/types";
 
 export function SettingsForm({ ws, emailOn = true }: { ws: Workspace; emailOn?: boolean }) {
@@ -59,8 +60,9 @@ export function CountersignForm({ ws, current }: { ws: Workspace; current: strin
   const [ok, setOk] = useState(false);
   async function adopt(a: Adopted) {
     setErr(null);
-    const r = await fetch("/api/settings/signature", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ signature: a.png, name, title }) });
-    if (!r.ok) return setErr(((await r.json().catch(() => ({}))) as { error?: string }).error ?? "Couldn't save");
+    // a timeout or lost connection is shown like any other error; the pad stays open, so adopting again retries
+    const r = await fetchJson("/api/settings/signature", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ signature: a.png, name, title }) }, { timeoutMs: 20_000 });
+    if (!r.ok) return setErr(r.status ? (r.data.error ?? "Couldn't save") : r.error);
     setOk(true);
     setEditing(false);
     router.refresh();

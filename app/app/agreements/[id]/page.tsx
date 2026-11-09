@@ -7,7 +7,7 @@ import { agreementLibrary } from "@/lib/library";
 import { AppError, getWorkspace } from "@/lib/files";
 import { FieldEditor } from "@/components/FieldEditor";
 import { newDraftAction } from "@/app/actions";
-import { Badge, Button, LinkButton, Notice, cx } from "@/components/ui";
+import { Badge, LinkButton, Notice, SubmitButton, cx } from "@/components/ui";
 import type { Field, PageSize } from "@/lib/fields";
 
 export const metadata = { title: "Review agreement" };
@@ -57,7 +57,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
             ) : (
               <form action={newDraftAction}>
                 <input type="hidden" name="versionId" value={version.id} />
-                <Button variant="secondary" icon="pen">Edit fields (new version)</Button>
+                <SubmitButton variant="secondary" icon="pen">Edit fields (new version)</SubmitButton>
               </form>
             )
           )}
