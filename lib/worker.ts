@@ -2,6 +2,7 @@
 import { all } from "./db";
 import { attempt, dueDeliveries } from "./webhooks";
 import { expireIfDue, getFile, getWorkspace, sendFile } from "./files";
+import { canSendTo } from "./emailverify";
 import type { FileRow } from "./types";
 
 export async function tick(): Promise<{ deliveries: number; expired: number; reminded: number }> {
@@ -31,6 +32,9 @@ export async function tick(): Promise<{ deliveries: number; expired: number; rem
       if (fresh.status !== "sent" && fresh.status !== "viewed") continue;
       const nextDay = days[fresh.reminders_sent];
       if (nextDay !== undefined && fresh.sent_at && t >= new Date(fresh.sent_at).getTime() + nextDay * 86400_000) {
+        // a reminder the sending rules wouldn't allow now (an unconfirmed workspace emailing outside its team) is
+        // skipped, not retried every minute; it goes out on a later tick once the owner confirms their email
+        if (!canSendTo(ws.id, fresh.client_email)) continue;
         await sendFile(fresh, ws, "reminder", { kind: "system", label: "reminder schedule" }, {});
         reminded++;
       }
