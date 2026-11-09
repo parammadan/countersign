@@ -8,6 +8,7 @@ import { extractPdf } from "../pdf/extract";
 import { AppError } from "../files";
 import { audit } from "../audit";
 import { limited } from "../ratelimit";
+import { verificationRequired, workspaceVerified } from "../emailverify";
 import { id, now, sha256 } from "../util";
 import { pageLines } from "../understand/text";
 import { latestAnalysis, MAX_PAGES } from "../understand/store";
@@ -85,6 +86,12 @@ export async function askQuestion(
   const useModel = tx(() => {
     const since = new Date(Date.now() - 86400_000).toISOString();
     let model = !!provider;
+    // a sign-up gets a session straight away, so AI spend is only for workspaces whose owner confirmed their email
+    // (the rule invites and outbound mail use); otherwise throwaway workspaces could use up everyone's budget
+    if (model && verificationRequired() && !workspaceVerified(wsId)) {
+      model = false;
+      notes.push("Confirm your email address to get AI answers. Until the workspace owner does, these are the most relevant passages instead.");
+    }
     if (model) {
       const all = one<{ n: number | null }>("SELECT SUM(cost_microusd) n FROM qa_answers WHERE created_at > ?", since)?.n ?? 0;
       const mine = one<{ n: number | null }>("SELECT SUM(cost_microusd) n FROM qa_answers WHERE workspace_id = ? AND created_at > ?", wsId, since)?.n ?? 0;
