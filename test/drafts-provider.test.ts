@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ModelProvider, ModelRequest } from "@/lib/understand/model";
 import { GENERATION_LIMITS, GenerationError, generationProvider, generationProviderFrom } from "@/lib/drafts/provider";
 
@@ -42,7 +42,7 @@ describe("generationProviderFrom", () => {
     expect(req.schema).toBe(SCHEMA);
     expect(req.maxOutputTokens).toBe(1234);
     expect(req.signal).toBeInstanceOf(AbortSignal);
-    expect(req.onUsage).toBeUndefined();
+    expect(typeof req.onUsage).toBe("function"); // the adapter always tracks usage, to attach it to a failure
   });
 
   it("uses the production caps by default", async () => {
@@ -54,7 +54,7 @@ describe("generationProviderFrom", () => {
   it("refuses a call without a JSON schema, before reaching the provider", async () => {
     const { provider, calls } = scripted(async () => ({}));
     const gen = generationProviderFrom(provider);
-    for (const schema of [undefined, null, "object", 42, [], {}, [{ type: "object" }]]) {
+    for (const schema of [undefined, null, "object", 42, [], {}, [{ type: "object" }], { foo: 1 }, { type: "array", items: {} }]) {
       const err = await failure(gen.complete({ ...REQ, schema }));
       expect(err).toBeInstanceOf(GenerationError);
       expect(err.message).toMatch(/JSON schema is required/);
@@ -69,6 +69,10 @@ describe("generationProviderFrom", () => {
     await expect(gen.complete({ ...REQ, prompt: "  " })).rejects.toThrow(/incomplete/);
     await expect(gen.complete({ ...REQ, system: undefined as unknown as string })).rejects.toThrow(/incomplete/);
     await expect(gen.complete(undefined as never)).rejects.toThrow(GenerationError);
+    const hostile = { ...REQ, get prompt(): string { throw new Error("SECRET-getter"); } };
+    const err = await failure(gen.complete(hostile));
+    expect(err).toBeInstanceOf(GenerationError);
+    expect(err.message).not.toContain("SECRET");
     await expect(gen.complete({ ...REQ, prompt: "x".repeat(GENERATION_LIMITS.maxInputChars + 1) })).rejects.toThrow(/size limit/);
     expect(calls).toHaveLength(0);
   });
@@ -93,8 +97,10 @@ describe("generationProviderFrom", () => {
 
   it("refuses options that would disable or break the deadline or the output cap", () => {
     const { provider } = scripted(async () => ({}));
-    for (const timeoutMs of [0, -1, 1.5, Infinity, NaN, 2 ** 31]) expect(() => generationProviderFrom(provider, { timeoutMs })).toThrow(RangeError);
-    for (const maxOutputTokens of [0, -5, 2.5, Infinity, 1e9]) expect(() => generationProviderFrom(provider, { maxOutputTokens })).toThrow(RangeError);
+    for (const timeoutMs of [0, -1, 1.5, Infinity, NaN, GENERATION_LIMITS.timeoutMs + 1, 2 ** 31 - 1]) expect(() => generationProviderFrom(provider, { timeoutMs })).toThrow(RangeError);
+    for (const maxOutputTokens of [0, -5, 2.5, Infinity, GENERATION_LIMITS.maxOutputTokensCeiling + 1]) expect(() => generationProviderFrom(provider, { maxOutputTokens })).toThrow(RangeError);
+    expect(() => generationProviderFrom(provider, null as never)).not.toThrow();
+    expect(() => generationProviderFrom(provider, { timeoutMs: GENERATION_LIMITS.timeoutMs, maxOutputTokens: GENERATION_LIMITS.maxOutputTokensCeiling })).not.toThrow();
   });
 
   it("forwards token usage, also when the call then fails", async () => {
@@ -108,11 +114,38 @@ describe("generationProviderFrom", () => {
       req.onUsage?.({ inputTokens: 300, outputTokens: 4000 });
       throw new Error("max tokens");
     });
-    await expect(generationProviderFrom(bad.provider, { onUsage: (u) => seen.push(u) }).complete(REQ)).rejects.toThrow(GenerationError);
+    const err = await failure(generationProviderFrom(bad.provider, { onUsage: (u) => seen.push(u) }).complete(REQ));
+    expect(err).toBeInstanceOf(GenerationError);
+    expect((err as GenerationError).usage).toEqual({ inputTokens: 300, outputTokens: 4000 });
     expect(seen).toEqual([
       { inputTokens: 120, outputTokens: 45 },
       { inputTokens: 300, outputTokens: 4000 },
     ]);
+  });
+
+  it("forwards usage that arrives after the deadline (the tokens were still spent)", async () => {
+    const seen: unknown[] = [];
+    const { provider } = scripted(
+      (req) =>
+        new Promise(() => {
+          req.signal.addEventListener("abort", () => req.onUsage?.({ inputTokens: 50, outputTokens: 7 }));
+        }),
+    );
+    await expect(generationProviderFrom(provider, { timeoutMs: 30, onUsage: (u) => seen.push(u) }).complete(REQ)).rejects.toThrow(GenerationError);
+    expect(seen).toEqual([{ inputTokens: 50, outputTokens: 7 }]);
+  });
+
+  it("fails the call when usage can't be booked", async () => {
+    const { provider } = scripted(async (req) => {
+      req.onUsage?.({ inputTokens: 1, outputTokens: 1 });
+      return { title: "ok" };
+    });
+    const gen = generationProviderFrom(provider, {
+      onUsage: () => {
+        throw new Error("booking store down");
+      },
+    });
+    await expect(gen.complete(REQ)).rejects.toThrow(/didn't answer or was stopped/);
   });
 
   it("passes on only well-formed usage counts", async () => {
@@ -122,6 +155,7 @@ describe("generationProviderFrom", () => {
       req.onUsage?.({ inputTokens: NaN, outputTokens: 5 });
       req.onUsage?.({ inputTokens: "9", outputTokens: 5 } as never);
       req.onUsage?.(null as never);
+      req.onUsage?.({ inputTokens: 1e300, outputTokens: 5 });
       req.onUsage?.({ inputTokens: 10.7, outputTokens: 2 });
       return {};
     });
@@ -132,7 +166,7 @@ describe("generationProviderFrom", () => {
   it("never leaks provider error text, keys or prompt content", async () => {
     const secretPrompt = "Draft for client Zephyrine Holdings, account 8812-SECRET";
     const key = "sk-ant-test-not-a-real-key";
-    const throwers: (() => Promise<never>)[] = [
+    const throwers: (() => Promise<unknown>)[] = [
       async () => {
         throw new Error(`401 invalid x-api-key ${key}; request was: ${secretPrompt}`);
       },
@@ -142,12 +176,17 @@ describe("generationProviderFrom", () => {
       async () => {
         throw `raw string ${secretPrompt}`;
       },
+      // thrown synchronously, not as a rejected promise
+      () => {
+        throw new Error(`sync ${key} ${secretPrompt}`);
+      },
     ];
     for (const t of throwers) {
       const err = await failure(generationProviderFrom(scripted(t).provider).complete({ ...REQ, prompt: secretPrompt }));
       expect(err).toBeInstanceOf(GenerationError);
       expect(err.message).toBe("The drafting service didn't answer or was stopped. Try again later.");
-      const everything = `${err.message} ${err.stack ?? ""} ${JSON.stringify(err)} ${String((err as { cause?: unknown }).cause ?? "")}`;
+      expect((err as { cause?: unknown }).cause).toBeUndefined();
+      const everything = `${err.message} ${err.stack ?? ""} ${JSON.stringify(err)}`;
       expect(everything).not.toContain(key);
       expect(everything).not.toContain("Zephyrine");
       expect(everything).not.toContain("invalid x-api-key");
@@ -156,6 +195,14 @@ describe("generationProviderFrom", () => {
 });
 
 describe("generationProvider", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("is off with the server's own environment when no provider is set", () => {
+    vi.stubEnv("AI_PROVIDER", "");
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    expect(generationProvider()).toBeNull();
+  });
+
   it("is off unless the server configures a provider", () => {
     expect(generationProvider({}, {})).toBeNull();
     expect(generationProvider({}, { ANTHROPIC_API_KEY: "test-not-a-key" })).toBeNull();
