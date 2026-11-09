@@ -772,6 +772,8 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
     const phrase = new RegExp(`\\b(?:${day},?\\s+(?:at\\s+)?${time}|${time},?\\s+on\\s+(?:a\\s+|the\\s+)?${day})\\b`, "i");
     return phrase.test(said);
   };
+  // sentences that list holidays or days that aren't working days, in the agreement or the user's words
+  const holidaySources = `${question}\n${agreement.join("\n")}`.slice(0, 400_000).split(/(?<=[.!?])\s+|\n+/).filter((x) => /\b(?:holidays?|bank holiday|public holiday|not (?:a )?(?:working|business) days?|non-working|closure|closed)\b/i.test(x));
   const countKnown = (n: string) => fromQuestion.has(n) || quotedNums.has(n) || has(everywhere, n, null).length > 0 || constant(n) || verified.has(n) || recomputed.has(n);
   const steps = calcs.slice(0, 10).map((x) => ({ ...x, expression: stripNotes(x.expression) }));
   let size = -1;
@@ -804,12 +806,14 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
         (count === null || countKnown(count)) &&
         // a holiday may be a day and month the agreement lists without a year ("Easter Monday 6 April"), in the base
         // date's year
-        // a skipped date counts only if a source gives it: quoted in the agreement, in the user's words, or a day and
-        // month the agreement lists without a year (in the base date's year). Reaching it by calculation isn't evidence
-        // that it's a holiday.
+        // a skipped date counts only as a holiday a source lists: a date (or a day and month without a year, in the base
+        // date's year) in a sentence of the agreement or the user's words that is about holidays. A date existing, or
+        // being reached by calculation, isn't evidence it's a holiday; and the base date is never its own holiday.
         (working?.skipped ?? []).every((d) => {
           const p = parseDate(d);
-          return !!p && (quotedDates.has(iso(p)) || userDates.has(iso(p)) || (base !== null && recurringDates(d, agreement.join("\n"), [base]).length > 0));
+          const b = base === null ? null : parseDate(base);
+          if (!p || (b && iso(p) === iso(b))) return false;
+          return holidaySources.some((sentence) => datesIn(sentence).has(iso(p)) || (base !== null && recurringDates(d, sentence, [base]).length > 0));
         }) &&
         (span === null || span.dates.every(dateKnown)) &&
         (clock === null || clockKnown(clock.text[0]));

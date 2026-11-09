@@ -222,6 +222,18 @@ describe("R23 clock starts, working days and yearless dates", () => {
   it("a derived date listed as its own holiday (review 24)", async () => {
     expect(shown(await ask("Our invoice is dated 1 December 2024. When is it due?", { answer: "It is due on 1 January 2025.", calculations: [{ expression: "1 December 2024 + 30 days", result: "31 December 2024" }, { expression: "Next Working Day after 31 December 2024, skipping 31 December 2024", result: "1 January 2025" }] }))).toBe(false);
   });
+  it("a quoted or user base listed as its own holiday (review 25)", async () => {
+    const lease = linesFromText([`${AGREEMENT[0]}\n8. The Deposit is payable on 31 December 2024; if that day is not a Working Day, on the next Working Day.`]);
+    const r1 = await answerWithModel(model({ answer: "The Deposit is payable on 1 January 2025.", calculations: [{ expression: "Next Working Day after 31 December 2024, skipping 31 December 2024", result: "1 January 2025" }] }), "When is the Deposit payable?", lease, QA_LIMITS, { verifier: approveAll() });
+    expect(shown(r1)).toBe(false);
+    expect(shown(await ask("Our invoice is due on 31 December 2025. When must we pay?", { answer: "You must pay by 1 January 2026.", calculations: [{ expression: "Next Working Day after 31 December 2025, skipping 31 December 2025", result: "1 January 2026" }] }))).toBe(false);
+  });
+  it("a holiday the agreement lists moves a weekend date on", () => {
+    const sched = ["Working Day means Monday to Friday excluding the public holidays in Schedule 2. Schedule 2 public holidays: Good Friday 3 April; Easter Monday 6 April."];
+    const r = checkCalculations([{ expression: "Next Working Day after Sunday 5 April 2026, skipping Easter Monday 6 April 2026", result: "Tuesday 7 April 2026" }], sched, "My invoice was due on 5 April 2026.", "", sched);
+    expect(r.unproven).toEqual([]);
+    expect(r.wrong).toEqual([]);
+  });
   it("a yearless recurring date stated in the user's year as another event", async () => {
     expect(shown(await ask("Today is 3 March 2029. When does the Term end?", { answer: "The Term ends on 24 June 2029." }))).toBe(false);
   });
