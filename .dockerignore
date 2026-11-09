@@ -6,3 +6,12 @@ test-results
 playwright-report
 .git
 .e2e-mail
+.e2e-ai
+# local-only config, secrets and evaluation data: never in the build context
+.env*
+*.pem
+coverage
+.vercel
+evals/results
+evals/real
+fixtures/qa-real

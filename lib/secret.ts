@@ -9,6 +9,9 @@ let cached: Buffer | null = null;
 function key(): Buffer {
   if (cached) return cached;
   let s = process.env.APP_SECRET;
+  // production fails closed: a generated secret would differ on a new volume or machine and silently break every
+  // signing link already sent
+  if (!s && process.env.NODE_ENV === "production") throw new Error("APP_SECRET is not set. It is required in production (e.g. openssl rand -hex 32) and must never change.");
   if (!s) {
     const p = path.join(dataDir(), ".secret");
     fs.mkdirSync(dataDir(), { recursive: true });
