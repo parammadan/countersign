@@ -11,6 +11,12 @@ const FONTS = [f1.style.fontFamily, f2.style.fontFamily];
 
 export type Adopted = { png: string; method: "drawn" | "typed" };
 
+/** Inputs the signer types into: 16px on phones and other touch screens, so iOS doesn't zoom in on focus. */
+export const signerInputCls = inputCls.replace("text-sm", "text-base sm:pointer-fine:text-sm");
+
+/** A touch screen is the main pointer: don't open the on-screen keyboard before the person taps a box. */
+export const touchFirst = () => typeof window !== "undefined" && !!window.matchMedia?.("(pointer: coarse)").matches;
+
 function trim(c: HTMLCanvasElement): { png: string; w: number; h: number } | null {
   const ctx = c.getContext("2d")!;
   const { width, height } = c;
@@ -159,7 +165,7 @@ export function SignaturePad({
       {tab === "type" ? (
         <div className="space-y-3">
           <input
-            className={inputCls}
+            className={signerInputCls}
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
@@ -273,10 +279,11 @@ export function Modal({ title, children, onClose, wide }: { title: string; child
     return () => window.removeEventListener("keydown", k);
   }, [onClose]);
   // Focus moves into the dialog when it opens (its first input, otherwise the dialog itself, so its title
-  // is read) and back to whatever opened it when it closes.
+  // is read) and back to whatever opened it when it closes. On a touch screen it goes to the dialog itself:
+  // focusing an input there opens the keyboard, which covers the dialog before anything has been tapped.
   useEffect(() => {
     const el = box.current;
-    if (el && !el.contains(document.activeElement)) (el.querySelector<HTMLElement>('input:not([type="hidden"]):not([disabled]), textarea, select') ?? el).focus();
+    if (el && !el.contains(document.activeElement)) ((touchFirst() ? null : el.querySelector<HTMLElement>('input:not([type="hidden"]):not([disabled]), textarea, select')) ?? el).focus();
     return () => {
       if (opener && opener !== document.body && opener.isConnected) opener.focus({ preventScroll: true });
     };
@@ -298,7 +305,7 @@ export function Modal({ title, children, onClose, wide }: { title: string; child
   };
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div ref={box} tabIndex={-1} onKeyDown={trap} role="dialog" aria-modal="true" aria-label={title} className={cx("max-h-[92vh] w-full overflow-y-auto rounded-t-2xl bg-white p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-xl outline-none sm:rounded-2xl sm:p-6", wide ? "sm:max-w-2xl" : "sm:max-w-lg")}>
+      <div ref={box} tabIndex={-1} onKeyDown={trap} role="dialog" aria-modal="true" aria-label={title} className={cx("max-h-[92vh] w-full overflow-y-auto supports-[height:100dvh]:max-h-[92dvh] rounded-t-2xl bg-white p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-xl outline-none sm:rounded-2xl sm:p-6", wide ? "sm:max-w-2xl" : "sm:max-w-lg")}>
         <div className="mb-4 flex items-start justify-between gap-4">
           <h2 className="text-lg font-semibold">{title}</h2>
           <button type="button" onClick={onClose} className="-m-2 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-xl leading-none text-muted hover:text-ink" aria-label="Close">×</button>
