@@ -4,10 +4,11 @@ import { requireSession } from "@/lib/auth";
 import { AppError } from "@/lib/files";
 import { getTemplateVersion } from "@/lib/templates";
 import { assistantMode, conversation, conversations, QA_DAILY, type QaEntry } from "@/lib/qa/store";
-import { QA_STATUS_LABEL, type Citation, type QaStatus } from "@/lib/qa/answer";
+import type { Citation } from "@/lib/qa/answer";
 import { askAction } from "@/app/qa-actions";
 import { Badge, Notice, timeAgo } from "@/components/ui";
 import { Icon } from "@/components/icons";
+import { qaPresentation } from "@/components/qaPresentation";
 import { AskComposer } from "./AskComposer";
 
 export const metadata = { title: "Ask about this agreement" };
@@ -22,7 +23,6 @@ const ERRORS: Record<string, string> = {
   unreadable: "We couldn't read the text in this agreement.",
   failed: "Something went wrong. Try again.",
 };
-const TONE: Record<QaStatus, "ok" | "warn" | "neutral"> = { answered: "ok", partial: "warn", not_found: "neutral" };
 const EXAMPLES = [
   "What are the payment terms?",
   "Can the client end the agreement early, and what would it cost?",
@@ -108,7 +108,8 @@ function Turn({ h }: { h: QaEntry }) {
   const ai = r.mode === "model";
   const groups = sources(r.citations);
   const sourceOf = (passage: string) => groups.findIndex((g) => g.passages.includes(passage));
-  const how = !ai ? "Quoted passages, no AI" : r.verifiedBy ? `Claude (${r.model}) · ${r.verification === "qualified" ? "partly verified" : "verified claim by claim"} by a second check (${r.verifiedBy})` : `Claude (${r.model}) · ${r.verification === "qualified" ? "partly verified against the agreement" : "checked against the agreement"}`;
+  // badges and wording per outcome: withheld, trimmed, qualified, verified, and the passages-only fallbacks
+  const shown = qaPresentation(r);
   return (
     <li id={h.id} className="scroll-mt-20">
       <div className="mb-2 flex justify-end">
@@ -119,10 +120,14 @@ function Turn({ h }: { h: QaEntry }) {
       </div>
       <article aria-label={`Answer to: ${h.question}`} className="rounded-lg border border-line bg-white p-4 shadow-1">
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
-          <Badge tone={TONE[r.status]}>{QA_STATUS_LABEL[r.status]}</Badge>
-          {ai && r.verification === "qualified" && <Badge tone="warn">Partly verified</Badge>}
-          <span>{how}</span>
+          {shown.badges.map((b) => <Badge key={b.label} tone={b.tone} icon={b.icon}>{b.label}</Badge>)}
+          <span>{shown.how}</span>
         </div>
+        {shown.notice && (
+          <div className="mt-2" role="note" aria-label="Why there's no AI answer">
+            <Notice tone="warn">{shown.notice}</Notice>
+          </div>
+        )}
         {ai && r.verification === "qualified" && r.unverified && r.unverified.length > 0 && (
           <div className="mt-2" role="note" aria-label="Verification notice">
             <Notice tone="warn">
@@ -130,7 +135,7 @@ function Turn({ h }: { h: QaEntry }) {
             </Notice>
           </div>
         )}
-        <p className="mt-2 text-[15px] leading-relaxed whitespace-pre-line break-words text-ink">{r.answer}</p>
+        <p className="mt-2 text-[15px] leading-relaxed whitespace-pre-line break-words text-ink">{shown.answer ?? r.answer}</p>
         {r.explanation && (
           <section className="mt-3" aria-label="Why">
             <h3 className="text-xs font-semibold tracking-wide text-muted uppercase">Why</h3>
@@ -157,9 +162,9 @@ function Turn({ h }: { h: QaEntry }) {
             <ul className="mt-1 list-disc pl-5 text-sm text-ink-2">{r.notStated.map((n, i) => <li key={i}>{n}</li>)}</ul>
           </section>
         )}
-        {r.warnings.length > 0 && (
+        {shown.notes.length > 0 && (
           <ul className="mt-3 space-y-1 text-xs text-warn" aria-label="Notes">
-            {r.warnings.map((w, i) => <li key={i} className="flex gap-1.5"><Icon name="alert" size={14} className="mt-[1px] shrink-0" aria-hidden />{w}</li>)}
+            {shown.notes.map((w, i) => <li key={i} className="flex gap-1.5"><Icon name="alert" size={14} className="mt-[1px] shrink-0" aria-hidden />{w}</li>)}
           </ul>
         )}
         {ai && r.checks && r.checks.length > 0 && (
