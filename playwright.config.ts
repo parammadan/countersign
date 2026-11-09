@@ -1,9 +1,12 @@
+import crypto from "node:crypto";
 import { defineConfig, devices } from "@playwright/test";
 
 const external = process.env.E2E_BASE_URL;
 const port = 3100;
 const mailPort = 3101;
 const SMTP_SINK_PORT = 2526; // e2e/support/smtp-sink.ts listens here (see mail-flow.spec.ts)
+// `next start` runs with NODE_ENV=production, where APP_SECRET is required; each run gets its own (its data is wiped)
+const E2E_SECRET = crypto.randomBytes(32).toString("hex");
 
 export default defineConfig({
   testDir: "./e2e",
@@ -32,13 +35,13 @@ export default defineConfig({
     ? undefined
     : [
         {
-          command: `rm -rf .e2e-data && DATA_DIR=.e2e-data APP_URL=http://localhost:${port} PORT=${port} DISABLE_WORKER=1 ALLOW_PRIVATE_WEBHOOKS=1 AUTH_RATE_LIMIT_X=20 TRUST_PROXY=1 AI_PROVIDER= ANTHROPIC_API_KEY= npx next start -p ${port}`,
+          command: `rm -rf .e2e-data && APP_SECRET=${E2E_SECRET} DATA_DIR=.e2e-data APP_URL=http://localhost:${port} PORT=${port} DISABLE_WORKER=1 ALLOW_PRIVATE_WEBHOOKS=1 AUTH_RATE_LIMIT_X=20 TRUST_PROXY=1 AI_PROVIDER= ANTHROPIC_API_KEY= npx next start -p ${port}`,
           url: `http://localhost:${port}/api/health`,
           reuseExistingServer: false,
           timeout: 120_000,
         },
         {
-          command: `rm -rf .e2e-mail && DATA_DIR=.e2e-mail APP_URL=http://localhost:${mailPort} PORT=${mailPort} DISABLE_WORKER=1 AUTH_RATE_LIMIT_X=20 TRUST_PROXY=1 SMTP_HOST=127.0.0.1 SMTP_PORT=${SMTP_SINK_PORT} SMTP_USER=sink SMTP_PASS=sink EMAIL_FROM=agreements@example.com AI_PROVIDER= ANTHROPIC_API_KEY= npx next start -p ${mailPort}`,
+          command: `rm -rf .e2e-mail && APP_SECRET=${E2E_SECRET} DATA_DIR=.e2e-mail APP_URL=http://localhost:${mailPort} PORT=${mailPort} DISABLE_WORKER=1 AUTH_RATE_LIMIT_X=20 TRUST_PROXY=1 SMTP_HOST=127.0.0.1 SMTP_PORT=${SMTP_SINK_PORT} SMTP_USER=sink SMTP_PASS=sink EMAIL_FROM=agreements@example.com AI_PROVIDER= ANTHROPIC_API_KEY= npx next start -p ${mailPort}`,
           url: `http://localhost:${mailPort}/api/health`,
           reuseExistingServer: false,
           timeout: 120_000,
