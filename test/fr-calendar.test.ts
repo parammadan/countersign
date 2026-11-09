@@ -175,3 +175,49 @@ describe("second review", () => {
     expect(checkHolidayRoll("Next Working Day after Sunday 26 April 2026, skipping King’s Day 27 April 2026", "Tuesday 28 April 2026", a)?.ok).toBe(true);
   });
 });
+
+// Third independent review: each reproduction, now a regression test
+describe("third review", () => {
+  it("H1: a holiday list that doesn't end cleanly is not read at all", () => {
+    const step = ["Next Working Day after Thursday 2 April 2026, skipping Good Friday 3 April 2026", "Monday 6 April 2026"] as const;
+    for (const a of [
+      "Public holidays (2026): Good Friday 3 April and Easter Monday 6 April.",
+      "Public holidays (2026):\nGood Friday 3 April\nEaster Monday 6 April.",
+      "Public holidays (2026): Good Friday 3 April (Tuesday 7 April as a substitute day); Easter Monday 6 April.",
+      "Public holidays (2026): Good Friday 3 April; Day after Easter 6 April.",
+      "Public holidays (2026): New Year's Day 1 January, Good Friday 3 April and Easter Monday 6 April.",
+    ]) expect(checkHolidayRoll(step[0], step[1], a)?.ok, a).not.toBe(true);
+    // a clean list followed by more text still reads
+    expect(checkHolidayRoll("Next Working Day after Sunday 5 April 2026, skipping Easter Monday 6 April 2026", "Tuesday 7 April 2026", "Public holidays (2026): Good Friday 3 April; Easter Monday 6 April. 7.1 Notices must be in writing.")?.ok).toBe(true);
+  });
+  it("Z3: the term is a whole word", () => {
+    expect(checkThresholdZero("420 < 500, so commission = 0", "€0", "Commissioning of any system below €500 is not required.")?.rule).toBe(false);
+  });
+  it("Z4: the negation governs the term, and hedged sentences never count", () => {
+    for (const a of [
+      "No commission is payable unless the order is below €500.",
+      "Commission is not reduced for orders below €500.",
+      "Commission is payable on all orders, including orders below €500, and no minimum order value applies.",
+      "No commission is payable on orders below €500, except where the Principal agrees otherwise.",
+    ]) expect(checkThresholdZero("420 < 500, so commission = 0", "€0", a)?.rule, a).toBe(false);
+    expect(checkThresholdZero("420 < 500, so commission = 0", "€0", "Commission shall not be payable on any order below €500.")?.rule).toBe(true);
+  });
+  it("O1: a series count only runs from a first date the agreement's rule produced", () => {
+    const loan = "4.2 The first Payment Date is the 10th day of the second (2nd) calendar month following the month in which the Disbursement occurs.";
+    const q = "The loan is disbursed on January 22, 2026. On what date is the 36th and final installment due?";
+    const r = run([["January 22, 2026 + 35 months", "December 22, 2028 (36th installment)"]], loan, q);
+    expect(r.dates).not.toContain("December 22, 2028");
+  });
+  it("O2: the ordinal names the installment, in the question and in the result's note", () => {
+    const loan = "4.2 The first Payment Date is the 10th day of the second (2nd) calendar month following the month in which the Disbursement occurs.";
+    const chain: [string, string][] = [["January 2026 + 2 calendar months, on the 10th day", "March 10, 2026"]];
+    const other = run([...chain, ["March 10, 2026 + 35 months", "February 10, 2029 (36th installment)"]], loan, "The loan is disbursed on January 22, 2026 under the Bank's 36th standard form. When is the final installment due?");
+    expect(other.dates).not.toContain("February 10, 2029");
+    const right = run([...chain, ["March 10, 2026 + 35 months", "February 10, 2029 (36th installment)"]], loan, "The loan is disbursed on January 22, 2026 at 4.36% a year. When is the 36th installment due?");
+    expect(right.dates).toContain("February 10, 2029");
+  });
+  it("N7: other illustrative phrasings aren't lists", () => {
+    for (const a of ["For instance, bank holidays 2026: Founders Day 15 April; Easter Monday 6 April.", "Were the parties to agree, public holidays (2026): Founders Day 15 April."])
+      expect(checkHolidayRoll("Next Working Day after Tuesday 14 April 2026, skipping Founders Day 15 April 2026", "Thursday 16 April 2026", a)).toBeNull();
+  });
+});

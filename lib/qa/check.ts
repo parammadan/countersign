@@ -634,10 +634,13 @@ function holidayLists(text: string): { year: number; entries: Map<string, string
   const ENTRY = new RegExp(`^\\s*${HOLIDAY_NAME}\\s+(\\d{1,2})(?:st|nd|rd|th)?\\s+${MONTH_NAME_CI}(?!\\s*,?\\s*\\d{4})\\s*([;,]|\\.|$)?`);
   for (const h of text.matchAll(/\b(?:public|bank)\s+holidays?\s*(?:\(\s*((?:19|20)\d{2})\s*\)\s*:?|((?:19|20)\d{2})\s*:)/gi)) {
     const sentenceStart = Math.max(text.lastIndexOf(". ", h.index!), 0);
-    if (/\b(?:such as|for example|for illustration|e\.g\.|illustrat\w*|including)\b/i.test(text.slice(sentenceStart, h.index! + h[0].length + 40))) continue;
+    if (/\b(?:such as|for example|for instance|for illustration|e\.g\.|illustrat\w*|including|example|hypothetic\w*|suppose|were the|if the parties|would)\b/i.test(text.slice(sentenceStart, h.index! + h[0].length + 40))) continue;
     const year = Number(h[1] ?? h[2]);
     const entries = new Map<string, string>();
     let rest = text.slice(h.index! + h[0].length);
+    // the run must end cleanly: its last entry is followed by a full stop or the end of the text; anything else
+    // ("and Easter Monday 6 April", a line-broken list, a note after an entry) makes the list unreadable here
+    let clean = false;
     for (let i = 0; i < 30; i++) {
       const e = ENTRY.exec(rest);
       if (!e) break;
@@ -645,9 +648,12 @@ function holidayLists(text: string): { year: number; entries: Map<string, string
       if (!d) break;
       entries.set(iso(d), plainName(e[1]));
       rest = rest.slice(e[0].length);
-      if (e[4] !== ";" && e[4] !== ",") break;
+      if (e[4] === ";" || e[4] === ",") continue;
+      // (the month may have taken the full stop as an abbreviation dot: "26 December.")
+      clean = e[4] === "." || /\.\s*$/.test(e[0]) || /^\s*$/.test(rest);
+      break;
     }
-    if (entries.size) out.push({ year, entries });
+    if (clean && entries.size) out.push({ year, entries });
   }
   return out;
 }
@@ -715,7 +721,10 @@ export function checkThresholdZero(expression: string, result: string, agreement
     ">=": "\\b(?:at least|not less than)\\s*[$£€]?\\s*X(?!\\d|[.,]\\d)|[$£€]?\\s*X\\s*or (?:more|above)\\b",
   };
   const dir = new RegExp(DIR[op].replace(/X/g, fig), "i");
-  const rule = term.length > 2 && agreement.split(/(?<=[.;])\s+/).some((sent) => new RegExp(`\\b${term}`, "i").test(sent) && /\b(?:no|not|nil|none|zero)\b/i.test(sent) && dir.test(sent));
+  const T = `${term}s?`;
+  const governs = new RegExp(`\\bno\\s+${T}\\b|\\b${T}\\b[^.;]{0,40}?\\b(?:is|are|shall|will)\\s+(?:be\\s+)?not\\s+(?:be\\s+)?(?:payable|due|earned|owed)\\b|\\b${T}\\b[^.;]{0,20}?\\bof\\s+nil\\b`, "i");
+  const hedged = /\b(?:unless|except|excluding|including|other than|provided|reduced|save|subject to)\b/i;
+  const rule = term.length > 2 && agreement.split(/(?<=[.;])\s+/).some((sent) => governs.test(sent) && !hedged.test(sent) && dir.test(sent));
   return { ok: truth && zero, a: String(a), b: String(b), rule };
 }
 const CLOCK = `${WEEKDAY}\\s+(\\d{1,2})(?:[:.](\\d{2}))?\\s*(a\\.?m\\.?|p\\.?m\\.?)?`;
@@ -819,6 +828,8 @@ export function checkComparison(expression: string, result: string): boolean | n
   const truth = m[2] === "<" ? a < b : m[2] === ">" ? a > b : m[2] === "<=" || m[2] === "≤" ? a <= b : m[2] === ">=" || m[2] === "≥" ? a >= b : Math.abs(a - b) < 1e-9;
   return truth === said;
 }
+/** "36th installment", "36th and final payment": the ordinal N next to a payment noun (not a date's day, not "36th form"). */
+const seriesOrdinal = (n: number, text: string) => new RegExp(`(?<![\\d.,])${n}(?:st|nd|rd|th)\\s+(?:and\\s+(?:final|last)\\s+)?(?:monthly\\s+)?(?:installment|instalment|payment|repayment)s?\\b`, "i").test(text);
 export function checkCalculations(calcs: Calculation[], support: string[], question: string, topic: string, agreement: string[] = support): CalcCheck {
   const verified = new Set<string>();
   const recomputed = new Set<string>();
@@ -861,6 +872,7 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
   const quotedNums = numbersInAll(stripRefs(stripClauses(agreement.join("\n"))));
   const userDates = datesIn(question);
   const derivedDates = new Set<string>();
+  const seriesStarts = new Set<string>();
   const dateKnown = (t: string) => {
     const d = parseDate(t);
     if (!d) return false;
@@ -912,7 +924,11 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
         for (const d of monthDay.dates) {
           dates.push(d);
           const p = parseDate(d);
-          if (p) derivedDates.add(iso(p));
+          if (p) {
+            derivedDates.add(iso(p));
+            // the first date of a monthly series, reached by the agreement's own rule
+            seriesStarts.add(iso(p));
+          }
         }
       continue;
     }
@@ -963,7 +979,7 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
       const inputsKnown =
         (base === null || dateKnown(base)) &&
         // a monthly series: the Nth date is N-1 months after the first, when the result names itself the Nth
-        (count === null || countKnown(count) || (calendar !== null && /\bmonths?\b/i.test(c.expression) && new RegExp(`\\b${Number(count) + 1}(?:st|nd|rd|th)\\b`, "i").test(c.result.replace(new RegExp(DATE_TERM.source, "gi"), " ")) && new RegExp(`(?<![\\d.,])${Number(count) + 1}(?:st|nd|rd|th)\\b`, "i").test(question.replace(new RegExp(DATE_TERM.source, "gi"), " ").replace(/\\d+[.,]\\d+/g, " ")))) &&
+        (count === null || countKnown(count) || (calendar !== null && seriesStarts.has(iso(parseDate(calendar.dates[0])!)) && /\bmonths?\b/i.test(c.expression) && seriesOrdinal(Number(count) + 1, c.result.replace(new RegExp(DATE_TERM.source, "gi"), " ")) && seriesOrdinal(Number(count) + 1, question.replace(new RegExp(DATE_TERM.source, "gi"), " ").replace(/\d+[.,]\d+/g, " ")))) &&
         // a holiday may be a day and month the agreement lists without a year ("Easter Monday 6 April"), in the base
         // date's year
         (span === null || span.dates.every(dateKnown)) &&
