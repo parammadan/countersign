@@ -26,7 +26,8 @@ export async function askAction(fd: FormData) {
   try {
     qid = await askQuestion(sess.workspaceId, versionId, { id: sess.userId, email: sess.userEmail }, question);
   } catch (e) {
-    if (e instanceof AppError) redirect(page(versionId, `?error=${code(e)}`));
+    // the question goes back in the URL (the page's own box, capped like the box), so it isn't lost
+    if (e instanceof AppError) redirect(page(versionId, `?error=${code(e)}${question.trim() ? `&q=${encodeURIComponent(question.slice(0, 500))}` : ""}`));
     throw e;
   }
   redirect(page(versionId, `?asked=${encodeURIComponent(qid)}`));
