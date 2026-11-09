@@ -633,18 +633,44 @@ const COMPUTED_HOLIDAYS: [RegExp, (y: number) => Date][] = [
   [/^christmas day$/i, (y) => new Date(Date.UTC(y, 11, 25))],
   [/^boxing day$/i, (y) => new Date(Date.UTC(y, 11, 26))],
 ];
-/**
- * "Next Working Day after Sunday 5 April 2026, skipping Easter Monday 6 April 2026" = "Tuesday 7 April 2026": a roll
- * past weekends and named public holidays. Each named holiday must be one the agreement names; its date must be the
- * one the agreement gives for it (a day and month in a holiday list, in the base date's year, and that list's year if it
- * states one) or, when the agreement names it without a date, the date that follows from the year (Western Easter;
- * never when the agreement mentions an Orthodox calendar). Every day skipped must be a weekend or a named holiday, no
- * day the agreement lists as a holiday may be the result, and the result must be the first such day. Null when not
- * such a step or when a holiday can't be dated this way (the verifier then judges it, as before).
- */
-const ci = (src: string) => src.replace(/(?<![\\\[])\b([a-z])/g, (c) => `[${c.toUpperCase()}${c}]`);
+// month names in either case, for scans that also need capitalised names (which must stay case-sensitive)
+const ci = (src: string) => src.replace(/(?<![\\[])\b([a-z])/g, (c) => `[${c.toUpperCase()}${c}]`);
 const MONTH_NAME_CI = ci(MONTH_NAME);
 const DATE_TERM_CI = DATE_TERM.source.split(MONTH_NAME).join(MONTH_NAME_CI);
+/**
+ * Holiday lists in an agreement: a "public holidays" / "bank holidays" heading that states a year ("Public holidays
+ * (2026)", "Public Holidays 2026:", "bank holidays for 2027"), and the "<Name> <day> <month>" entries that follow it up
+ * to the next clause number or heading. A list without a year dates nothing.
+ */
+function holidayLists(text: string): { year: number; entries: Map<string, string> }[] {
+  const heads = [...text.matchAll(/\b(?:public|bank)\s+holidays?\b(?:\s+(?:for|in))?\s*\(?\s*((?:19|20)\d{2})?\s*\)?\s*:?/gi)];
+  const out: { year: number; entries: Map<string, string> }[] = [];
+  heads.forEach((h, i) => {
+    if (!h[1]) return;
+    const from = h.index! + h[0].length;
+    const nextHead = i + 1 < heads.length ? heads[i + 1].index! : text.length;
+    // the list ends at the next heading, the next clause number ("7.1 ") or "Schedule"/"Annex", or 800 characters on
+    const stop = /\s(?:\d+(?:\.\d+)+\s|Schedule\s|Annex\s|Appendix\s)/.exec(text.slice(from));
+    const to = Math.min(nextHead, stop ? from + stop.index : text.length, from + 800);
+    const year = Number(h[1]);
+    const entries = new Map<string, string>();
+    for (const e of text.slice(from, to).matchAll(new RegExp(`([A-Z][A-Za-z']*(?:\\s+[A-Z][A-Za-z']*){0,3})\\s+(\\d{1,2})(?:st|nd|rd|th)?\\s+${MONTH_NAME_CI}(?!\\s*,?\\s*\\d{4})`, "g"))) {
+      const d = mk(year, monthIndex(e[3]), Number(e[2]));
+      if (d) entries.set(iso(d), e[1].trim().toLowerCase());
+    }
+    if (entries.size) out.push({ year, entries });
+  });
+  return out;
+}
+/**
+ * "Next Working Day after Sunday 5 April 2026, skipping Easter Monday 6 April 2026" = "Tuesday 7 April 2026": a roll
+ * past weekends and named public holidays, re-done only when every holiday can be dated from the agreement for that
+ * year. Dated: from a holiday list whose stated year is the base date's year (each entry with its list's year). Undated:
+ * the holiday is named in the working/business-day definition itself and its date follows from the year (Western
+ * Easter; never with an Orthodox calendar). Each named holiday falls inside the roll, every day skipped is a weekend or
+ * a named holiday, and no holiday (named in the step or not) may be skipped silently or be the result. Null when not
+ * such a step or when a holiday can't be dated this way (the verifier then judges it, as before).
+ */
 export function checkHolidayRoll(expression: string, result: string, agreement: string): { ok: boolean; dates: string[] } | null {
   const m = new RegExp(`^\\s*(?:the\\s+)?next\\s+(?:working|business)\\s+day\\s+(?:after|following)\\s+(?:${WEEKDAY},?\\s+)?(${DATE_TERM.source}),?\\s+(?:skipping|excluding|after|past)\\s+(.+)$`, "i").exec(expression);
   if (!m) return null;
@@ -655,13 +681,21 @@ export function checkHolidayRoll(expression: string, result: string, agreement: 
   const year = base.getUTCFullYear();
   const text = agreement.replace(/\s+/g, " ");
   if (/\borthodox\b/i.test(text)) return null;
-  // the agreement's own holiday list: "<Name> <day> <month>" entries, with the list's year if it gives one
-  const listYear = /\b(?:public|bank)\s+holidays?\s*\((\d{4})\)/i.exec(text)?.[1];
-  if (listYear && Number(listYear) !== year) return null;
-  const listed = new Map<string, string>(); // iso -> name
-  for (const h of text.matchAll(new RegExp(`([A-Z][A-Za-z']*(?:\\s+[A-Z][A-Za-z']*){0,3})\\s+(\\d{1,2})(?:st|nd|rd|th)?\\s+${MONTH_NAME_CI}(?!\\s*,?\\s*\\d{4})`, "g"))) {
-    const d = mk(year, monthIndex(h[3]), Number(h[2]));
-    if (d) listed.set(iso(d), h[1].trim().toLowerCase());
+  const lists = holidayLists(text);
+  const forYear = lists.filter((l) => l.year === year);
+  // the holidays that can't be working days this year, by date
+  const holidays = new Map<string, string>();
+  if (lists.length) {
+    // dated lists exist: only one for this year can date a holiday
+    if (!forYear.length) return null;
+    for (const l of forYear) for (const [k, v] of l.entries) holidays.set(k, v);
+  } else {
+    const def = /["“](?:working|business)\s+days?["”][^.]{0,400}/i.exec(text)?.[0];
+    if (!def) return null;
+    for (const [re, at] of COMPUTED_HOLIDAYS) {
+      const name = re.source.replace(/^\^|\$$/g, "").replace(/'\?/g, "'?");
+      if (new RegExp(`\\b${name}\\b`, "i").test(def)) for (const y of [year, year + 1]) holidays.set(iso(at(y)), name.replace(/'\?/g, "'").toLowerCase());
+    }
   }
   // the holidays the step names, each with its date
   const named = [...m[m.length - 1].matchAll(new RegExp(`([A-Z][A-Za-z']*(?:\\s+[A-Z][A-Za-z']*){0,3})\\s*\\(?\\s*(${DATE_TERM_CI})`, "g"))];
@@ -669,18 +703,15 @@ export function checkHolidayRoll(expression: string, result: string, agreement: 
   const skipped = new Set<string>();
   const out: string[] = [m[2]];
   for (const h of named) {
-    const name = h[1].trim();
     const d = parseDate(h[2]);
-    if (!d || !new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/'/g, "'?")}\\b`, "i").test(text)) return null;
+    if (!d) return null;
     const k = iso(d);
-    let dated: boolean;
-    if (listed.size) dated = listed.get(k) === name.toLowerCase();
-    else {
-      const rule = COMPUTED_HOLIDAYS.find(([re]) => re.test(name));
-      if (!rule) return null;
-      dated = iso(rule[1](d.getUTCFullYear())) === k;
-    }
-    if (!dated) return { ok: false, dates: [] };
+    const name = h[1].trim().toLowerCase().replace(/[’]/g, "'");
+    const listedName = holidays.get(k)?.replace(/'\?/g, "'");
+    // undated mode only knows the holidays the definition names; an unknown name isn't re-done here
+    if (!lists.length && !COMPUTED_HOLIDAYS.some(([re]) => re.test(h[1].trim()))) return null;
+    // the date must be that holiday's, and inside the roll
+    if (listedName !== name || d.getTime() <= base.getTime() || d.getTime() > got.getTime()) return { ok: false, dates: [] };
     skipped.add(k);
     out.push(h[2]);
   }
@@ -690,8 +721,8 @@ export function checkHolidayRoll(expression: string, result: string, agreement: 
     const k = iso(d);
     const weekend = d.getUTCDay() === 0 || d.getUTCDay() === 6;
     if (weekend || skipped.has(k)) continue;
-    // a listed holiday the step didn't name can't be the next working day
-    if (listed.has(k)) return { ok: false, dates: [] };
+    // a holiday the step didn't name can't be the next working day
+    if (holidays.has(k)) return { ok: false, dates: [] };
     return { ok: k === iso(got), dates: [...out, gotText] };
   }
   return null;
@@ -957,7 +988,7 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
       const inputsKnown =
         (base === null || dateKnown(base)) &&
         // a monthly series: the Nth date is N-1 months after the first, when the result names itself the Nth
-        (count === null || countKnown(count) || (calendar !== null && /\bmonths?\b/i.test(c.expression) && new RegExp(`\\b${Number(count) + 1}(?:st|nd|rd|th)\\b`, "i").test(c.result) && countKnown(String(Number(count) + 1)))) &&
+        (count === null || countKnown(count) || (calendar !== null && /\bmonths?\b/i.test(c.expression) && new RegExp(`\\b${Number(count) + 1}(?:st|nd|rd|th)\\b`, "i").test(c.result.replace(new RegExp(DATE_TERM.source, "gi"), " ")) && new RegExp(`\\b${Number(count) + 1}(?:st|nd|rd|th)?\\b`, "i").test(question))) &&
         // a holiday may be a day and month the agreement lists without a year ("Easter Monday 6 April"), in the base
         // date's year
         (span === null || span.dates.every(dateKnown)) &&

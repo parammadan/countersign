@@ -52,8 +52,8 @@ describe("working-day rolls past public holidays", () => {
     expect(checkHolidayRoll("Next Working Day after Sunday 12 April 2026, skipping Easter Monday 13 April 2026", "Tuesday 14 April 2026", dutch)?.ok).toBe(false);
     // the result lands on a listed holiday the step didn't name
     expect(checkHolidayRoll("Next Working Day after Sunday 26 April 2026, skipping Good Friday 3 April 2026", "Monday 27 April 2026", dutch)?.ok).toBe(false);
-    // a holiday the agreement never names
-    expect(checkHolidayRoll("Next Working Day after Sunday 5 April 2026, skipping Founders Day 6 April 2026", "Tuesday 7 April 2026", dutch)).toBeNull();
+    // a holiday the agreement never names, on a date its list gives to another holiday: a false step
+    expect(checkHolidayRoll("Next Working Day after Sunday 5 April 2026, skipping Founders Day 6 April 2026", "Tuesday 7 April 2026", dutch)?.ok).toBe(false);
     // the list is for 2026; a 2027 roll isn't dated by it
     expect(checkHolidayRoll("Next Working Day after Sunday 28 March 2027, skipping Easter Monday 29 March 2027", "Tuesday 30 March 2027", dutch)).toBeNull();
   });
@@ -99,5 +99,39 @@ describe("a zero that follows from a stated threshold", () => {
     expect(noInput.unproven.length).toBe(1);
     // a false comparison is wrong, whatever its inputs
     expect(run([["620 < 500, so commission = 0", "€0"]], agency, "A €620 order.").wrong.length).toBe(1);
+  });
+});
+
+// Independent review of 813249e: each reproduction, now a regression test
+describe("review of the holiday and count rules", () => {
+  it("B1: only a holiday list's entries are holidays, not any capitalised phrase with a date", () => {
+    const a = "Schedule 2 - Public holidays (2026) Easter Monday 6 April. 7.1 The Supplier shall deliver by the Delivery Date 15 April.";
+    expect(checkHolidayRoll("Next Working Day after Tuesday 14 April 2026, skipping Delivery Date 15 April 2026", "Thursday 16 April 2026", a)?.ok).not.toBe(true);
+    const r = run([["Next Working Day after Tuesday 14 April 2026, skipping Delivery Date 15 April 2026", "Thursday 16 April 2026"]], a, "The order is placed on 14 April 2026.");
+    expect(r.dates).not.toContain("Thursday 16 April 2026");
+  });
+  it("B2: a list dates holidays only in its own stated year", () => {
+    for (const a of ["Public Holidays 2026: Good Friday 3 April; Easter Monday 6 April.", "Public holidays: Good Friday 3 April; Easter Monday 6 April."])
+      expect(checkHolidayRoll("Next Working Day after Monday 5 April 2027, skipping Easter Monday 6 April 2027", "Wednesday 7 April 2027", a)?.ok).not.toBe(true);
+  });
+  it("B3: two yearly lists keep their own years", () => {
+    const a = "Public holidays (2026) Good Friday 3 April; Easter Monday 6 April. Public holidays (2027) Good Friday 26 March; Easter Monday 29 March.";
+    expect(checkHolidayRoll("Next Working Day after Wednesday 25 March 2026, skipping Good Friday 26 March 2026", "Friday 27 March 2026", a)?.ok).not.toBe(true);
+    expect(checkHolidayRoll("Next Working Day after Thursday 25 March 2027, skipping Good Friday 26 March 2027", "Monday 29 March 2027", a)?.ok).toBe(false); // 29 March 2027 is Easter Monday
+  });
+  it("B4: a named holiday falls inside the roll, and the result is never a holiday", () => {
+    const a = '"Business Day" means a day other than a Saturday, Sunday, Good Friday, Easter Monday or Christmas Day.';
+    expect(checkHolidayRoll("Next Business Day after Thursday 24 December 2026, skipping Easter Monday 6 April 2026", "Friday 25 December 2026", a)?.ok).not.toBe(true);
+    expect(checkHolidayRoll("Next Business Day after Thursday 2 April 2026, skipping Easter Monday 6 April 2026", "Friday 3 April 2026", a)?.ok).not.toBe(true);
+    expect(checkHolidayRoll("Next Business Day after Thursday 24 December 2026, skipping Christmas Day 25 December 2026", "Monday 28 December 2026", a)?.ok).toBe(true);
+  });
+  it("B5: an undated holiday must be in the working-day definition, not just mentioned", () => {
+    const a = '"Business Day" means Monday to Friday. No sales on Christmas Day.';
+    expect(checkHolidayRoll("Next Business Day after Thursday 24 December 2026, skipping Christmas Day 25 December 2026", "Monday 28 December 2026", a)?.ok).not.toBe(true);
+  });
+  it("B6: the Nth must be a note outside the date, and N in the question", () => {
+    const r = run([["March 11, 2026 + 10 months", "January 11th, 2027"]], "The term is twelve months.", "The contract starts March 11, 2026.");
+    expect(r.dates).not.toContain("January 11th, 2027");
+    expect(r.unproven.length).toBe(1);
   });
 });
