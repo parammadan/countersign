@@ -618,58 +618,45 @@ export function checkMonthDayStep(expression: string, result: string): { ok: boo
   const want = mk(first.getUTCFullYear(), first.getUTCMonth(), day);
   return { ok: !!want && want.getTime() === got.getTime(), month: { y, m: mo }, count: String(Math.abs(n)), day: String(day), dates: [(DATE_TERM.exec(result) ?? [""])[0]] };
 }
-/** Western (Gregorian) Easter Sunday for a year, as UTC midnight (anonymous Gregorian algorithm). */
-export function easterSunday(y: number): Date {
-  const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
-  const h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, mm = Math.floor((a + 11 * h + 22 * l) / 451);
-  const month = Math.floor((h + l - 7 * mm + 114) / 31) - 1, day = ((h + l - 7 * mm + 114) % 31) + 1;
-  return new Date(Date.UTC(y, month, day));
-}
-// holidays whose date follows from the year alone; anything else must be dated by the agreement itself
-const COMPUTED_HOLIDAYS: [RegExp, (y: number) => Date][] = [
-  [/^new year'?s day$/i, (y) => new Date(Date.UTC(y, 0, 1))],
-  [/^good friday$/i, (y) => new Date(easterSunday(y).getTime() - 2 * 86400000)],
-  [/^easter monday$/i, (y) => new Date(easterSunday(y).getTime() + 86400000)],
-  [/^christmas day$/i, (y) => new Date(Date.UTC(y, 11, 25))],
-  [/^boxing day$/i, (y) => new Date(Date.UTC(y, 11, 26))],
-];
 // month names in either case, for scans that also need capitalised names (which must stay case-sensitive)
 const ci = (src: string) => src.replace(/(?<![\\[])\b([a-z])/g, (c) => `[${c.toUpperCase()}${c}]`);
 const MONTH_NAME_CI = ci(MONTH_NAME);
 const DATE_TERM_CI = DATE_TERM.source.split(MONTH_NAME).join(MONTH_NAME_CI);
+const HOLIDAY_NAME = "([A-Z][A-Za-z'’]*(?:\\s+[A-Z][A-Za-z'’]*){0,3})";
+const plainName = (n: string) => n.trim().toLowerCase().replace(/’/g, "'");
 /**
- * Holiday lists in an agreement: a "public holidays" / "bank holidays" heading that states a year ("Public holidays
- * (2026)", "Public Holidays 2026:", "bank holidays for 2027"), and the "<Name> <day> <month>" entries that follow it up
- * to the next clause number or heading. A list without a year dates nothing.
+ * Holiday lists: a heading "Public holidays (2026)" or "Bank holidays 2026:" followed directly by a run of
+ * "<Name> <day> <month>" entries separated by ";" or ","; the list ends at the first thing that isn't such an entry or
+ * at a full stop. A heading inside an illustrative sentence ("for example", "such as") isn't a list.
  */
 function holidayLists(text: string): { year: number; entries: Map<string, string> }[] {
-  const heads = [...text.matchAll(/\b(?:public|bank)\s+holidays?\b(?:\s+(?:for|in))?\s*\(?\s*((?:19|20)\d{2})?\s*\)?\s*:?/gi)];
   const out: { year: number; entries: Map<string, string> }[] = [];
-  heads.forEach((h, i) => {
-    if (!h[1]) return;
-    const from = h.index! + h[0].length;
-    const nextHead = i + 1 < heads.length ? heads[i + 1].index! : text.length;
-    // the list ends at the next heading, the next clause number ("7.1 ") or "Schedule"/"Annex", or 800 characters on
-    const stop = /\s(?:\d+(?:\.\d+)+\s|Schedule\s|Annex\s|Appendix\s)/.exec(text.slice(from));
-    const to = Math.min(nextHead, stop ? from + stop.index : text.length, from + 800);
-    const year = Number(h[1]);
+  const ENTRY = new RegExp(`^\\s*${HOLIDAY_NAME}\\s+(\\d{1,2})(?:st|nd|rd|th)?\\s+${MONTH_NAME_CI}(?!\\s*,?\\s*\\d{4})\\s*([;,]|\\.|$)?`);
+  for (const h of text.matchAll(/\b(?:public|bank)\s+holidays?\s*(?:\(\s*((?:19|20)\d{2})\s*\)\s*:?|((?:19|20)\d{2})\s*:)/gi)) {
+    const sentenceStart = Math.max(text.lastIndexOf(". ", h.index!), 0);
+    if (/\b(?:such as|for example|for illustration|e\.g\.|illustrat\w*|including)\b/i.test(text.slice(sentenceStart, h.index! + h[0].length + 40))) continue;
+    const year = Number(h[1] ?? h[2]);
     const entries = new Map<string, string>();
-    for (const e of text.slice(from, to).matchAll(new RegExp(`([A-Z][A-Za-z']*(?:\\s+[A-Z][A-Za-z']*){0,3})\\s+(\\d{1,2})(?:st|nd|rd|th)?\\s+${MONTH_NAME_CI}(?!\\s*,?\\s*\\d{4})`, "g"))) {
+    let rest = text.slice(h.index! + h[0].length);
+    for (let i = 0; i < 30; i++) {
+      const e = ENTRY.exec(rest);
+      if (!e) break;
       const d = mk(year, monthIndex(e[3]), Number(e[2]));
-      if (d) entries.set(iso(d), e[1].trim().toLowerCase());
+      if (!d) break;
+      entries.set(iso(d), plainName(e[1]));
+      rest = rest.slice(e[0].length);
+      if (e[4] !== ";" && e[4] !== ",") break;
     }
     if (entries.size) out.push({ year, entries });
-  });
+  }
   return out;
 }
 /**
  * "Next Working Day after Sunday 5 April 2026, skipping Easter Monday 6 April 2026" = "Tuesday 7 April 2026": a roll
- * past weekends and named public holidays, re-done only when every holiday can be dated from the agreement for that
- * year. Dated: from a holiday list whose stated year is the base date's year (each entry with its list's year). Undated:
- * the holiday is named in the working/business-day definition itself and its date follows from the year (Western
- * Easter; never with an Orthodox calendar). Each named holiday falls inside the roll, every day skipped is a weekend or
- * a named holiday, and no holiday (named in the step or not) may be skipped silently or be the result. Null when not
- * such a step or when a holiday can't be dated this way (the verifier then judges it, as before).
+ * past weekends and named public holidays, re-done only when the agreement itself dates the holidays in a holiday list
+ * for that year (the jurisdiction's calendar is the agreement's, never assumed here). Each named holiday must be that
+ * list's entry for its date and fall inside the roll; no listed holiday may be skipped silently or be the result; the
+ * roll stays within the list's year. Null when not such a step or when that can't be checked (the verifier judges it).
  */
 export function checkHolidayRoll(expression: string, result: string, agreement: string): { ok: boolean; dates: string[] } | null {
   const m = new RegExp(`^\\s*(?:the\\s+)?next\\s+(?:working|business)\\s+day\\s+(?:after|following)\\s+(?:${WEEKDAY},?\\s+)?(${DATE_TERM.source}),?\\s+(?:skipping|excluding|after|past)\\s+(.+)$`, "i").exec(expression);
@@ -679,26 +666,12 @@ export function checkHolidayRoll(expression: string, result: string, agreement: 
   const got = parseDate(gotText);
   if (!base || !got || got.getTime() <= base.getTime()) return null;
   const year = base.getUTCFullYear();
-  const text = agreement.replace(/\s+/g, " ");
-  if (/\borthodox\b/i.test(text)) return null;
-  const lists = holidayLists(text);
-  const forYear = lists.filter((l) => l.year === year);
-  // the holidays that can't be working days this year, by date
+  if (got.getUTCFullYear() !== year) return null;
+  const lists = holidayLists(agreement.replace(/\s+/g, " ")).filter((l) => l.year === year);
+  if (!lists.length) return null;
   const holidays = new Map<string, string>();
-  if (lists.length) {
-    // dated lists exist: only one for this year can date a holiday
-    if (!forYear.length) return null;
-    for (const l of forYear) for (const [k, v] of l.entries) holidays.set(k, v);
-  } else {
-    const def = /["“](?:working|business)\s+days?["”][^.]{0,400}/i.exec(text)?.[0];
-    if (!def) return null;
-    for (const [re, at] of COMPUTED_HOLIDAYS) {
-      const name = re.source.replace(/^\^|\$$/g, "").replace(/'\?/g, "'?");
-      if (new RegExp(`\\b${name}\\b`, "i").test(def)) for (const y of [year, year + 1]) holidays.set(iso(at(y)), name.replace(/'\?/g, "'").toLowerCase());
-    }
-  }
-  // the holidays the step names, each with its date
-  const named = [...m[m.length - 1].matchAll(new RegExp(`([A-Z][A-Za-z']*(?:\\s+[A-Z][A-Za-z']*){0,3})\\s*\\(?\\s*(${DATE_TERM_CI})`, "g"))];
+  for (const l of lists) for (const [k, v] of l.entries) holidays.set(k, v);
+  const named = [...m[m.length - 1].matchAll(new RegExp(`${HOLIDAY_NAME}\\s*\\(?\\s*(${DATE_TERM_CI})`, "g"))];
   if (!named.length) return null;
   const skipped = new Set<string>();
   const out: string[] = [m[2]];
@@ -706,40 +679,44 @@ export function checkHolidayRoll(expression: string, result: string, agreement: 
     const d = parseDate(h[2]);
     if (!d) return null;
     const k = iso(d);
-    const name = h[1].trim().toLowerCase().replace(/[’]/g, "'");
-    const listedName = holidays.get(k)?.replace(/'\?/g, "'");
-    // undated mode only knows the holidays the definition names; an unknown name isn't re-done here
-    if (!lists.length && !COMPUTED_HOLIDAYS.some(([re]) => re.test(h[1].trim()))) return null;
-    // the date must be that holiday's, and inside the roll
-    if (listedName !== name || d.getTime() <= base.getTime() || d.getTime() > got.getTime()) return { ok: false, dates: [] };
+    if (holidays.get(k) !== plainName(h[1]) || d.getTime() <= base.getTime() || d.getTime() > got.getTime()) return { ok: false, dates: [] };
     skipped.add(k);
     out.push(h[2]);
   }
-  // walk from the day after the base: weekends and named holidays are skipped; the first other day is the answer
   const d = new Date(base.getTime() + 86400000);
-  for (let i = 0; i < 14; i++, d.setUTCDate(d.getUTCDate() + 1)) {
+  for (let i = 0; i < 14 && d.getUTCFullYear() === year; i++, d.setUTCDate(d.getUTCDate() + 1)) {
     const k = iso(d);
-    const weekend = d.getUTCDay() === 0 || d.getUTCDay() === 6;
-    if (weekend || skipped.has(k)) continue;
-    // a holiday the step didn't name can't be the next working day
+    if (d.getUTCDay() === 0 || d.getUTCDay() === 6 || skipped.has(k)) continue;
     if (holidays.has(k)) return { ok: false, dates: [] };
     return { ok: k === iso(got), dates: [...out, gotText] };
   }
   return null;
 }
 /**
- * "420 < 500, so commission = 0" = "€0": a zero that follows from a threshold. True when the comparison holds and the
- * result is zero, false when the comparison is false or the result isn't zero, null when not such a step. Both
- * figures need provenance and the threshold must be one the agreement states.
+ * "420 < 500, so commission = 0" = "€0": a zero that follows from a threshold rule in the agreement. The rule must be a
+ * clause that names the same term, says it isn't payable, and puts that threshold on the side the comparison is on
+ * ("No commission is payable on any order below €500": strictly below); the comparison must be true. Null when not
+ * such a step.
  */
-export function checkThresholdZero(expression: string, result: string): { ok: boolean; a: string; b: string } | null {
-  const m = /^\s*([$£€]?\s*\d[\d,]*(?:\.\d+)?)\s*(<=|>=|<|>|≤|≥)\s*([$£€]?\s*\d[\d,]*(?:\.\d+)?)\s*,?\s*(?:so|therefore|thus|hence)\s+[\p{L}\s'-]{1,40}?\s*=\s*([$£€]?\s*0(?:\.0+)?)\s*$/iu.exec(expression);
+export function checkThresholdZero(expression: string, result: string, agreement = ""): { ok: boolean; a: string; b: string; rule: boolean } | null {
+  const m = /^\s*([$£€]?\s*\d[\d,]*(?:\.\d+)?)\s*(<=|>=|<|>|≤|≥)\s*([$£€]?\s*\d[\d,]*(?:\.\d+)?)\s*,?\s*(?:so|therefore|thus|hence)\s+([\p{L}\s'-]{1,40}?)\s*=\s*([$£€]?\s*0(?:\.0+)?)\s*$/iu.exec(expression);
   if (!m) return null;
   const num = (x: string) => Number(x.replace(/[$£€\s,]/g, ""));
   const a = num(m[1]), b = num(m[3]);
-  const truth = m[2] === "<" ? a < b : m[2] === ">" ? a > b : m[2] === "<=" || m[2] === "≤" ? a <= b : a >= b;
+  const op = m[2].replace("≤", "<=").replace("≥", ">=");
+  const truth = op === "<" ? a < b : op === ">" ? a > b : op === "<=" ? a <= b : a >= b;
   const zero = /^\s*[$£€]?\s*0(?:\.0+)?\s*(?:\(|$|[a-z])/i.test(result);
-  return { ok: truth && zero, a: String(a), b: String(b) };
+  const term = m[4].trim().toLowerCase().split(/\s+/).pop() ?? "";
+  const fig = String(b).replace(/\B(?=(\d{3})+(?!\d))/g, ",?");
+  const DIR: Record<string, string> = {
+    "<": "\\b(?:below|less than|under|lower than)\\s*[$£€]?\\s*X(?!\\d|[.,]\\d)",
+    "<=": "\\b(?:not exceeding|not more than|up to|at most)\\s*[$£€]?\\s*X(?!\\d|[.,]\\d)|[$£€]?\\s*X\\s*or (?:less|below)\\b",
+    ">": "\\b(?:above|over|more than|exceeding|greater than)\\s*[$£€]?\\s*X(?!\\d|[.,]\\d)",
+    ">=": "\\b(?:at least|not less than)\\s*[$£€]?\\s*X(?!\\d|[.,]\\d)|[$£€]?\\s*X\\s*or (?:more|above)\\b",
+  };
+  const dir = new RegExp(DIR[op].replace(/X/g, fig), "i");
+  const rule = term.length > 2 && agreement.split(/(?<=[.;])\s+/).some((sent) => new RegExp(`\\b${term}`, "i").test(sent) && /\b(?:no|not|nil|none|zero)\b/i.test(sent) && dir.test(sent));
+  return { ok: truth && zero, a: String(a), b: String(b), rule };
 }
 const CLOCK = `${WEEKDAY}\\s+(\\d{1,2})(?:[:.](\\d{2}))?\\s*(a\\.?m\\.?|p\\.?m\\.?)?`;
 const minutesOf = (day: string, h: string, mi: string | undefined, ap: string | undefined) => {
@@ -955,20 +932,18 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
         }
       continue;
     }
-    const zeroStep = checkThresholdZero(c.expression, c.result);
+    const zeroStep = checkThresholdZero(c.expression, c.result, agreement.join("\n"));
     if (zeroStep) {
-      // both figures known, and the threshold is one the agreement states
+      // the input is known and a clause sets that zero for that side of that threshold
       if (!zeroStep.ok) {
         failed.push(label);
         wrong.push(label);
-      } else if (!countKnown(zeroStep.a) || !(quotedNums.has(zeroStep.b) || has(everywhere, zeroStep.b, null).length > 0)) {
+      } else if (!countKnown(zeroStep.a) || !zeroStep.rule) {
         failed.push(label);
         unproven.push(label);
-      } else {
-        // a derived zero: its term is the verifier's call, like any re-done result
-        recomputed.add("0");
-        operandsOk.add("0");
       }
+      // a zero that checks out is reasoning for the verifier to judge, never a figure shown on its own
+      else recomputed.add("0");
       continue;
     }
     const working = calendar ? null : checkNextWorkingDay(c.expression, c.result);
@@ -988,7 +963,7 @@ export function checkCalculations(calcs: Calculation[], support: string[], quest
       const inputsKnown =
         (base === null || dateKnown(base)) &&
         // a monthly series: the Nth date is N-1 months after the first, when the result names itself the Nth
-        (count === null || countKnown(count) || (calendar !== null && /\bmonths?\b/i.test(c.expression) && new RegExp(`\\b${Number(count) + 1}(?:st|nd|rd|th)\\b`, "i").test(c.result.replace(new RegExp(DATE_TERM.source, "gi"), " ")) && new RegExp(`\\b${Number(count) + 1}(?:st|nd|rd|th)?\\b`, "i").test(question))) &&
+        (count === null || countKnown(count) || (calendar !== null && /\bmonths?\b/i.test(c.expression) && new RegExp(`\\b${Number(count) + 1}(?:st|nd|rd|th)\\b`, "i").test(c.result.replace(new RegExp(DATE_TERM.source, "gi"), " ")) && new RegExp(`(?<![\\d.,])${Number(count) + 1}(?:st|nd|rd|th)\\b`, "i").test(question.replace(new RegExp(DATE_TERM.source, "gi"), " ").replace(/\\d+[.,]\\d+/g, " ")))) &&
         // a holiday may be a day and month the agreement lists without a year ("Easter Monday 6 April"), in the base
         // date's year
         (span === null || span.dates.every(dateKnown)) &&

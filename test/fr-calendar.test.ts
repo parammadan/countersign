@@ -2,9 +2,8 @@
 // + 2 calendar months, on the 10th day"), a working-day roll past dated public holidays, and a zero that follows from a
 // stated threshold. Each has positive cases and adversarial ones that must stay wrong or unproven.
 import { describe, expect, it } from "vitest";
-import { checkCalculations, checkHolidayRoll, checkMonthDayStep, checkThresholdZero, easterSunday } from "@/lib/qa/check";
+import { checkCalculations, checkHolidayRoll, checkMonthDayStep, checkThresholdZero } from "@/lib/qa/check";
 
-const iso = (d: Date) => d.toISOString().slice(0, 10);
 const run = (steps: [string, string][], agreement: string, question: string) =>
   checkCalculations(steps.map(([expression, result]) => ({ expression, result })), [agreement], question, "", [agreement]);
 
@@ -57,17 +56,10 @@ describe("working-day rolls past public holidays", () => {
     // the list is for 2026; a 2027 roll isn't dated by it
     expect(checkHolidayRoll("Next Working Day after Sunday 28 March 2027, skipping Easter Monday 29 March 2027", "Tuesday 30 March 2027", dutch)).toBeNull();
   });
-  it("dates a named holiday from the year only when the agreement names it without a date", () => {
-    expect(iso(easterSunday(2026))).toBe("2026-04-05");
-    expect(iso(easterSunday(2027))).toBe("2027-03-28");
-    expect(iso(easterSunday(2024))).toBe("2024-03-31");
+  it("a holiday the agreement doesn't date in a list for that year is never re-done here", () => {
     const named = '"Business Day" means a day other than a Saturday, Sunday, Good Friday, Easter Monday or Christmas Day.';
-    expect(checkHolidayRoll("Next Business Day after Sunday 28 March 2027, skipping Easter Monday 29 March 2027", "Tuesday 30 March 2027", named)?.ok).toBe(true);
-    expect(checkHolidayRoll("Next Business Day after Sunday 28 March 2027, skipping Easter Monday 5 April 2027", "Tuesday 6 April 2027", named)?.ok).toBe(false);
-    // a holiday whose date can't follow from the year alone, named but undated: not re-done here
-    expect(checkHolidayRoll("Next Business Day after Sunday 28 March 2027, skipping Whit Monday 29 March 2027", "Tuesday 30 March 2027", `${named} Whit Monday.`)).toBeNull();
-    // another calendar: not re-done
-    expect(checkHolidayRoll("Next Business Day after Sunday 28 March 2027, skipping Easter Monday 29 March 2027", "Tuesday 30 March 2027", `${named} Holidays follow the Orthodox calendar.`)).toBeNull();
+    expect(checkHolidayRoll("Next Business Day after Sunday 28 March 2027, skipping Easter Monday 29 March 2027", "Tuesday 30 March 2027", named)).toBeNull();
+    expect(checkHolidayRoll("Next Business Day after Thursday 24 December 2026, skipping Christmas Day 25 December 2026", "Monday 28 December 2026", named)).toBeNull();
   });
   it("in a chain, the roll's dates gain provenance only from a known base", () => {
     const ok = run([["6 March 2026 + 30 days", "5 April 2026"], ["Next Working Day after Sunday 5 April 2026, skipping Easter Monday 6 April 2026", "Tuesday 7 April 2026"]], `${dutch} 4.1 Invoices are payable within thirty (30) days of the invoice date.`, "Lindqvist issues an invoice dated 6 March 2026.");
@@ -123,7 +115,7 @@ describe("review of the holiday and count rules", () => {
     const a = '"Business Day" means a day other than a Saturday, Sunday, Good Friday, Easter Monday or Christmas Day.';
     expect(checkHolidayRoll("Next Business Day after Thursday 24 December 2026, skipping Easter Monday 6 April 2026", "Friday 25 December 2026", a)?.ok).not.toBe(true);
     expect(checkHolidayRoll("Next Business Day after Thursday 2 April 2026, skipping Easter Monday 6 April 2026", "Friday 3 April 2026", a)?.ok).not.toBe(true);
-    expect(checkHolidayRoll("Next Business Day after Thursday 24 December 2026, skipping Christmas Day 25 December 2026", "Monday 28 December 2026", a)?.ok).toBe(true);
+    expect(checkHolidayRoll("Next Business Day after Thursday 24 December 2026, skipping Christmas Day 25 December 2026", "Monday 28 December 2026", a)).toBeNull();
   });
   it("B5: an undated holiday must be in the working-day definition, not just mentioned", () => {
     const a = '"Business Day" means Monday to Friday. No sales on Christmas Day.';
@@ -133,5 +125,53 @@ describe("review of the holiday and count rules", () => {
     const r = run([["March 11, 2026 + 10 months", "January 11th, 2027"]], "The term is twelve months.", "The contract starts March 11, 2026.");
     expect(r.dates).not.toContain("January 11th, 2027");
     expect(r.unproven.length).toBe(1);
+  });
+});
+
+// Second independent review of the holiday, zero and count rules: each reproduction, now a regression test
+describe("second review", () => {
+  const ask = (steps: [string, string][], agreement: string, q: string) => run(steps, agreement, q);
+  it("Z1: a zero needs the clause's own direction (below is strictly below)", () => {
+    const a = "No commission is payable on any order with a Net Invoice Value below €500. Otherwise commission is 7%.";
+    expect(checkThresholdZero("500 <= 500, so commission = 0", "€0", a)?.rule).toBe(false);
+    expect(ask([["500 <= 500, so commission = 0", "€0"]], a, "A €500 order.").unproven.length).toBe(1);
+    expect(checkThresholdZero("420 < 500, so commission = 0", "€0", a)?.rule).toBe(true);
+  });
+  it("Z2: the threshold must be the term's own zero rule, not any figure", () => {
+    const a = "Commission is 7% of Net Invoice Value. The Agent's liability is capped at €1,000.";
+    expect(ask([["420 < 1000, so commission = 0", "€0"]], a, "A €420 order.").unproven.length).toBe(1);
+  });
+  it("a checked zero is only ever the verifier's to judge (never an operand shown on its own)", () => {
+    const a = "No commission is payable on any order with a Net Invoice Value below €500.";
+    const r = ask([["420 < 500, so commission = 0", "€0"]], a, "A €420 order.");
+    expect(r.recomputed.has("0")).toBe(true);
+    expect(r.operands.has("0")).toBe(false);
+  });
+  it("C1/C2: the Nth must be an ordinal in the question, not a date's day or part of a decimal", () => {
+    const twelve = "The Loan is repaid in twelve monthly instalments.";
+    const c1 = ask([["March 11, 2026 + 10 months", "January 11, 2027 (the 11th instalment)"]], twelve, "The Start Date is March 11, 2026.");
+    expect(c1.dates).not.toContain("January 11, 2027");
+    const c2 = ask([["March 10, 2026 + 35 months", "February 10, 2029 (36th Payment Date)"]], "4.2 The first Payment Date is March 10, 2026.", "Interest is 4.36% a year. When is the last payment?");
+    expect(c2.dates).not.toContain("February 10, 2029");
+  });
+  it("N1/N2/N7: a holiday list is only its own run of entries, and never an illustration", () => {
+    const n1 = "Public holidays (2026): Easter Monday 6 April; King's Day 27 April. The Supplier shall deliver by the Delivery Date 15 April.";
+    expect(checkHolidayRoll("Next Working Day after Tuesday 14 April 2026, skipping Delivery Date 15 April 2026", "Thursday 16 April 2026", n1)?.ok).not.toBe(true);
+    const n2 = "Public holidays (2026): Good Friday 3 April; Easter Monday 6 April. In 2027 the holidays are Good Friday 26 March.";
+    expect(checkHolidayRoll("Next Working Day after Wednesday 25 March 2026, skipping Good Friday 26 March 2026", "Friday 27 March 2026", n2)?.ok).not.toBe(true);
+    const n7 = "For illustration only, public holidays (2026) such as Founders Day 15 April are not excluded.";
+    expect(checkHolidayRoll("Next Working Day after Tuesday 14 April 2026, skipping Founders Day 15 April 2026", "Thursday 16 April 2026", n7)).toBeNull();
+  });
+  it("N3: a roll that leaves the list's year isn't re-done", () => {
+    const both = "Public holidays (2026): Christmas Day 25 December; Boxing Day 26 December. Public holidays (2027): New Year's Day 1 January.";
+    expect(checkHolidayRoll("Next Working Day after Wednesday 30 December 2026, skipping New Year's Eve 31 December 2026", "Friday 1 January 2027", both)).toBeNull();
+  });
+  it("N4-N6: there is no undated mode, so definitions with catch-alls or included holidays can't bless a roll", () => {
+    for (const a of ['"Business Day" means a day other than a Saturday, Sunday, Christmas Day, Boxing Day or any other day on which banks in London are closed.', '"Business Day" means Monday to Friday; no sales are made on Christmas Day.', '"Business Day" means a day other than a Saturday or Sunday (Christmas Day and Boxing Day are Business Days).'])
+      expect(checkHolidayRoll("Next Business Day after Thursday 24 December 2026, skipping Christmas Day 25 December 2026", "Monday 28 December 2026", a)).toBeNull();
+  });
+  it("a curly apostrophe in a listed name is the same name", () => {
+    const a = "Public holidays (2026): King’s Day 27 April; Liberation Day 5 May.";
+    expect(checkHolidayRoll("Next Working Day after Sunday 26 April 2026, skipping King’s Day 27 April 2026", "Tuesday 28 April 2026", a)?.ok).toBe(true);
   });
 });
