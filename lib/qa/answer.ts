@@ -11,7 +11,7 @@ import { MIN_QUOTE, normalize, unsupportedTokens, unsupportedWords } from "../un
 import { AnalysisError, callModel, type ModelProvider, type Usage } from "../understand/model";
 import type { Finding } from "../understand/schema";
 import type { PageLines } from "../understand/text";
-import { checkCalculations, weekdayChecks, withoutDates, clauses, figuresInTrueComparisons, partyRoles, ROLES, impliedCalculations, negationCheck, periodConflicts, stripRefutations, stemWord, misquoted, roleSwaps, scenarioFigures, stripPageRefs, unboundValues, unsupportedNegations, unsupportedPlaces, withoutAbsence, type Calculation } from "./check";
+import { anchoredWeekdays, checkCalculations, datesIn, weekdayChecks, withoutDates, clauses, figuresInTrueComparisons, partyRoles, ROLES, impliedCalculations, negationCheck, periodConflicts, stripRefutations, stemWord, misquoted, roleSwaps, scenarioFigures, stripPageRefs, unboundValues, unsupportedNegations, unsupportedPlaces, withoutAbsence, type Calculation } from "./check";
 import { accept, userFigureDisowned, verifyAnswer, VerifyError, type AcceptContext, type Acceptance, type Verdict, type VerifiedClaim } from "./verify";
 import { GROUP_OF, passages, QA_INSTRUCTION_RE, retrieve, terms, type Passage, type Scored } from "./retrieve";
 
@@ -610,7 +610,11 @@ export async function answerWithModel(
     return m ? [`${m[1]} at ${m[2]}`, `${m[2]} on ${m[1]}`, `${m[2]} on a ${m[1]}`, `${m[2]} on the ${m[1]}`] : [];
   });
   // a weekday that matches its date: only the weekday word goes; the date itself still needs provenance
-  const weekdayWords = weekdays.ok.map((x) => [x, x.replace(/\b(?:sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/gi, " ")] as const);
+  // a weekday tied to exactly one date with provenance ("That date is a Saturday", "5 April is a Sunday") that is right
+  // for it goes the same way; the date itself still needs provenance, and a wrong weekday stays invented
+  const knownDates = datesIn([...calcs.dates, ...agreementText, userText].join("\n"), 400_000);
+  const anchored = anchoredWeekdays(`${out.answer}\n${out.explanation}\n${calcText}`, knownDates);
+  const weekdayWords = [...weekdays.ok, ...anchored.ok].map((x) => [x, x.replace(/\b(?:sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/gi, " ")] as const);
   const stated = withoutDates([...calcs.dates, ...clockForms].reduce((t, d) => t.split(d).join(" "), weekdayWords.reduce((t, [x, y]) => t.split(x).join(y), `${said}\n${calcCore}`)), calcs.dates);
   // names in text set aside (a planted note "to AI assistants") may be named when saying it was disregarded
   const setAside = excluded.map((p) => p.text);

@@ -831,6 +831,50 @@ export function weekdayChecks(text: string): { ok: string[]; wrong: string[] } {
   for (const m of t.matchAll(new RegExp(`(${DATE_TERM.source}),?\\s*(?:\\(\\s*|which is\\s+|is\\s+|,\\s*)?(?:a\\s+)?${WEEKDAY}\\b`, "gi"))) check(m[m.length - 1], m[1], m[0]);
   return { ok, wrong };
 }
+/**
+ * Weekdays not written next to a full date, tied to exactly one date that has provenance: "That date is a Saturday"
+ * (the full date written just before), "5 April is a Sunday" (a day and month that matches exactly one known full
+ * date). `known` holds the dates with provenance (yyyy-mm-dd). A weekday that is right for its date is OK; one that's
+ * wrong is WRONG; one whose date is ambiguous, unknown or too far back is neither (it stays as it is: invented).
+ */
+export function anchoredWeekdays(text: string, known: Set<string>): { ok: string[]; wrong: string[] } {
+  const ok: string[] = [];
+  const wrong: string[] = [];
+  const t = text.slice(0, MAX_TEXT);
+  const verdict = (k: string | undefined, w: string, whole: string) => {
+    if (!k) return;
+    (WEEKDAYS[new Date(`${k}T00:00:00Z`).getUTCDay()] === w.toLowerCase() ? ok : wrong).push(whole);
+  };
+  const IS = "\\s+(?:is|was|falls\\s+on|fell\\s+on)\\s+(?:a\\s+|an\\s+)?";
+  // a day and month without a year: the one known full date with that day and month
+  const byDayMonth = (mo: number, d: number) => {
+    const hits = [...known].filter((k) => Number(k.slice(5, 7)) - 1 === mo && Number(k.slice(8, 10)) === d);
+    return hits.length === 1 ? hits[0] : undefined;
+  };
+  for (const m of t.matchAll(new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+${MONTH_NAME}(?!\\.?,?\\s*\\d{4})${IS}${WEEKDAY}\\b`, "gi"))) verdict(byDayMonth(monthIndex(m[2]), Number(m[1])), m[3], m[0]);
+  for (const m of t.matchAll(new RegExp(`\\b${MONTH_NAME}\\s+(\\d{1,2})(?:st|nd|rd|th)?(?!\\d|,?\\s*\\d{4})${IS}${WEEKDAY}\\b`, "gi"))) verdict(byDayMonth(monthIndex(m[1]), Number(m[2])), m[3], m[0]);
+  // a full date with a note naming its weekday: "February 10, 2029 (36th Payment Date, a Saturday)"
+  for (const m of t.matchAll(new RegExp(`(${DATE_TERM.source})\\s*\\([^()]{0,60}?,\\s*(?:a\\s+|an\\s+)?${WEEKDAY}\\s*\\)`, "gi"))) {
+    const d = parseDate(m[1]);
+    verdict(d && known.has(iso(d)) ? iso(d) : undefined, m[m.length - 1], m[0]);
+  }
+  // a full date with provenance and "falls on" / "fell on" (the adjacent forms are weekdayChecks')
+  for (const m of t.matchAll(new RegExp(`(${DATE_TERM.source}),?\\s+(?:falls|fell)\\s+on\\s+(?:a\\s+|an\\s+)?${WEEKDAY}\\b`, "gi"))) {
+    const d = parseDate(m[1]);
+    verdict(d && known.has(iso(d)) ? iso(d) : undefined, m[m.length - 1], m[0]);
+  }
+  // "that date is a Saturday": the last full date written before it, within the same or the previous sentence
+  for (const m of t.matchAll(new RegExp(`\\b(?:that|this|the|which)\\s+(?:date|day)${IS}${WEEKDAY}\\b`, "gi"))) {
+    const before = t.slice(Math.max(0, m.index! - 240), m.index!);
+    // no more than one sentence boundary back
+    const window = before.split(/(?<=[.!?])\s+/).slice(-2).join(" ");
+    const all = [...window.matchAll(DATE_TERM_G)];
+    const last = all.length ? parseDate(all[all.length - 1][0]) : null;
+    const k = last ? iso(last) : undefined;
+    verdict(k && known.has(k) ? k : undefined, m[m.length - 1], m[0]);
+  }
+  return { ok, wrong };
+}
 /** "100 < 120" = "true": true when the stated truth value is right, false when wrong, null when not a comparison. */
 export function checkComparison(expression: string, result: string): boolean | null {
   const m = /^\s*(.+?)\s*(<=|>=|<|>|=|≤|≥)\s*(.+?)\s*$/.exec(expression);
