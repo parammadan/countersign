@@ -1,0 +1,68 @@
+// Reusable clause structures for the template families. Every figure, date, party, jurisdiction, duration, fee,
+// scope reference, territory and licence choice is a {{term:...}} or {{role:...}} placeholder filled from validated
+// input; nothing here supplies a value the user did not give. Optional clauses carry `when`, so they appear only when
+// the user supplied that term. The wording mirrors the approved services template where the meaning is the same.
+import type { TemplateClause } from "../types";
+
+/** "This <Title> is made between <A> (the "A") and <B> (the "B")." */
+export const parties = (title: string, [a, b]: [string, string]): TemplateClause => ({
+  id: "parties", heading: "Parties", required: true,
+  text: `This ${title} is made between {{role:${a}}} (the "${a}") and {{role:${b}}} (the "${b}").`,
+});
+
+/** Scope by reference to the client's own request: the template never invents the work. */
+export const scope = (heading: string, provider: string, client: string, what: string, where: string): TemplateClause => ({
+  id: "scope", heading, required: true,
+  text: `The ${provider} will perform the ${what} described in the ${client}'s ${where}, with reasonable skill and care.`,
+});
+
+/** Start date (required) and how it ends; `until` says what ends it besides termination. */
+export const term = (doc: string, until?: string): TemplateClause => ({
+  id: "term", heading: "Term", required: true,
+  text: `This ${doc} starts on {{term:startDate}} and continues until ${until ? `${until} or ` : ""}it is ended under clause {{ref:termination}}.`,
+});
+
+/** Optional fixed end date, only when the user gave one. */
+export const termEnd = (doc: string): TemplateClause => ({
+  id: "term_end", heading: "End Date", required: false, when: "endDate",
+  text: `Unless ended earlier, this ${doc} ends on {{term:endDate}}.`,
+});
+
+/** The fee (required): who pays whom, how much, for what. */
+export const fee = (id: string, heading: string, payer: string, payee: string, label: string, forWhat?: string): TemplateClause => ({
+  id, heading, required: true,
+  text: `The ${payer} will pay the ${payee} ${label} of {{term:fee}}${forWhat ? ` for the ${forWhat}` : ""}.`,
+});
+
+/** Optional payment timing, only when the user gave paymentDays; without it the document states no due date. */
+export const payment = (payee: string, payer: string): TemplateClause => ({
+  id: "payment", heading: "Payment", required: false, when: "paymentDays",
+  text: `The ${payee} will invoice the ${payer}, and the ${payer} will pay each invoice within {{term:paymentDays}} days of receiving it.`,
+});
+
+export const confidentiality = (doc: string): TemplateClause => ({
+  id: "confidentiality", heading: "Confidentiality", required: true,
+  text: `Each party will keep the other party's confidential information private and use it only for this ${doc}.`,
+});
+
+/** Termination on the user's notice period (required), with what survives. */
+export const termination = (doc: string, survives: string): TemplateClause => ({
+  id: "termination", heading: "Termination", required: true,
+  text: `Either party may end this ${doc} by giving the other {{term:noticeDays}} days' written notice. ${survives}`,
+});
+
+export const liability = (doc: string): TemplateClause => ({
+  id: "liability", heading: "Liability", required: true,
+  text: `Neither party is liable for indirect or consequential loss arising from this ${doc}.`,
+});
+
+export const governingLaw = (doc: string): TemplateClause => ({
+  id: "governing_law", heading: "Governing Law", required: true,
+  text: `This ${doc} is governed by the laws of {{term:governingLaw}}.`,
+});
+
+/** Locked signature block: never sent to the model, byte-identical in every draft. */
+export const signatures = ([a, b]: [string, string]): TemplateClause => ({
+  id: "signatures", heading: "Signatures", required: true, locked: true,
+  text: `Signed by {{role:${a}}} (${a}) and {{role:${b}}} (${b}). Each signer confirms they are authorised to sign for the party named.`,
+});
