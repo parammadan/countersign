@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { authorizeDraft, editorRoleFor, principalFrom, type DraftAction, type MemberRole, type Principal } from "@/lib/drafts/roles";
 
 const who = (role: MemberRole, userId = `u-${role}`, workspaceId = "ws-a"): Principal => ({ userId, workspaceId, role });
-const draftA = { workspaceId: "ws-a", lastEditor: "u-editor-other" };
+const draftA = { workspaceId: "ws-a", lastEditor: "u-editor-other", authors: ["u-editor-other"] };
 const code = (r: ReturnType<typeof authorizeDraft>) => (r.ok ? "ok" : r.code);
 
 describe("role mapping (owner decision)", () => {
@@ -57,8 +57,14 @@ describe("approval needs a different person", () => {
   it("an unknown last editor is refused", () => {
     expect(code(authorizeDraft(who("owner"), { workspaceId: "ws-a" }, "approve"))).toBe("same_person");
   });
-  it("can be turned off explicitly", () => {
-    expect(code(authorizeDraft(who("owner", "u1"), { workspaceId: "ws-a", lastEditor: "u1" }, "approve", { requireDistinctApprover: false }))).toBe("ok");
+  it("cannot be turned off, and an author of any version cannot approve", () => {
+    expect(code(authorizeDraft(who("owner", "u1"), { workspaceId: "ws-a", lastEditor: "u2", authors: ["u1", "u2"] }, "approve"))).toBe("same_person");
+    expect(code(authorizeDraft(who("owner", "u1"), { workspaceId: "ws-a", lastEditor: "u2" }, "approve"))).toBe("same_person"); // authors unknown
+    expect(code(authorizeDraft(who("owner", "u3"), { workspaceId: "ws-a", lastEditor: "u2", authors: ["u1", "u2"] }, "approve"))).toBe("ok");
+  });
+  it("sending back needs an approver role but not a different person", () => {
+    expect(code(authorizeDraft(who("owner", "u1"), { workspaceId: "ws-a", lastEditor: "u1", authors: ["u1"] }, "request_changes"))).toBe("ok");
+    expect(code(authorizeDraft(who("staff", "u1"), { workspaceId: "ws-a", lastEditor: "u2", authors: ["u2"] }, "request_changes"))).toBe("forbidden");
   });
   it("does not apply to edit or publish", () => {
     expect(code(authorizeDraft(who("admin", "u1"), { workspaceId: "ws-a", lastEditor: "u1" }, "edit"))).toBe("ok");

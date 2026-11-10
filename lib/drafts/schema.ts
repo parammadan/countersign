@@ -7,7 +7,7 @@ export const DRAFTS_DDL = `
     workspace_id TEXT NOT NULL REFERENCES workspaces(id),
     kind TEXT NOT NULL,
     title TEXT NOT NULL,
-    status TEXT NOT NULL CHECK (status IN ('draft', 'pending_approval', 'approved', 'published')),
+    status TEXT NOT NULL CHECK (status IN ('draft', 'pending_approval', 'approved', 'publishing', 'published')),
     last_editor TEXT NOT NULL REFERENCES users(id),
     approved_by TEXT REFERENCES users(id),
     created_by TEXT NOT NULL REFERENCES users(id),

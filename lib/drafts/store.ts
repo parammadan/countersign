@@ -6,7 +6,7 @@
 // another workspace is `not_found`, the same as a missing one.
 //
 // The schema's CHECK (approved_by != last_editor) makes distinct approvers a database rule too, so the store always
-// requires them (requireDistinctApprover cannot be turned off here; that is deliberate, fail closed).
+// requires them; roles.ts also refuses any author of any version (fail closed, no option).
 //
 // State machine (each transition is one conditional UPDATE inside a transaction, so a race loses cleanly):
 //   commit:          draft | pending_approval | approved -> draft      (a new version clears any approval)
@@ -21,7 +21,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { authorizeDraft, principalFrom, type DraftAction, type Principal } from "./roles";
 import { id as newId, now } from "../util";
 
-export type DraftStatus = "draft" | "pending_approval" | "approved" | "published";
+export type DraftStatus = "draft" | "pending_approval" | "approved" | "publishing" | "published";
 export type DraftRow = {
   id: string; workspace_id: string; kind: string; title: string; status: DraftStatus; last_editor: string;
   approved_by: string | null; created_by: string; created_at: string; updated_at: string; published_version_id: string | null;
@@ -84,11 +84,14 @@ export function draftStore(db: DatabaseSync) {
       .run(newId("dap_"), draftId, p.workspaceId, version, action, p.userId, at);
 
   /** Authorize `action` on the draft; the draft's workspace and last editor come from the row, never from input. */
-  function authorized(principal: unknown, draftId: unknown, action: DraftAction, opts?: { requireDistinctApprover?: boolean }): Result<{ p: Principal; row: DraftRow }> {
+  function authorized(principal: unknown, draftId: unknown, action: DraftAction): Result<{ p: Principal; row: DraftRow }> {
     const p = principalFrom(principal);
     if (!p) return fail("unauthenticated", "Sign in to continue.");
     const row = rowFor(p, draftId);
-    const a = authorizeDraft(p, row ? { workspaceId: row.workspace_id, lastEditor: row.last_editor } : null, action, opts);
+    const authors = row
+      ? [...new Set([row.created_by, ...db.prepare("SELECT DISTINCT author FROM draft_versions WHERE draft_id = ? AND workspace_id = ?").all(row.id, p.workspaceId).map((r) => (r as { author: string }).author)])]
+      : [];
+    const a = authorizeDraft(p, row ? { workspaceId: row.workspace_id, lastEditor: row.last_editor, authors } : null, action);
     if (!a.ok) return fail(a.code, a.message);
     return { ok: true, p, row: row! };
   }
@@ -230,7 +233,7 @@ export function draftStore(db: DatabaseSync) {
 
     /** Approver roles only; the distinct-person rule does not apply (sending a draft back approves nothing). */
     requestChanges(principal: unknown, draftId: unknown): Result<object> {
-      const a = authorized(principal, draftId, "approve", { requireDistinctApprover: false });
+      const a = authorized(principal, draftId, "request_changes");
       if (!a.ok) return a;
       return guarded(() => tx(() => {
         if (!move(a.p, a.row.id, ["pending_approval"], "status = 'draft', approved_by = NULL")) return fail("invalid_state", "Only a submitted draft can be sent back.");
@@ -254,11 +257,37 @@ export function draftStore(db: DatabaseSync) {
         if (v.number !== version) return fail("stale", "The approval applies to a different version.");
         const refused = runCheck(check, a.p, a.row.id, v);
         if (refused) return fail("check_failed", refused);
-        if (!move(a.p, a.row.id, ["approved"], "status = 'published', published_version_id = ?", publishedVersionId as string))
+        if (!move(a.p, a.row.id, ["approved", "publishing"], "status = 'published', published_version_id = ?", publishedVersionId as string))
           return fail("invalid_state", "Only an approved draft can be published.");
         log(a.p, a.row.id, v.number, "publish", now());
         return { ok: true as const };
       }));
+    },
+
+    /**
+     * Claim an approved version for publishing (approved -> publishing), after the content check, before anything
+     * irreversible happens. While claimed, no commit can land (commit only moves draft/pending/approved) and a second
+     * claim fails, so a double click or two admins publish once. Finish with publish(), or undo with abortPublish().
+     */
+    claimPublish(principal: unknown, draftId: unknown, version: unknown, check: ContentCheck): Result<object> {
+      const a = authorized(principal, draftId, "publish");
+      if (!a.ok) return a;
+      return guarded(() => tx(() => {
+        const v = latest(a.p, a.row.id)!;
+        if (v.number !== version) return fail("stale", "The approval applies to a different version.");
+        const refused = runCheck(check, a.p, a.row.id, v);
+        if (refused) return fail("check_failed", refused);
+        if (!move(a.p, a.row.id, ["approved"], "status = 'publishing'"))
+          return fail("invalid_state", "This draft is not approved, or is already being published.");
+        return { ok: true as const };
+      }));
+    },
+
+    /** Undo a claim (publishing -> approved), e.g. when adding the agreement to the library failed. */
+    abortPublish(principal: unknown, draftId: unknown): Result<object> {
+      const a = authorized(principal, draftId, "publish");
+      if (!a.ok) return a;
+      return guarded(() => tx(() => (move(a.p, a.row.id, ["publishing"], "status = 'approved'") ? { ok: true as const } : fail("invalid_state", "This draft is not being published."))));
     },
   };
 }
