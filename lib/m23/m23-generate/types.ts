@@ -60,4 +60,6 @@ export type GenerateResult =
       fallbackReasons: string[];
       /** Non-fatal notes, e.g. instruction-like text in the user instructions was ignored. */
       notes: string[];
+      /** How many clauses the model's accepted wording changed (0 for "template"; 0 with "model" = nothing to reword). */
+      reworded: number;
     };

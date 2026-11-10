@@ -89,7 +89,7 @@ test("real Claude: Q&A, Studio and Knowledge Hub in the browser", async ({ page,
   await page.getByRole("button", { name: "Generate draft" }).click();
   await expect(page).toHaveURL(/\/app\/studio\/drf_/, { timeout: 180_000 });
   const draftUrl = page.url();
-  results.generate = { url: draftUrl.replace(/^.*\/app/, "/app"), landing: new URL(draftUrl).searchParams.get("new"), why: new URL(draftUrl).searchParams.get("why"), notice: (await page.locator("main").innerText()).split("\n").find((l) => /Drafted|AI rewording|reworded/i.test(l)) ?? null };
+  results.generate = { url: draftUrl.replace(/^.*\/app/, "/app"), landing: new URL(draftUrl).searchParams.get("new"), why: new URL(draftUrl).searchParams.get("why"), notice: (await page.locator("main").innerText()).split("\n").find((l) => /Drafted|AI rewording|AI review|reworded/i.test(l)) ?? null };
   save();
   await shot(page, "3-studio-draft");
 
