@@ -59,7 +59,7 @@ describe("M3 Knowledge Hub", () => {
   // a fresh user id per question, so the per-person rate limit (tested last) doesn't interfere
   const ask = async (s: Sess, q: string, p: ModelProvider | null = null) => {
     await S.askAcrossAgreements({ ...s, userId: `${s.userId}-${++asked}` }, q, p);
-    return S.recentQuestions(s.workspaceId)[0];
+    return S.recentQuestions(s)[0];
   };
   function workspace(id: string) {
     db.run(
@@ -125,8 +125,8 @@ describe("M3 Knowledge Hub", () => {
   it("never crosses workspaces: another workspace sees neither the passages nor the questions", async () => {
     const h = await ask(other, "When are invoices due?");
     expect(h.result.status).toBe("not_found");
-    expect(S.recentQuestions("ws_b").every((e) => e.result.citations.every((c) => c.documentId !== consulting.templateId))).toBe(true);
-    expect(S.recentQuestions("ws_b").some((e) => e.question === "When are invoices due?" && e.askedBy === "staff@example.com")).toBe(false);
+    expect(S.recentQuestions(other).every((e) => e.result.citations.every((c) => c.documentId !== consulting.templateId))).toBe(true);
+    expect(S.recentQuestions(other).some((e) => e.question === "When are invoices due?" && e.askedBy === "staff@example.com")).toBe(false);
     const mine = await ask(other, "How much is the deposit before work starts?");
     expect(mine.result.citations[0]?.quote).toMatch(/deposit of \$12,000/);
   });
@@ -135,7 +135,12 @@ describe("M3 Knowledge Hub", () => {
     try {
       S.setDocumentRestrictions((ws, doc) => (doc === consulting.templateId ? { minRole: "admin" } : undefined));
       expect((await ask(staff, "When are invoices due?")).result.status).toBe("not_found");
-      expect((await ask(owner, "When are invoices due?")).result.citations[0]?.documentId).toBe(consulting.templateId);
+      const seen = await ask(owner, "When are invoices due?");
+      expect(seen.result.citations[0]?.documentId).toBe(consulting.templateId);
+      // B1: the owner's stored answer quotes the restricted agreement, so staff's history must not show it
+      expect(S.recentQuestions(staff).map((e) => e.id)).not.toContain(seen.id);
+      expect(S.recentQuestions(staff).every((e) => [...e.result.citations, ...e.result.flagged].every((c) => c.documentId !== consulting.templateId))).toBe(true);
+      expect(S.recentQuestions(owner).map((e) => e.id)).toContain(seen.id);
       S.setDocumentRestrictions(() => {
         throw new Error("acl store down");
       });
@@ -155,7 +160,7 @@ describe("M3 Knowledge Hub", () => {
         seen = r.document;
         r.onUsage?.({ inputTokens: 900, outputTokens: 80 });
         const id = /<passage id="(c\d+)" agreement="Consulting"[^>]*>[^<]*Invoices are due/.exec(r.document)![1];
-        return { status: "answered", answer: "Under the Consulting agreement, invoices are due within 30 days of receipt.", citations: [{ passage: id, quote: "Invoices are due within 30 days of receipt." }] };
+        return { status: "answered", answer: "Invoices are due within 30 days of receipt.", citations: [{ passage: id, quote: "Invoices are due within 30 days of receipt." }] };
       },
     };
     const h = await ask(owner, "When are invoices due?", p);
