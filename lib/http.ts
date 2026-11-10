@@ -6,6 +6,7 @@ import { getSession, type Session } from "./auth";
 import { one, run } from "./db";
 import { now, sha256 } from "./util";
 import { clientIp, limited } from "./ratelimit";
+import { printForPdf, showChars } from "./pdf/printable";
 import type { Workspace } from "./types";
 
 export function jsonError(message: string, status = 400, extra: Record<string, unknown> = {}) {
@@ -65,6 +66,9 @@ export function apiAuth(req: Request): { ws: Workspace; keyName: string } {
   rateLimit(req, "api", 120);
   const k = one<{ id: string; workspace_id: string; name: string; revoked_at: string | null }>("SELECT id, workspace_id, name, revoked_at FROM api_keys WHERE key_hash = ?", sha256(m[1]));
   if (!k || k.revoked_at) throw new AppError("Invalid or revoked API key.", 401);
+  // the key's name is the actor in each file's history, which the certificate of completion prints
+  const bad = printForPdf(k.name).bad;
+  if (bad.length) throw new AppError(`This API key's name has a character signed PDFs can't print (${showChars(bad)}). Create a new key with a name in letters from Western European alphabets, and revoke this one.`, 422);
   run("UPDATE api_keys SET last_used_at = ? WHERE id = ?", now(), k.id);
   return { ws: getWorkspace(k.workspace_id), keyName: k.name };
 }
