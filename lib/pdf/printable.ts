@@ -12,8 +12,9 @@ import { pdfCanPrint, pdfEquivalents } from "../m23/doc-output/pdf-text";
 /** The text the PDF prints for s, and the distinct characters it can't print exactly (empty when it can). */
 export function printForPdf(s: string): { text: string; bad: string[] } {
   // NFC is canonically the same text ("e" + combining acute is é); zero-width characters are invisible either way;
-  // a line break or tab in a one-line stamp reads as a space.
-  const text = pdfEquivalents(cleanText(s.normalize("NFC"))).replace(/[\t\r\n]+/g, " ");
+  // a line break or tab in a one-line stamp reads as a space. A soft hyphen (U+00AD) only marks where a word may
+  // break, so it is dropped like the zero-width characters: the font would print it as a visible hyphen.
+  const text = pdfEquivalents(cleanText(s.normalize("NFC")).replace(/\u00AD/g, "")).replace(/[\t\r\n]+/g, " ");
   const bad = [...new Set([...text].filter((ch) => !pdfCanPrint(ch)))];
   return { text, bad };
 }

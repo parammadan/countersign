@@ -14,18 +14,30 @@ const INK = rgb(0.05, 0.12, 0.35);
 // pdf-lib standard fonts are WinAnsi only. Print what they can exactly (and the typographic equivalents in
 // printable.ts); never alter anything else. Inputs refuse such text before it is saved (printProblem), so this
 // only fires on older data: fail closed, before anything is signed or saved, instead of printing a different name.
+// Who reads the refusal decides what it asks for: the client can only ask the sender, the firm can correct its
+// data, and an upload is stopped before the agreement exists.
+export type StampAudience = "firm" | "client" | "prepare";
+const STAMP_REFUSAL: Record<StampAudience, (chars: string) => string> = {
+  firm: (c) =>
+    `This can't be signed: a name or value written onto the PDF has a character the PDF can't print exactly (${c}), and it is never printed altered. Nothing was signed or saved. It needs correcting to letters from Western European alphabets first.`,
+  client: (c) =>
+    `This document can't be signed yet: a name or value on it has a character the signed PDF can't print exactly (${c}). Nothing was signed. Ask the sender to correct it.`,
+  prepare: (c) =>
+    `This agreement can't be prepared for signing: your firm's legal name has a character the PDF can't print exactly (${c}). Nothing was saved. Correct it in Settings, with letters from Western European alphabets.`,
+};
+
 export class StampTextError extends AppError {
-  constructor(public chars: string[]) {
-    super(
-      `This can't be signed: a name or value written onto the PDF has a character the PDF can't print exactly (${showChars(chars)}), and it is never printed altered. Nothing was signed or saved. It needs correcting to letters from Western European alphabets first.`,
-      422,
-    );
+  constructor(
+    public chars: string[],
+    audience: StampAudience = "firm",
+  ) {
+    super(STAMP_REFUSAL[audience](showChars(chars)), 422);
   }
 }
 
-export function pdfText(s: string): string {
+export function pdfText(s: string, audience: StampAudience = "firm"): string {
   const { text, bad } = printForPdf(s);
-  if (bad.length) throw new StampTextError(bad);
+  if (bad.length) throw new StampTextError(bad, audience);
   return text;
 }
 
@@ -56,7 +68,7 @@ function fitText(font: PDFFont, text: string, w: number, h: number) {
   return size;
 }
 
-export async function stampFields(pdfBytes: Uint8Array, fields: Field[], values: Map<string, StampValue>): Promise<Uint8Array> {
+export async function stampFields(pdfBytes: Uint8Array, fields: Field[], values: Map<string, StampValue>, audience: StampAudience = "firm"): Promise<Uint8Array> {
   const doc = await PDFDocument.load(pdfBytes);
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const pages = doc.getPages();
@@ -68,7 +80,7 @@ export async function stampFields(pdfBytes: Uint8Array, fields: Field[], values:
     if (!page) continue;
     const { pt, rotate } = viewportMapper(page);
     if (v.kind === "text") {
-      const text = pdfText(v.text).trim();
+      const text = pdfText(v.text, audience).trim();
       if (!text) continue;
       const size = fitText(font, text, f.w, f.h);
       const [x, y] = pt(f.x + 1, f.y + f.h - Math.max(3, (f.h - size) / 2 + 1));
@@ -105,7 +117,7 @@ export type CertInfo = {
   verifyUrl: string;
 };
 
-export async function appendCertificate(pdfBytes: Uint8Array, info: CertInfo): Promise<Uint8Array> {
+export async function appendCertificate(pdfBytes: Uint8Array, info: CertInfo, audience: StampAudience = "firm"): Promise<Uint8Array> {
   const doc = await PDFDocument.load(pdfBytes);
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
@@ -120,7 +132,7 @@ export async function appendCertificate(pdfBytes: Uint8Array, info: CertInfo): P
     const f = opts.f ?? font;
     const maxW = W - M - (opts.x ?? M);
     // wrap
-    const words = pdfText(text).split(" ");
+    const words = pdfText(text, audience).split(" ");
     let cur = "";
     const flush = () => {
       if (y < M + 20) {
@@ -182,7 +194,7 @@ export async function appendSignaturePage(pdfBytes: Uint8Array, firmName: string
   page.drawText("SIGNATURE PAGE", { x: M, y: H - M, size: 13, font: bold });
   page.drawText("By signing below, the parties agree to the terms of the agreement above.", { x: M, y: H - M - 22, size: 10, font });
   const block = (title: string, top: number) => {
-    page.drawText(pdfText(title), { x: M, y: top, size: 11, font: bold });
+    page.drawText(pdfText(title, "prepare"), { x: M, y: top, size: 11, font: bold });
     const rows = ["Signature:", "Name:", "Title:", "Date:"];
     rows.forEach((r, i) => {
       const yy = top - 34 - i * 30;
