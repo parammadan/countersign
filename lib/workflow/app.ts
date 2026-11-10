@@ -69,18 +69,24 @@ const STUDIO_EVENT: Record<string, string> = {
 export function syncStudioEvents(workspaceId: string): number {
   const exists = one<{ n: number }>("SELECT COUNT(*) n FROM sqlite_schema WHERE type = 'table' AND name IN ('draft_approvals', 'drafts')")?.n === 2;
   if (!exists) return 0;
-  const rows = all<{ id: string; draft_id: string; version_number: number; action: string; actor: string; created_at: string }>(
-    `SELECT a.id, a.draft_id, a.version_number, a.action, a.actor, a.created_at
-     FROM draft_approvals a JOIN drafts d ON d.id = a.draft_id AND d.workspace_id = a.workspace_id
-     WHERE a.workspace_id = ? ORDER BY a.created_at, a.id LIMIT 2000`,
-    workspaceId,
-  );
+  appOutbox(); // the wf_ tables exist before the query below joins them
   let added = 0;
-  for (const r of rows) {
-    const type = STUDIO_EVENT[r.action];
-    if (!type) continue;
-    const res = recordEvent(workspaceId, type, { draftId: r.draft_id, version: r.version_number, actorId: r.actor, at: r.created_at }, `studio:${r.id}`);
-    if (!res.duplicate) added++;
+  // only log rows that have no event yet (oldest first), in batches, so a long log is fully mirrored over time
+  for (let round = 0; round < 40; round++) {
+    const rows = all<{ id: string; draft_id: string; version_number: number; action: string; actor: string; created_at: string }>(
+      `SELECT a.id, a.draft_id, a.version_number, a.action, a.actor, a.created_at
+       FROM draft_approvals a
+       JOIN drafts d ON d.id = a.draft_id AND d.workspace_id = a.workspace_id
+       LEFT JOIN wf_events e ON e.workspace_id = a.workspace_id AND e.idempotency_key = 'studio:' || a.id
+       WHERE a.workspace_id = ? AND e.id IS NULL AND a.action IN ('submit', 'approve', 'request_changes', 'publish')
+       ORDER BY a.created_at, a.id LIMIT 500`,
+      workspaceId,
+    );
+    for (const r of rows) {
+      const res = recordEvent(workspaceId, STUDIO_EVENT[r.action], { draftId: r.draft_id, version: r.version_number, actorId: r.actor, at: r.created_at }, `studio:${r.id}`);
+      if (!res.duplicate) added++;
+    }
+    if (rows.length < 500) break;
   }
   return added;
 }
