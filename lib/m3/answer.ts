@@ -54,7 +54,9 @@ export type M3Result = {
   usage?: { inputTokens: number; outputTokens: number };
 };
 
-export const M3_LIMITS = { k: 5, maxContextChars: 6000, maxOutputTokens: QA_LIMITS.maxOutputTokens, timeoutMs: QA_LIMITS.timeoutMs, maxQuoteChars: 300 };
+// fixed here, not inherited from Q&A: M3 answers from a few short passages, so it keeps the cap and deadline it was
+// reviewed with even though whole-agreement Q&A (#43) needs more
+export const M3_LIMITS = { k: 5, maxContextChars: 6000, maxOutputTokens: 4000, timeoutMs: 45_000, maxQuoteChars: 300 };
 
 export const NOT_FOUND = "Your agreements don't appear to address this. No passage supported an answer closely enough, so nothing is quoted. Check the agreements, or ask in other words.";
 const EXTRACTIVE = "These passages from your agreements are the evidence for your question. They're quoted as written; read them to answer it.";

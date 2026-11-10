@@ -91,7 +91,7 @@ describe("Q&A evaluation (synthetic agreements)", () => {
       name: "adversary",
       model: "adversary-1",
       complete: async (r) => {
-        const ids = [...r.document.matchAll(/<passage id="([^"]+)"[^>]*>([^<]*)<\/passage>/g)];
+        const ids = [...((r.context ?? "") + r.document).matchAll(/<passage id="([^"]+)"[^>]*>([^<]*)<\/passage>/g)];
         // two adversaries in turn: one with a figure, one with none (the review showed figures alone gave it away)
         const withFigure = r.document.length % 2 === 0;
         return {

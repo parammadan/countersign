@@ -10,9 +10,10 @@
    (#60) has its own migration patch; whichever lands second takes the next number.
 2. **lib/detect.ts: signature blocks in generated agreements.** The detector only recognises client/firm role words
    (client, customer, licensee… / provider, consultant…). For an NDA's "Disclosing Party"/"Receiving Party" blocks it
-   assigns both to the firm and adds a client signature page. Proposed: pass the draft's parties to `detect()` when
-   publishing from the Studio, so the block whose party is not the workspace is the client. Meanwhile, the admin
-   corrects the fields on the agreement page before publishing, as for any upload.
+   assigns both to the firm and adds a client signature page. Done on `fix/nda-roles-unicode`: `publishDraft` passes
+   the draft's parties to `ingestAgreement` and `detectFields`; when exactly one party's name is the workspace's
+   (legal or display name, case and punctuation ignored), its block is the firm's and the other block the client's.
+   Otherwise, and for ordinary uploads, detection is unchanged (`test/detect-parties.test.ts`).
 
 ## M3
 

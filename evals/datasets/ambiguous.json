@@ -1,0 +1,223 @@
+[
+  {
+    "id": "ambiguous-payment-promptly",
+    "category": "ambiguous",
+    "question": "How many days does the Client have to pay an invoice?",
+    "documents": [
+      {
+        "id": "ambig-1",
+        "pages": [
+          "Engagement Agreement. This Engagement Agreement is made between Larkspur Legal Test (the Firm) and Noel Prasad Sample (the Client).",
+          "Fees and payment. Fees are payable promptly after each invoice is issued. The Firm may send invoices monthly."
+        ]
+      }
+    ],
+    "gold": {
+      "facts": [
+        [
+          "promptly",
+          "does not specify",
+          "no fixed",
+          "not specified"
+        ]
+      ],
+      "distractors": [
+        "30 days"
+      ],
+      "sources": [
+        {
+          "docId": "ambig-1",
+          "page": 2,
+          "quote": "Fees are payable promptly after each invoice is issued."
+        }
+      ],
+      "traps": [],
+      "status": "partial",
+      "answer": "The agreement is unclear: it only says \"Fees are payable promptly after each invoice is issued\", with no specific figure."
+    }
+  },
+  {
+    "id": "ambiguous-payment-reasonable",
+    "category": "ambiguous",
+    "question": "What is the total fee the Client must pay?",
+    "documents": [
+      {
+        "id": "ambig-2",
+        "pages": [
+          "Engagement Agreement. This Engagement Agreement is made between Larkspur Legal Test (the Firm) and Noel Prasad Sample (the Client).",
+          "Fees and payment. The Client will pay a reasonable fee for the services performed. Costs of filing are separate."
+        ]
+      }
+    ],
+    "gold": {
+      "facts": [
+        [
+          "reasonable",
+          "not specified",
+          "does not state"
+        ]
+      ],
+      "distractors": [
+        "$5,000"
+      ],
+      "sources": [
+        {
+          "docId": "ambig-2",
+          "page": 2,
+          "quote": "The Client will pay a reasonable fee for the services performed."
+        }
+      ],
+      "traps": [],
+      "status": "partial",
+      "answer": "The agreement is unclear: it only says \"The Client will pay a reasonable fee for the services performed\", with no specific figure."
+    }
+  },
+  {
+    "id": "ambiguous-termination-convenient",
+    "category": "ambiguous",
+    "question": "How many days notice must be given to end the engagement?",
+    "documents": [
+      {
+        "id": "ambig-3",
+        "pages": [
+          "Engagement Agreement. This Engagement Agreement is made between Larkspur Legal Test (the Firm) and Noel Prasad Sample (the Client).",
+          "Termination. Either party may end the engagement at a convenient time. Work in progress will be billed."
+        ]
+      }
+    ],
+    "gold": {
+      "facts": [
+        [
+          "convenient time",
+          "no fixed",
+          "not specified",
+          "does not specify"
+        ]
+      ],
+      "distractors": [
+        "30 days"
+      ],
+      "sources": [
+        {
+          "docId": "ambig-3",
+          "page": 2,
+          "quote": "Either party may end the engagement at a convenient time."
+        }
+      ],
+      "traps": [],
+      "status": "partial",
+      "answer": "The agreement is unclear: it only says \"Either party may end the engagement at a convenient time\", with no specific figure."
+    }
+  },
+  {
+    "id": "ambiguous-termination-material",
+    "category": "ambiguous",
+    "question": "What counts as a breach that lets the Firm terminate immediately?",
+    "documents": [
+      {
+        "id": "ambig-4",
+        "pages": [
+          "Engagement Agreement. This Engagement Agreement is made between Larkspur Legal Test (the Firm) and Noel Prasad Sample (the Client).",
+          "Termination. The Firm may terminate immediately for any material breach. Material breach is not otherwise discussed."
+        ]
+      }
+    ],
+    "gold": {
+      "facts": [
+        [
+          "material breach",
+          "not defined",
+          "does not define",
+          "not specified"
+        ]
+      ],
+      "distractors": [
+        "unpaid invoice"
+      ],
+      "sources": [
+        {
+          "docId": "ambig-4",
+          "page": 2,
+          "quote": "The Firm may terminate immediately for any material breach."
+        }
+      ],
+      "traps": [],
+      "status": "partial",
+      "answer": "The agreement is unclear: it only says \"The Firm may terminate immediately for any material breach\", with no specific figure."
+    }
+  },
+  {
+    "id": "ambiguous-obligation-timely",
+    "category": "ambiguous",
+    "question": "By what date must the Client provide documents?",
+    "documents": [
+      {
+        "id": "ambig-5",
+        "pages": [
+          "Engagement Agreement. This Engagement Agreement is made between Larkspur Legal Test (the Firm) and Noel Prasad Sample (the Client).",
+          "Client duties. The Client will provide documents in a timely manner. The Firm will review them on receipt."
+        ]
+      }
+    ],
+    "gold": {
+      "facts": [
+        [
+          "timely",
+          "no date",
+          "not specified",
+          "does not specify"
+        ]
+      ],
+      "distractors": [
+        "5 business days"
+      ],
+      "sources": [
+        {
+          "docId": "ambig-5",
+          "page": 2,
+          "quote": "The Client will provide documents in a timely manner."
+        }
+      ],
+      "traps": [],
+      "status": "partial",
+      "answer": "The agreement is unclear: it only says \"The Client will provide documents in a timely manner\", with no specific figure."
+    }
+  },
+  {
+    "id": "ambiguous-obligation-cooperate",
+    "category": "ambiguous",
+    "question": "What specific tasks must the Client perform?",
+    "documents": [
+      {
+        "id": "ambig-6",
+        "pages": [
+          "Engagement Agreement. This Engagement Agreement is made between Larkspur Legal Test (the Firm) and Noel Prasad Sample (the Client).",
+          "Client duties. The Client agrees to cooperate with the Firm as needed. Further duties may arise."
+        ]
+      }
+    ],
+    "gold": {
+      "facts": [
+        [
+          "cooperate",
+          "not specified",
+          "does not list",
+          "no specific"
+        ]
+      ],
+      "distractors": [
+        "attend hearings"
+      ],
+      "sources": [
+        {
+          "docId": "ambig-6",
+          "page": 2,
+          "quote": "The Client agrees to cooperate with the Firm as needed."
+        }
+      ],
+      "traps": [],
+      "status": "partial",
+      "answer": "The agreement is unclear: it only says \"The Client agrees to cooperate with the Firm as needed\", with no specific figure."
+    }
+  }
+]

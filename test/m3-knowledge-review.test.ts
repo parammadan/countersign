@@ -55,6 +55,9 @@ describe("M3 review fixes", () => {
       "INSERT INTO workspaces (id, name, legal_name, sender_name, countersigner_name, countersigner_email, inbound_token, created_at) VALUES (?,?,?,?,?,?,?,?)",
       "ws_r", "Firm R", "Firm R LLC", "Firm R", "Avery Tester", "avery-r@example.com", "inb_r", new Date().toISOString(),
     );
+    // a confirmed owner: AI answers only for confirmed workspaces, whatever the email mode
+    db.run("INSERT INTO users (id, email, name, password_hash, created_at, email_verified_at) VALUES (?,?,?,?,?,?)", "uo_r", "owner-r@example.com", "Owner", "h", new Date().toISOString(), new Date().toISOString());
+    db.run("INSERT INTO members (workspace_id, user_id, role, created_at) VALUES (?,?,?,?)", "ws_r", "uo_r", "owner", new Date().toISOString());
   });
 
   it("B2: a title can't add attributes to the model's context or speak to the model, and isn't evidence", async () => {

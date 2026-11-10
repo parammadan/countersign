@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/auth";
 import { all } from "@/lib/db";
-import { getDraft, versions } from "@/lib/drafts/service";
+import { fallbackNotice, getDraft, versions } from "@/lib/drafts/service";
 import { authorizeDraft } from "@/lib/drafts/roles";
 import { claimIsStale } from "@/lib/drafts/store";
 import { Notice } from "@/components/ui";
@@ -11,7 +11,7 @@ import { approvedClausePicks } from "@/lib/clauses/app/service";
 
 export const metadata = { title: "Draft" };
 
-export default async function Page({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ new?: string }> }) {
+export default async function Page({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ new?: string; why?: string }> }) {
   const s = await requireSession();
   const { id } = await params;
   const q = await searchParams;
@@ -48,6 +48,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     <>
       <div className="mb-3 text-sm text-muted"><Link href="/app/studio" className="hover:text-ink">Agreement Studio</Link> / {g.draft.title}</div>
       {q.new === "template" && <div className="mb-4"><Notice tone="info">Drafted from the template with exactly the values you gave.</Notice></div>}
+      {q.new === "template_fallback" && <div className="mb-4"><Notice tone="warn">{fallbackNotice(q.why)}</Notice></div>}
       {q.new === "model" && <div className="mb-4"><Notice tone="info">Drafted from the template and reworded by AI; every figure, party and clause was checked against the template.</Notice></div>}
       <DraftEditor {...props} />
     </>

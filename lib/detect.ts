@@ -9,7 +9,17 @@ type Ch = { c: string; x0: number; x1: number };
 type Line = { page: number; y: number; bottom: number; size: number; chars: Ch[]; text: string; x0: number; x1: number };
 type Seg = { line: Line; text: string; x0: number; x1: number; i0: number; i1: number };
 
-export type DetectOptions = { firmName?: string };
+export type Party = { role: string; name: string };
+export type DetectOptions = {
+  firmName?: string;
+  /**
+   * The agreement's own parties, when the caller knows them (Agreement Studio). With `workspaceNames`, the party whose
+   * name is the workspace's is the firm and the other the client. Ignored unless exactly one of two parties matches.
+   */
+  parties?: Party[];
+  /** The workspace's names (legal name, display name) to find its party among `parties`. */
+  workspaceNames?: string[];
+};
 export type Detection = {
   fields: Field[];
   warnings: string[];
@@ -547,6 +557,50 @@ export function definedTerms(text: string, firmName?: string): { firm: string[];
   return { firm: [...firm], client: [...client] };
 }
 
+/** Name key for comparing a party with the workspace: case, punctuation and spacing ignored, nothing else. */
+const nameKey = (s: string) =>
+  s
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+/**
+ * The firm's and the client's party among exactly two known parties: the one whose name is one of the workspace's
+ * names is the firm. null when neither or both match (or the names don't tell them apart): the caller then detects
+ * as for any upload, without guessing.
+ */
+export function knownSigners(parties: Party[] | undefined, workspaceNames: (string | undefined | null)[]): { firm: Party; client: Party } | null {
+  if (!parties || parties.length !== 2) return null;
+  const ws = new Set(workspaceNames.map((n) => nameKey(n ?? "")).filter(Boolean));
+  const keys = parties.map((p) => nameKey(p.name));
+  if (!keys[0] || !keys[1] || keys[0] === keys[1] || nameKey(parties[0].role) === nameKey(parties[1].role)) return null;
+  const hits = keys.map((k) => ws.has(k));
+  if (hits[0] === hits[1]) return null;
+  const f = hits[0] ? 0 : 1;
+  return { firm: parties[f], client: parties[1 - f] };
+}
+
+/** partyOf for known parties: only their names and roles count, not the generic firm/client words. */
+function knownPartyOf(s: { firm: Party; client: Party }) {
+  // a name that is only a form word once LLC/Inc are dropped ("Signature LLC" -> "signature") would match the field
+  // labels of every block, so it never counts
+  const FIELD = new Set(["signature", "sign", "signed", "date", "dated", "name", "print", "printed", "title", "by", "email", "initials", "witness"]);
+  const words = (p: Party) => [norm(p.name), norm(p.role)].filter((w) => w.length >= 2 && !FIELD.has(w));
+  const d = { firm: words(s.firm), client: words(s.client) };
+  return (text: string): Role | undefined => {
+    const t = " " + norm(text) + " ";
+    if (!t.trim()) return undefined;
+    const has = (w: string) => t.includes(" " + w + " ");
+    const firmHit = d.firm.some(has);
+    const clientHit = d.client.some(has);
+    if (firmHit && !clientHit) return "firm";
+    if (clientHit && !firmHit) return "client";
+    return undefined;
+  };
+}
+
 function partyOf(text: string, d: { firm: string[]; client: string[] }): Role | undefined {
   const t = " " + norm(text) + " ";
   if (!t.trim()) return undefined;
@@ -620,8 +674,29 @@ function assignRoles(raws: Raw[], allLines: Line[][], d: { firm: string[]; clien
     }
     if (best) best.members.push(r);
   }
+  // Known parties (Agreement Studio): a block whose label or heading names exactly one of them belongs to it.
+  // Blocks that name neither go through the rules below, as for any upload.
+  const known = knownSigners(opts.parties, [opts.firmName, ...(opts.workspaceNames ?? [])]);
+  if (known) {
+    const who = knownPartyOf(known);
+    const set: typeof blocks = [];
+    for (const b of blocks) {
+      const lp = b.members.map((m) => who(m.label)).find(Boolean);
+      const h = lp ? undefined : headingParty(b.anchor, allLines[b.anchor.page], who, sigs.filter((k) => k !== b.anchor && k.page === b.anchor.page).map((k) => k.lineY));
+      const party = lp ?? h?.party;
+      if (!party) continue;
+      b.party = party;
+      b.why = `${lp ? "label" : `under "${h!.text}"`}: the ${party === "firm" ? "workspace's" : "other"} party (${(party === "firm" ? known.firm : known.client).role})`;
+      b.conf = lp ? 0.9 : h!.conf;
+      set.push(b);
+    }
+    // two or more blocks all given to the same party means the names didn't tell them apart: drop this pass and
+    // detect as for any upload rather than have one party sign on the other's line
+    if (set.length >= 2 && set.every((b) => b.party === set[0].party)) for (const b of set) { b.party = undefined; b.why = ""; b.conf = 0.5; }
+  }
   // party for each block: label party, else heading above in same column
   for (const b of blocks) {
+    if (b.party) continue;
     const lp = b.members.map((m) => m.labelParty).find(Boolean);
     if (lp) {
       b.party = lp;
@@ -629,7 +704,7 @@ function assignRoles(raws: Raw[], allLines: Line[][], d: { firm: string[]; clien
       b.conf = 0.9;
       continue;
     }
-    const h = headingParty(b.anchor, allLines[b.anchor.page], d, sigs.filter((k) => k !== b.anchor && k.page === b.anchor.page).map((k) => k.lineY));
+    const h = headingParty(b.anchor, allLines[b.anchor.page], (t) => partyOf(t, d), sigs.filter((k) => k !== b.anchor && k.page === b.anchor.page).map((k) => k.lineY));
     if (h) {
       b.party = h.party;
       b.why = `under "${h.text}"`;
@@ -762,11 +837,10 @@ function assignRoles(raws: Raw[], allLines: Line[][], d: { firm: string[]; clien
     warnings.push("No signature line for your firm was found. Your acceptance will still be recorded on the certificate.");
   }
   if (out.some((f) => (f.confidence ?? 1) < 0.5)) warnings.push("Some fields are low-confidence. Check the highlighted ones.");
-  void opts;
   return out;
 }
 
-function headingParty(anchor: Raw, lines: Line[], d: { firm: string[]; client: string[] }, fieldLineYs: number[]) {
+function headingParty(anchor: Raw, lines: Line[], who: (text: string) => Role | undefined, fieldLineYs: number[]) {
   // Walk up from the block, in its column, to the nearest line naming a party. Skip the block's own
   // rows, stop at body text. If only the neighbouring column's heading names a party, this column is
   // the other party.
@@ -784,11 +858,11 @@ function headingParty(anchor: Raw, lines: Line[], d: { firm: string[]; client: s
     for (const sg of mine) {
       const t = cleanLabel(sg.text);
       if (!t || t.length > 90) continue;
-      const p = partyOf(t, d);
+      const p = who(t);
       if (p) return { party: p, text: t, conf: 0.85 };
     }
     if (mine.length && all.length >= 2) {
-      const others = all.filter((sg) => !mine.includes(sg)).map((sg) => partyOf(cleanLabel(sg.text), d)).filter(Boolean) as Role[];
+      const others = all.filter((sg) => !mine.includes(sg)).map((sg) => who(cleanLabel(sg.text))).filter(Boolean) as Role[];
       if (others.length === 1 && others[0] !== "prefill" && cleanLabel(mine[0].text).length < 60) {
         return { party: (others[0] === "client" ? "firm" : "client") as Role, text: `${cleanLabel(mine[0].text)}, next to the ${others[0]}'s column`, conf: 0.7 };
       }

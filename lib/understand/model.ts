@@ -18,9 +18,17 @@ export type ModelRequest = {
   schema: Record<string, unknown>;
   maxOutputTokens: number;
   signal: AbortSignal;
+  /**
+   * Optional stable prefix sent before `document` (the agreement), which a provider may cache across requests
+   * about the same version. Untrusted data, like `document`.
+   */
+  context?: string;
   /** called by the provider with token counts, for cost tracking */
-  onUsage?: (u: { inputTokens: number; outputTokens: number }) => void;
+  onUsage?: (u: Usage) => void;
 };
+
+/** Token counts of one call. Cache counts are separate from (not included in) inputTokens, as the API reports them. */
+export type Usage = { inputTokens: number; outputTokens: number; cacheWriteTokens?: number; cacheReadTokens?: number; /** the model that answered (after a server-side fallback, not the one asked for) */ model?: string };
 
 /** A model provider returns the parsed JSON answer; anything else is the orchestrator's job. */
 export interface ModelProvider {

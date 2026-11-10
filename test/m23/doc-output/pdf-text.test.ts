@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PDFDocument, StandardFonts } from "pdf-lib";
-import { pdfCanPrint, pdfTextProblem, renderDocument, unprintableChars } from "@/lib/m23/doc-output";
+import { PDF_EQUIVALENTS, pdfCanPrint, pdfEquivalents, pdfTextProblem, renderDocument, unprintableChars } from "@/lib/m23/doc-output";
 import type { DraftDocument } from "@/lib/m23/doc-output";
 import { extractPdf } from "@/lib/pdf/extract";
 
@@ -48,5 +48,51 @@ describe("pdfTextProblem", () => {
     expect(pdfTextProblem(d)).toBeNull();
     const ex = await extractPdf((await renderDocument(d, "pdf")).bytes);
     expect(ex.pages.flatMap((p) => p.items.map((i) => i.str)).join(" ")).not.toContain("?");
+  });
+});
+
+describe("typographic characters outside WinAnsi", () => {
+  const typographic = "Smith‐Jones ‑ 1‒2 ― −5% ‛x’ ‟y” 5′ 6″ a b c d e f 10 000 1 000 ﬁnal ﬂow ﬀ ﬃ ﬄ ﬆ";
+
+  it("each equivalent prints, reads the same, and replaces only something the font can't print", () => {
+    for (const [ch, eq] of Object.entries(PDF_EQUIVALENTS)) {
+      expect(pdfCanPrint(ch), ch).toBe(false);
+      expect([...eq].every(pdfCanPrint), ch).toBe(true);
+      // letters only as a ligature spelled out (its compatibility decomposition); otherwise punctuation or a space
+      if (/\p{L}/u.test(ch)) expect(ch.normalize("NFKC")).toBe(eq);
+      else expect(ch, `U+${ch.codePointAt(0)!.toString(16)}`).toMatch(/^[\p{Pd}\p{Pi}\p{Pf}\p{Po}\p{Zs}−]$/u);
+    }
+  });
+
+  it("are not refused, and leave every other character as it is", () => {
+    expect(unprintableChars(typographic)).toEqual([]);
+    expect(pdfTextProblem(doc({ clauses: [{ id: "x", heading: "Smith‑Jones ― terms", text: typographic, locked: true }] }))).toBeNull();
+    expect(pdfEquivalents("Müller €1 000 — “net” … Ł")).toBe("Müller €1 000 — “net” … Ł");
+  });
+
+  it("print as their WinAnsi equivalents, with names and amounts exactly as written", async () => {
+    const d = doc({
+      parties: [{ role: "Licensor", name: "Zoë Müller-Société" }, { role: "Licensee", name: "Sam O’Fictional" }],
+      clauses: [
+        { id: "fees", number: "1", heading: "Fees ― ‟net”", text: "The fee is €10 000, a −5% discount, ﬁnal ‑ payable 5′ after signing." },
+        { id: "signatures", number: "2", heading: "Signatures", locked: true, text: "Signed by both parties." },
+      ],
+    });
+    expect(pdfTextProblem(d)).toBeNull();
+    const ex = await extractPdf((await renderDocument(d, "pdf")).bytes);
+    const all = ex.pages.flatMap((p) => p.items.map((i) => i.str)).join(" ").replace(/ /g, " ");
+    expect(all).not.toContain("?");
+    expect(all).toContain("Zoë Müller-Société");
+    expect(all).toContain("Sam O’Fictional");
+    expect(all).toContain("Fees — “net”");
+    expect(all).toContain("The fee is €10 000, a -5% discount, final - payable 5' after signing.");
+  });
+
+  it("anything else is still refused, naming each character, even next to an equivalent", () => {
+    const at = (text: string) => pdfTextProblem(doc({ clauses: [{ id: "x", heading: "Terms", text, locked: true }] }));
+    expect(at("Dvořák ‑ ő")).toBe("clause 1 text: cannot print ř (U+0159), ő (U+0151)");
+    expect(at("Paid in ₹ or ¥ — ok \u{1F600}")).toBe("clause 1 text: cannot print ₹ (U+20B9), \u{1F600} (U+1F600)");
+    expect(at("契約  ")).toBe("clause 1 text: cannot print 契 (U+5951), 約 (U+7D04)");
+    expect(at("Ω Т ع ≥ ʻ")).toBe("clause 1 text: cannot print Ω (U+03A9), Т (U+0422), ع (U+0639), ≥ (U+2265), ʻ (U+02BB)");
   });
 });
