@@ -27,10 +27,22 @@ CREATE INDEX IF NOT EXISTS intake_results_ws ON intake_results (workspace_id, cr
 
 const g = globalThis as unknown as { __intakeDb?: DatabaseSync };
 
-/** Create the intake table if missing, once per connection (idempotent; no pragma). */
+/** Columns added after the table first shipped: a table created by an earlier build gets them (ALTER TABLE ADD COLUMN). */
+const ADDED_COLUMNS: [string, string][] = [
+  ["confirmed_by", "TEXT REFERENCES users(id)"],
+  ["confirmed_at", "TEXT"],
+  ["draft_id", "TEXT"],
+];
+
+/**
+ * Create the intake table if missing and add any missing column, once per connection. Idempotent; the only pragma
+ * is the read-only PRAGMA table_info, and PRAGMA user_version is never read or written.
+ */
 export function ensureIntakeSchema(conn: DatabaseSync = db()): void {
   if (g.__intakeDb === conn) return;
   conn.exec(INTAKE_DDL);
+  const have = new Set((conn.prepare("PRAGMA table_info(intake_results)").all() as { name: string }[]).map((c) => c.name));
+  for (const [name, type] of ADDED_COLUMNS) if (!have.has(name)) conn.exec(`ALTER TABLE intake_results ADD COLUMN ${name} ${type}`);
   g.__intakeDb = conn;
 }
 

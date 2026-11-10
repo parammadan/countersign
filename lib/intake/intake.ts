@@ -514,6 +514,7 @@ const LAW_PLACE = /^(?:[Tt]he\s+)?(England\s+and\s+Wales|(?:[Ss]tate|[Cc]ommonwe
 const LAW_STOP = new Set(["This", "The", "Each", "Any", "Such", "Both", "Either", "Applicable"]);
 function findLaw(p: Prepared): Sourced<string>[] {
   const out: Sourced<string>[] = [];
+  const seen = new Set<string>();
   for (const l of p.lines)
     for (const re of LAW_KEY) {
       const k = re.exec(l.text);
@@ -524,7 +525,10 @@ function findLaw(p: Prepared): Sourced<string>[] {
       // the place may continue past what we matched ("New South Wales", "England & Wales"): never keep a truncated name
       if (/^\s*(?:&|of\b|[A-Z])/.test(l.text.slice(k.index + k[0].length + m[0].length))) continue;
       if (LAW_STOP.has(value.split(" ")[0])) continue;
-      if (!out.some((o) => o.value.toLowerCase() === value.toLowerCase())) out.push({ value, source: { page: l.page, quote: quoteOf(l.text) } });
+      if (!seen.has(value.toLowerCase())) {
+        seen.add(value.toLowerCase());
+        out.push({ value, source: { page: l.page, quote: quoteOf(l.text) } });
+      }
       break;
     }
   return out;
