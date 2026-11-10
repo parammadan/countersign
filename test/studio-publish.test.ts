@@ -138,6 +138,19 @@ describe("export refuses unprintable PDF text with a message", () => {
   });
 });
 
+describe("publishing an NDA assigns its signature blocks from the draft's parties", () => {
+  it("the workspace's party is the countersigner, the other party the client; no signature page is added", async () => {
+    const d = await approvedDraft();
+    const r = await svc.publishDraft(S.owner, d.id, d.version);
+    if (!r.ok) throw new Error(r.message);
+    const v = db.one<{ fields_json: string; detection_json: string }>("SELECT fields_json, detection_json FROM template_versions WHERE id = ? AND workspace_id = 'ws_a'", r.agreementVersionId)!;
+    const sigs = (JSON.parse(v.fields_json) as { type: string; role: string }[]).filter((f) => f.type === "signature").map((f) => f.role);
+    // Northwind (the workspace) is the Disclosing Party, printed first
+    expect(sigs).toEqual(["firm", "client"]);
+    expect(JSON.parse(v.detection_json).addedSignaturePage).toBe(false);
+  });
+});
+
 describe("review R1: cancelling a running publish can't orphan an agreement", () => {
   it("a second admin can't cancel a fresh claim, so the second publish never ingests", async () => {
     const d = await approvedDraft();
