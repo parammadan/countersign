@@ -231,3 +231,21 @@ describe("server actions: the session decides, forged form fields do not", () =>
     expect(await redirected(() => act.submitClauseAction(fd({ id: "nope-nope", n: "x" })))).toMatch(/error=not_found/);
   });
 });
+
+describe("Agreement Studio insert: approved, current text only, rendered with the member's values", () => {
+  it("renders an approved clause, refuses drafts, other workspaces, unknown and prototype keys", async () => {
+    const id = newClause(staffA, "Studio insert");
+    session.current = staffA;
+    expect(await act.renderApprovedClauseAction(id, 1, { "client.name": "Example Client LLC", fee: "1500", days: "30" })).toMatchObject({ ok: false });
+    svc.submitVersion(staffA, id, 1);
+    svc.approveVersion(adminA, id, 1);
+    expect(await act.renderApprovedClauseAction(id, 1, { "client.name": "Example Client LLC", fee: "1500", days: "30" })).toEqual({
+      ok: true, title: "Studio insert", text: "Example Client LLC shall pay $1,500.00 within 30 days of the invoice date.",
+    });
+    expect(await act.renderApprovedClauseAction(id, 1, JSON.parse('{"client.name":"A","fee":"1","days":"2","__proto__":"x"}'))).toMatchObject({ ok: false });
+    expect(await act.renderApprovedClauseAction(id, 1, { "client.name": "<b>x</b>", fee: "1", days: "2" })).toMatchObject({ ok: false });
+    session.current = adminB;
+    expect(await act.renderApprovedClauseAction(id, 1, { "client.name": "A", fee: "1", days: "2" })).toMatchObject({ ok: false, message: expect.stringMatching(/No clause/) });
+    expect(ok<{ clause: { id: string } }[]>(svc.approvedClauses(staffA)).map((x) => x.clause.id)).toContain(id);
+  });
+});

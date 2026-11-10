@@ -7,6 +7,7 @@ import { authorizeDraft } from "@/lib/drafts/roles";
 import { claimIsStale } from "@/lib/drafts/store";
 import { Notice } from "@/components/ui";
 import { DraftEditor, type EditorProps } from "@/components/studio/DraftEditor";
+import { approvedClauses } from "@/lib/clauses/app/service";
 
 export const metadata = { title: "Draft" };
 
@@ -39,6 +40,11 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     },
     versions: h.versions.map((v) => ({ ...v, author: who(v.author) })),
     log: h.log.map((l) => ({ ...l, actor: who(l.actor) })),
+    // approved, current Clause Library clauses this member can read (the server renders and re-checks on use)
+    library: (() => {
+      const r = approvedClauses(s);
+      return r.ok ? r.value.map(({ clause, version }) => ({ id: clause.id, version: version.version, title: clause.title, placeholders: version.placeholders })) : [];
+    })(),
   };
   return (
     <>

@@ -87,3 +87,23 @@ export async function retireClauseAction(fd: FormData) {
   revalidatePath(LIST);
   back(clausePath(id), r, "retired");
 }
+
+/**
+ * Agreement Studio's "insert from the library": renders the APPROVED, current version of a clause with the member's
+ * values (lib/clauses useInDraft, so draft, in-review, retired and superseded text is refused). Returns the text; the
+ * Studio then adds it through its own add-clause edit, which validates and versions it like any other edit.
+ */
+export async function renderApprovedClauseAction(clauseId: string, version: number, values: Record<string, string>) {
+  const s = await requireSession();
+  const id = typeof clauseId === "string" ? clauseId.slice(0, 64) : "";
+  const n = typeof version === "number" && Number.isSafeInteger(version) ? version : -1;
+  // fromEntries makes every key an own property ("__proto__" included), which the library refuses as unknown
+  const params: Record<string, string> = Object.fromEntries(
+    Object.entries(values && typeof values === "object" ? values : {}).slice(0, 40)
+      .filter(([, v]) => typeof v === "string").map(([k, v]) => [k.slice(0, 200), (v as string).slice(0, 2_000)]),
+  );
+  const r = svc.useApproved(s, id, n, params);
+  if (!r.ok) return { ok: false as const, message: r.message };
+  const c = svc.getClause(s, id);
+  return { ok: true as const, text: r.value, title: c.ok && c.value ? c.value.title : "" };
+}
