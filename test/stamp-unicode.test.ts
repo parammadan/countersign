@@ -309,7 +309,7 @@ describe("refused where it is entered", () => {
 
   it("an API key whose name the certificate can't print is refused before it creates a file", async () => {
     const { sha256 } = await import("../lib/util");
-    const key = "cs_live_unprintable_name_key_1";
+    const key = "cs_live_" + "u".repeat(24); // a test key (built, so it can't look like a real one)
     db.run("INSERT INTO api_keys (id, workspace_id, name, prefix, key_hash, created_at) VALUES (?,?,?,?,?,?)", "key_bad", admin.workspaceId, "CRM Łowicz", key.slice(0, 12), sha256(key), new Date().toISOString());
     const { POST } = await import("../app/api/v1/files/route");
     const before = db.one<{ n: number }>("SELECT COUNT(*) n FROM files")!.n;
