@@ -60,6 +60,10 @@ describe("two-pass answers: booking and recording both calls", () => {
       "INSERT INTO workspaces (id, name, legal_name, sender_name, countersigner_name, countersigner_email, inbound_token, created_at) VALUES (?,?,?,?,?,?,?,?)",
       "ws_v", "Firm V", "Firm V LLC", "Firm V", "Avery Tester", "avery-v@example.com", "inb_v", new Date().toISOString(),
     );
+    // a confirmed owner: model answers are only for verified workspaces (test/qa-outbox-gate.test.ts)
+    const t = new Date().toISOString();
+    db.run("INSERT INTO users (id, email, name, password_hash, created_at, email_verified_at) VALUES (?,?,?,?,?,?)", "u_owner_v", "owner-v@example.com", "Test Owner", "x", t, t);
+    db.run("INSERT INTO members (workspace_id, user_id, role, created_at) VALUES (?,?,?,?)", "ws_v", "u_owner_v", "owner", t);
     vid = (await T.ingestAgreement(files.getWorkspace("ws_v"), { data: pdfBytes, filename: "engagement.pdf" }, { actor: "a@example.com" })).version.id;
   });
 

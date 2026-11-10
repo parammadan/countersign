@@ -25,6 +25,10 @@ describe("questions about an agreement", () => {
       "INSERT INTO workspaces (id, name, legal_name, sender_name, countersigner_name, countersigner_email, inbound_token, created_at) VALUES (?,?,?,?,?,?,?,?)",
       id, `Firm ${id}`, `Firm ${id} LLC`, `Firm ${id}`, "Avery Tester", `avery-${id}@example.com`, `inb_${id}`, new Date().toISOString(),
     );
+    // a confirmed owner: model answers are only for verified workspaces (test/qa-outbox-gate.test.ts)
+    const t = new Date().toISOString();
+    db.run("INSERT INTO users (id, email, name, password_hash, created_at, email_verified_at) VALUES (?,?,?,?,?,?)", `u_owner_${id}`, `owner-${id}@example.com`, "Test Owner", "x", t, t);
+    db.run("INSERT INTO members (workspace_id, user_id, role, created_at) VALUES (?,?,?,?)", id, `u_owner_${id}`, "owner", t);
   }
 
   beforeAll(async () => {

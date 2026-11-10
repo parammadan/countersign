@@ -8,11 +8,12 @@ import { extractPdf } from "../pdf/extract";
 import { AppError } from "../files";
 import { audit } from "../audit";
 import { limited } from "../ratelimit";
+import { verificationRequired, workspaceVerified } from "../emailverify";
 import { id, now, sha256 } from "../util";
 import { pageLines } from "../understand/text";
 import { latestAnalysis, MAX_PAGES } from "../understand/store";
 import { AnalysisError, type ModelProvider, type Usage } from "../understand/model";
-import { configuredProvider, configuredVerifier } from "../ai/anthropic";
+import { configuredProvider, configuredVerifier, TEST_KEY } from "../ai/anthropic";
 import { costMicroUsd, worstCaseMicroUsd } from "../ai/pricing";
 import { answerFromPassages, answerWithModel, cleanQuestion, modelContext, QA_LIMITS, QaModelError, requestTokens, tokensAtMost, type QaResult, type Turn } from "./answer";
 import type { PageLines } from "../understand/text";
@@ -32,6 +33,23 @@ export const aiWorkspaceDailyBudgetUsd = (env: Record<string, string | undefined
   const v = Number(env.AI_WORKSPACE_DAILY_BUDGET_USD);
   return Number.isFinite(v) && v >= 0 ? v : 3;
 };
+/**
+ * Spend on AI answers per 24 hours (USD) shared by all workspaces created in the last 7 days. Verifying an email
+ * proves a mailbox, not a person: one inbox can verify many "+alias" sign-ups, so new workspaces together get a
+ * smaller pool and can't use up the global budget that established customers rely on.
+ */
+export const aiNewWorkspaceDailyBudgetUsd = (env: Record<string, string | undefined> = process.env) => {
+  const v = Number(env.AI_NEW_WORKSPACE_DAILY_BUDGET_USD);
+  return Number.isFinite(v) && v >= 0 ? v : 2;
+};
+export const NEW_WORKSPACE_DAYS = 7;
+/**
+ * Whether AI answers need a workspace whose owner confirmed their email. Always, whatever the email mode: with no
+ * email provider (outbox) there is nothing to gate for mail, but model answers still cost money. Only the browser
+ * tests, which sign up without a mailbox, turn it off, and only with the test key: a real key is never ungated.
+ */
+export const aiNeedsVerifiedWorkspace = (env: Record<string, string | undefined> = process.env) =>
+  !(env.AI_ALLOW_UNVERIFIED_FOR_TESTS === "1" && env.ANTHROPIC_API_KEY === TEST_KEY);
 const COMPLETED = "('passages', 'model', 'model_failed')";
 
 export type QaEntry = { id: string; threadId: string; question: string; result: QaResult; askedBy: string; createdAt: string };
@@ -85,6 +103,17 @@ export async function askQuestion(
   const useModel = tx(() => {
     const since = new Date(Date.now() - 86400_000).toISOString();
     let model = !!provider;
+    // a sign-up gets a session straight away, so AI spend is only for workspaces whose owner confirmed their email
+    // (the rule invites and outbound mail use); otherwise throwaway workspaces could use up everyone's budget
+    if (model && aiNeedsVerifiedWorkspace() && !workspaceVerified(wsId)) {
+      model = false;
+      // in outbox mode no confirmation email is sent, so the owner has no way to confirm here
+      notes.push(
+        verificationRequired()
+          ? "Confirm your email address to get AI answers. Until the workspace owner does, these are the most relevant passages instead."
+          : "AI answers need a confirmed email address, and this server can't send confirmation emails yet, so these are the most relevant passages instead.",
+      );
+    }
     if (model) {
       const all = one<{ n: number | null }>("SELECT SUM(cost_microusd) n FROM qa_answers WHERE created_at > ?", since)?.n ?? 0;
       const mine = one<{ n: number | null }>("SELECT SUM(cost_microusd) n FROM qa_answers WHERE workspace_id = ? AND created_at > ?", wsId, since)?.n ?? 0;
@@ -94,6 +123,17 @@ export async function askQuestion(
       } else if (mine + reserve > aiWorkspaceDailyBudgetUsd() * 1e6) {
         model = false;
         notes.push("This workspace has reached today's AI spending limit, so these are the most relevant passages instead.");
+      } else {
+        // workspaces created in the last week share one smaller pool (one mailbox can verify many sign-ups)
+        const newSince = new Date(Date.now() - NEW_WORKSPACE_DAYS * 86400_000).toISOString();
+        const isNew = !!one("SELECT 1 FROM workspaces WHERE id = ? AND created_at > ?", wsId, newSince);
+        if (isNew) {
+          const fresh = one<{ n: number | null }>("SELECT SUM(q.cost_microusd) n FROM qa_answers q JOIN workspaces w ON w.id = q.workspace_id WHERE q.created_at > ? AND w.created_at > ?", since, newSince)?.n ?? 0;
+          if (fresh + reserve > aiNewWorkspaceDailyBudgetUsd() * 1e6) {
+            model = false;
+            notes.push("AI answers for new workspaces have reached today's limit, so these are the most relevant passages instead.");
+          }
+        }
       }
     }
     // the daily allowance is taken atomically before any work, so concurrent askers can't overshoot it; a failed
@@ -279,7 +319,12 @@ export function conversations(wsId: string, versionId: string, limit = 20): QaTh
   ).map((r) => ({ id: r.id, firstQuestion: r.first, turns: r.turns, askedBy: r.asked_by, lastAt: r.last_at }));
 }
 
-/** Whether answers come from a model on this server (shown on the page; never the key). */
-export function assistantMode(provider: ModelProvider | null = configuredProvider()) {
-  return provider ? { kind: "model" as const, model: provider.model } : { kind: "passages" as const };
+/**
+ * Whether answers come from a model on this server (shown on the page; never the key). With a workspace, a model
+ * that the AI gate keeps from it (an unconfirmed owner) is "locked", so the page doesn't promise AI answers it won't give.
+ */
+export function assistantMode(provider: ModelProvider | null = configuredProvider(), wsId?: string) {
+  if (!provider) return { kind: "passages" as const };
+  if (wsId && aiNeedsVerifiedWorkspace() && !workspaceVerified(wsId)) return { kind: "locked" as const, model: provider.model, canConfirm: verificationRequired() };
+  return { kind: "model" as const, model: provider.model };
 }

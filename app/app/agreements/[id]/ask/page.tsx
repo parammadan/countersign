@@ -203,7 +203,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     throw e;
   }
   const { template, version } = tv;
-  const mode = assistantMode();
+  const mode = assistantMode(undefined, s.workspaceId);
   const ai = mode.kind === "model";
   const threadId = q.thread && THREAD_ID.test(q.thread) ? q.thread : undefined;
   const turns = threadId ? conversation(s.workspaceId, version.id, threadId) : [];
@@ -219,6 +219,8 @@ export default async function Page({ params, searchParams }: { params: Promise<{
       <p className="mt-1 mb-4 max-w-3xl text-sm text-muted">
         {ai ? (
           <>Claude reads <span className="text-ink-2">{version.source_name}</span> and answers in plain English, quoting the passages it relies on. Before you see an answer, it&apos;s checked twice. AgreementOS checks it against the agreement: quotes must be exact, figures, dates and names must be in it, parties must do what the agreement gives them, and arithmetic is re-done. Then a second, independent Claude check judges every claim against the whole agreement, with quoted evidence. Answers with a claim that isn&apos;t supported are withheld, and the passages are shown instead. Still read the sources; this isn&apos;t legal advice.</>
+        ) : mode.kind === "locked" ? (
+          <>Answers come only from <span className="text-ink-2">{version.source_name}</span> and quote the passages they rely on, with page numbers. {mode.canConfirm ? "AI answers start once the workspace owner confirms their email address; until then you'll see the most relevant passages, quoted as written." : "AI answers need a confirmed email address, and this server can't send confirmation emails yet, so you'll see the most relevant passages, quoted as written."} Not legal advice.</>
         ) : (
           <>Answers come only from <span className="text-ink-2">{version.source_name}</span> and quote the passages they rely on, with page numbers. AI answers are off on this server: you&apos;ll see the most relevant passages, quoted as written. Not legal advice.</>
         )}{" "}
