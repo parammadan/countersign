@@ -1,19 +1,20 @@
 diff --git a/lib/db.ts b/lib/db.ts
-index bfaeedd..c5210b8 100644
+index bfaeedd..1ecbf90 100644
 --- a/lib/db.ts
 +++ b/lib/db.ts
 @@ -1,4 +1,5 @@
  import { DatabaseSync } from "node:sqlite";
-+import { DRAFTS_DDL } from "./drafts/schema";
++import { DRAFTS_DDL_IF_NOT_EXISTS } from "./drafts/schema";
  import fs from "node:fs";
  import path from "node:path";
  import { dataDir } from "./paths";
-@@ -266,6 +267,39 @@ const MIGRATIONS: string[] = [
+@@ -266,6 +267,40 @@ const MIGRATIONS: string[] = [
    CREATE INDEX qa_answers_thread ON qa_answers(workspace_id, thread_id, created_at);
    CREATE INDEX qa_answers_cost ON qa_answers(created_at, cost_microusd);
    `,
-+  // 8: M2.3 drafts (lib/drafts/schema.ts, the same DDL the store and its tests use)
-+  DRAFTS_DDL,
++  // 8: M2.3 drafts (lib/drafts/schema.ts). IF NOT EXISTS: Agreement Studio may already have created these tables at
++  // first use; a plain CREATE TABLE would fail here and take every db() call down.
++  DRAFTS_DDL_IF_NOT_EXISTS,
 +  // 9: M3 knowledge search index (the sandbox's M3_INDEX_DDL, verbatim, so its openIndexOnDatabase schema check
 +  // accepts it). Not user-facing until the M3 evidence checks are validated.
 +  `
@@ -50,10 +51,10 @@ index bfaeedd..c5210b8 100644
  function open(): DatabaseSync {
 diff --git a/lib/drafts/schema.ts b/lib/drafts/schema.ts
 new file mode 100644
-index 0000000..fd82f01
+index 0000000..9444bbf
 --- /dev/null
 +++ b/lib/drafts/schema.ts
-@@ -0,0 +1,62 @@
+@@ -0,0 +1,71 @@
 +// M2.3 drafts schema. The proposed migration 8 in lib/db.ts (owner-reserved) is exactly this string, so the store
 +// and its tests run against the same DDL the app will. Every table carries workspace_id; every query filters on the
 +// session's workspace. UNIQUE(draft_id, number) is the concurrency control for two editors committing at once.
@@ -63,7 +64,7 @@ index 0000000..fd82f01
 +    workspace_id TEXT NOT NULL REFERENCES workspaces(id),
 +    kind TEXT NOT NULL,
 +    title TEXT NOT NULL,
-+    status TEXT NOT NULL CHECK (status IN ('draft', 'pending_approval', 'approved', 'published')),
++    status TEXT NOT NULL CHECK (status IN ('draft', 'pending_approval', 'approved', 'publishing', 'published')),
 +    last_editor TEXT NOT NULL REFERENCES users(id),
 +    approved_by TEXT REFERENCES users(id),
 +    created_by TEXT NOT NULL REFERENCES users(id),
@@ -116,3 +117,12 @@ index 0000000..fd82f01
 +  );
 +  CREATE INDEX draft_approvals_ws ON draft_approvals(workspace_id, draft_id, created_at);
 +`;
++
++/**
++ * The same DDL, idempotent, for creating the tables at first use until migration 8 lands in lib/db.ts (owner-reserved).
++ * It never reads or writes PRAGMA user_version, so lib/db.ts's migration bookkeeping is untouched.
++ */
++export const DRAFTS_DDL_IF_NOT_EXISTS = DRAFTS_DDL
++  .replace(/CREATE TABLE /g, "CREATE TABLE IF NOT EXISTS ")
++  .replace(/CREATE UNIQUE INDEX /g, "CREATE UNIQUE INDEX IF NOT EXISTS ")
++  .replace(/CREATE INDEX /g, "CREATE INDEX IF NOT EXISTS ");
