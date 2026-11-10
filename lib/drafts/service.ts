@@ -9,7 +9,7 @@
 // - Approve and publish re-run the content checks on the exact stored version: party drift against version 1, the
 //   renderer's validateDraft, and a successful PDF render.
 import { db } from "../db";
-import { getWorkspace } from "../files";
+import { AppError, getWorkspace } from "../files";
 import { ingestAgreement } from "../templates";
 import { DRAFTS_DDL_IF_NOT_EXISTS } from "./schema";
 import { draftStore, type ContentCheck } from "./store";
@@ -98,25 +98,64 @@ export async function suggestFromDescription(s: SessionLike, description: string
   return { ok: true, suggestion: cleanSuggestion(raw, text) };
 }
 
-/** Keeps only well-formed values, and only values whose text appears in the description (nothing invented). */
+const MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+const own = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k);
+/** The text as lower-case tokens joined by single spaces, with separators padded so whole-token matching works. */
+const tokens = (x: string) => ` ${x.toLowerCase().normalize("NFKC").replace(/(?<=\d)[,\u00a0'’](?=\d{3}\b)/g, "").replace(/[^\p{L}\p{N}$€£¥.%-]+/gu, " ").replace(/(?<!\d)\.|\.(?!\d)/g, " ").replace(/\s+/g, " ").trim()} `;
+/** Every ISO date written in the description, as written ("2027-01-15") or as "January 15, 2027" / "15 January 2027". */
+function datesIn(description: string): Set<string> {
+  const out = new Set<string>();
+  const d = description.toLowerCase();
+  for (const m of d.matchAll(/\b(\d{4})-(\d{2})-(\d{2})\b/g)) out.add(`${m[1]}-${m[2]}-${m[3]}`);
+  const mon = MONTHS.join("|");
+  const add = (y: string, mo: string, day: string) => {
+    const n = MONTHS.indexOf(mo) + 1;
+    const dd = Number(day);
+    if (n > 0 && dd >= 1 && dd <= 31) out.add(`${y}-${String(n).padStart(2, "0")}-${String(dd).padStart(2, "0")}`);
+  };
+  for (const m of d.matchAll(new RegExp(`\\b(${mon})\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})\\b`, "g"))) add(m[3], m[1], m[2]);
+  for (const m of d.matchAll(new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(${mon}),?\\s+(\\d{4})\\b`, "g"))) add(m[3], m[2], m[1]);
+  return out;
+}
+
+/** The name appears in the description as a complete name: not with another capitalised word right before or after it. */
+function wholeName(description: string, name: string): boolean {
+  const esc = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+  for (const m of description.matchAll(new RegExp(`(?<![\\p{L}\\p{N}])${esc}(?![\\p{L}\\p{N}])`, "giu"))) {
+    const before = description.slice(0, m.index).match(/(\p{Lu}[\p{L}&.'-]*)\s*$/u);
+    const after = description.slice(m.index! + m[0].length).match(/^\s*(\p{Lu}[\p{L}&.'-]*)/u);
+    if (!before && !after) return true;
+  }
+  return false;
+}
+
+/**
+ * Keeps only well-formed values the description actually states: whole-token matches (so "3" is not taken from "30"
+ * and "$5" not from "$50,000"), party names of at least 3 characters, dates only if the description writes that date,
+ * choice values only from the listed choices, and only real term keys (no inherited object keys).
+ */
 export function cleanSuggestion(raw: unknown, description: string): Suggestion {
-  const r = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
-  const norm = (x: string) => x.toLowerCase().replace(/[\s,]+/g, " ").trim();
-  const desc = norm(description);
-  const said = (v: string) => v.length > 0 && v.length <= 200 && desc.includes(norm(v));
+  const r = (typeof raw === "object" && raw !== null && !Array.isArray(raw) ? raw : {}) as Record<string, unknown>;
+  const desc = tokens(description);
+  const dates = datesIn(description);
+  const said = (v: string, min = 1) => {
+    const t = tokens(v).trim();
+    return t.length >= min && v.length <= 200 && desc.includes(` ${t} `);
+  };
   const kind = typeof r.kind === "string" && (KINDS as readonly string[]).includes(r.kind) ? (r.kind as Kind) : null;
   const parties = (Array.isArray(r.parties) ? r.parties : [])
     .filter((p): p is { role: string; name: string } => typeof p?.role === "string" && typeof p?.name === "string")
-    .filter((p) => said(p.name))
+    .filter((p) => p.name.trim().length >= 3 && said(p.name, 3) && wholeName(description, p.name.trim()))
     .slice(0, 2)
-    .map((p) => ({ role: p.role.slice(0, 40), name: p.name.slice(0, 200) }));
+    .map((p) => ({ role: p.role.slice(0, 40), name: p.name.trim().slice(0, 200) }));
   const terms: Partial<Record<TermKey, string>> = {};
   for (const t of Array.isArray(r.terms) ? r.terms : []) {
-    if (typeof t?.key !== "string" || typeof t?.value !== "string" || !(t.key in TERM_TYPES)) continue;
+    if (typeof t?.key !== "string" || typeof t?.value !== "string" || !own(TERM_TYPES, t.key)) continue;
     const key = t.key as TermKey;
-    const choices = CHOICES[key];
-    // a choice must be a listed key; anything else must appear in the description (digits included)
-    if (choices ? t.value in choices : said(t.value) || (TERM_TYPES[key] === "date" && /^\d{4}-\d{2}-\d{2}$/.test(t.value))) terms[key] = t.value.slice(0, 200);
+    const choices = own(CHOICES, key) ? CHOICES[key] : undefined;
+    const type = TERM_TYPES[key];
+    const ok = choices ? own(choices, t.value) : type === "date" ? dates.has(t.value) : said(t.value);
+    if (ok) terms[key] = t.value.slice(0, 200);
   }
   const unclear = (Array.isArray(r.unclear) ? r.unclear : []).filter((u): u is string => typeof u === "string").slice(0, 10).map((u) => u.slice(0, 200));
   return { kind, parties, terms, unclear };
@@ -124,8 +163,18 @@ export function cleanSuggestion(raw: unknown, description: string): Suggestion {
 
 // ---------- generate, edit, approve, publish, export ----------
 
+const recentGenerate = new Map<string, number[]>();
+const GENERATE_WITH_AI_PER_HOUR = 30;
+
 export async function createDraft(s: SessionLike, input: GenerateInput) {
-  const provider = generationProvider() ?? undefined;
+  let provider = generationProvider() ?? undefined;
+  if (provider) {
+    // the model step is optional: over the hourly allowance, generate from the template alone
+    const now = Date.now();
+    const hits = (recentGenerate.get(s.workspaceId) ?? []).filter((t) => now - t < 3_600_000);
+    if (hits.length >= GENERATE_WITH_AI_PER_HOUR) provider = undefined;
+    else recentGenerate.set(s.workspaceId, [...hits, now]);
+  }
   const r = await generateAgreement(input, { provider });
   if (r.status !== "ok") return { ok: false as const, status: r.status, issues: r.status === "needs_input" ? [...r.missing.map((m) => `missing: ${m}`), ...r.issues] : r.issues };
   const c = store().create(principal(s), { kind: input.kind, title: r.draft.title, doc: r.draft, origin: "generated" });
@@ -214,6 +263,7 @@ async function checkedGate(s: SessionLike, id: string, version: number): Promise
   return { ok: true, check: (doc, ctx) => (ctx.versionNumber === version && JSON.stringify(doc) === checkedJson ? { ok: true } : { ok: false, reason: "The draft changed during the check." }) };
 }
 
+export const abortPublish = (s: SessionLike, id: string) => store().abortPublish(principal(s), id);
 export const submitDraft = (s: SessionLike, id: string, version: number) => store().submit(principal(s), id, version);
 export const requestChanges = (s: SessionLike, id: string) => store().requestChanges(principal(s), id);
 
@@ -223,25 +273,48 @@ export async function approveDraft(s: SessionLike, id: string, version: number) 
   return store().approve(principal(s), id, version, g.check);
 }
 
-/** Publish: render the approved version to PDF, add it to the agreement library as a new agreement, mark published. */
+/**
+ * Publish: claim the approved version first (approved -> publishing, so a double click, a second admin or an edit
+ * during the render can't produce a second agreement), then render it, add it to the agreement library, and finish.
+ * If adding to the library fails, the claim is undone and nothing is left behind; the user sees the reason.
+ */
 export async function publishDraft(s: SessionLike, id: string, version: number) {
   const draft = getDraft(s, id);
   if (!draft.ok) return draft;
-  if (draft.draft.status !== "approved") return { ok: false as const, code: "invalid_state", message: "Only an approved draft can be published." };
-  // authorization for publish is checked by the store; check it before the irreversible ingest as well
   if (s.role === "staff") return { ok: false as const, code: "forbidden", message: "Only an owner or admin can publish." };
   const g = await checkedGate(s, id, version);
   if (!g.ok) return { ok: false as const, code: "check_failed", message: g.message };
-  const pdf = await renderDocument(draft.version.doc as DraftDocument, "pdf");
-  const ingested = await ingestAgreement(getWorkspace(s.workspaceId), { data: Buffer.from(pdf.bytes), filename: pdf.filename }, { name: draft.draft.title, actor: s.userEmail });
-  const p = store().publish(principal(s), id, version, g.check, ingested.version.id);
-  if (!p.ok) return p;
-  return { ok: true as const, agreementVersionId: ingested.version.id };
+  const claim = store().claimPublish(principal(s), id, version, g.check);
+  if (!claim.ok) return claim;
+  let agreementVersionId: string;
+  try {
+    const pdf = await renderDocument(draft.version.doc as DraftDocument, "pdf");
+    const ingested = await ingestAgreement(getWorkspace(s.workspaceId), { data: Buffer.from(pdf.bytes), filename: pdf.filename }, { name: draft.draft.title, actor: s.userEmail });
+    agreementVersionId = ingested.version.id;
+  } catch (e) {
+    store().abortPublish(principal(s), id);
+    return { ok: false as const, code: "failed", message: e instanceof AppError ? e.message : "The agreement couldn't be added to Agreements. Try again." };
+  }
+  const p = store().publish(principal(s), id, version, g.check, agreementVersionId);
+  if (!p.ok) {
+    // cannot happen while the claim holds; keep the draft retryable and say so
+    store().abortPublish(principal(s), id);
+    return p;
+  }
+  return { ok: true as const, agreementVersionId };
 }
 
 export async function exportDraft(s: SessionLike, id: string, format: "pdf" | "docx") {
   const g = getDraft(s, id);
   if (!g.ok) return g;
-  const r = await renderDocument(g.version.doc as DraftDocument, format);
-  return { ok: true as const, base64: Buffer.from(r.bytes).toString("base64"), contentType: r.contentType, filename: r.filename };
+  if (format === "pdf") {
+    const unprintable = pdfTextProblem(g.version.doc as DraftDocument);
+    if (unprintable) return { ok: false as const, code: "check_failed", message: `The PDF can't print this text yet: ${unprintable}. Export DOCX instead, or change the text.` };
+  }
+  try {
+    const r = await renderDocument(g.version.doc as DraftDocument, format);
+    return { ok: true as const, base64: Buffer.from(r.bytes).toString("base64"), contentType: r.contentType, filename: r.filename };
+  } catch (e) {
+    return { ok: false as const, code: "failed", message: `The ${format.toUpperCase()} couldn't be produced: ${(e as Error).message}` };
+  }
 }

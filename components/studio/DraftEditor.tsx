@@ -4,13 +4,13 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Badge, Button, Card, CardHeader, Notice, inputCls, cx } from "@/components/ui";
-import { approveAction, editAction, exportAction, publishAction, requestChangesAction, rollbackAction, submitAction } from "@/app/studio-actions";
+import { abortPublishAction, approveAction, editAction, exportAction, publishAction, requestChangesAction, rollbackAction, submitAction } from "@/app/studio-actions";
 
 type Clause = { id: string; number?: string; heading?: string; text: string; locked?: boolean };
 type Doc = { title: string; parties: { role: string; name: string }[]; clauses: Clause[] };
 export type EditorProps = {
   draftId: string;
-  status: "draft" | "pending_approval" | "approved" | "published";
+  status: "draft" | "pending_approval" | "approved" | "publishing" | "published";
   version: number;
   doc: Doc;
   publishedVersionId: string | null;
@@ -23,6 +23,7 @@ const STATUS: Record<EditorProps["status"], { label: string; tone: "neutral" | "
   draft: { label: "Draft", tone: "neutral" },
   pending_approval: { label: "Waiting for approval", tone: "warn" },
   approved: { label: "Approved", tone: "ok" },
+  publishing: { label: "Publishing", tone: "warn" },
   published: { label: "Published", tone: "ok" },
 };
 
@@ -132,6 +133,12 @@ export function DraftEditor(p: EditorProps) {
                 if (r.ok && "agreementVersionId" in r) router.push(`/app/agreements/${r.agreementVersionId}?fromStudio=1`);
                 return r;
               })}>Publish to Agreements</Button>
+            )}
+            {p.status === "publishing" && p.can.publish && (
+              <>
+                <Notice tone="warn">Publishing was started but didn&apos;t finish. Check Agreements, then cancel it here to publish again.</Notice>
+                <Button className="w-full" variant="secondary" loading={pending} onClick={() => run(() => abortPublishAction(p.draftId), "Publishing cancelled; the draft is approved again.")}>Cancel publishing</Button>
+              </>
             )}
             {p.status === "published" && p.publishedVersionId && (
               <Notice tone="ok">Published. <Link className="underline" href={`/app/agreements/${p.publishedVersionId}`}>Open it in Agreements</Link> to place signature fields and send it for signing.</Notice>

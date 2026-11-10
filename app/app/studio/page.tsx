@@ -6,7 +6,7 @@ import { NewAgreement } from "@/components/studio/NewAgreement";
 
 export const metadata = { title: "Agreement Studio" };
 
-const STATUS = { draft: "Draft", pending_approval: "Waiting for approval", approved: "Approved", published: "Published" } as const;
+const STATUS = { draft: "Draft", pending_approval: "Waiting for approval", approved: "Approved", publishing: "Publishing", published: "Published" } as const;
 
 export default async function Page() {
   const s = await requireSession();

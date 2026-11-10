@@ -84,3 +84,10 @@ export async function exportAction(draftId: string, format: "pdf" | "docx") {
   const s = await requireSession();
   return svc.exportDraft(s, id(draftId), format === "docx" ? "docx" : "pdf");
 }
+
+export async function abortPublishAction(draftId: string) {
+  const s = await requireSession();
+  const r = svc.abortPublish(s, id(draftId));
+  revalidatePath(path(id(draftId)));
+  return r;
+}

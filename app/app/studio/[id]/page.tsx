@@ -20,8 +20,8 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   // show names, not ids: only members of this workspace
   const people = new Map(all<{ id: string; name: string }>("SELECT u.id, u.name FROM users u JOIN members m ON m.user_id = u.id WHERE m.workspace_id = ?", s.workspaceId).map((u) => [u.id, u.id === s.userId ? "you" : u.name]));
   const who = (uid: string) => people.get(uid) ?? "former member";
-  const scope = { workspaceId: g.draft.workspace_id, lastEditor: g.draft.last_editor };
-  const authors = new Set(h.versions.map((v) => v.author));
+  const authors = new Set([g.draft.created_by, ...h.versions.map((v) => v.author)]);
+  const scope = { workspaceId: g.draft.workspace_id, lastEditor: g.draft.last_editor, authors: [...authors] };
   const props: EditorProps = {
     draftId: g.draft.id,
     status: g.draft.status,
@@ -30,7 +30,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     publishedVersionId: g.draft.published_version_id,
     can: {
       edit: authorizeDraft(s, scope, "edit").ok,
-      approve: authorizeDraft(s, scope, "approve", { requireDistinctApprover: false }).ok,
+      approve: authorizeDraft(s, scope, "request_changes").ok, // role only; the author rule is shown separately
       publish: authorizeDraft(s, scope, "publish").ok,
       // the server refuses anyway; this only hides a button that would fail
       isLastEditor: g.draft.last_editor === s.userId || authors.has(s.userId),
