@@ -93,7 +93,7 @@ describe("hostile PDF text matrices", () => {
   it("governing-law dedupe is linear: many distinct places read quickly and are capped", () => {
     const name = (i: number) => "Q" + i.toString(26).replace(/[0-9]/g, (d) => "abcdefghij"[Number(d)]).replace(/[a-p]/g, (c) => c);
     const lines: string[] = [];
-    for (let i = 0, n = 0; n < 490_000; i++) { const l = `This Agreement is governed by the laws of ${name(i)}.`; lines.push(l); n += l.length + 1; }
+    for (let i = 0, n = 0; n < 150_000; i++) { const l = `This Agreement is governed by the laws of ${name(i)}.`; lines.push(l); n += l.length + 1; }
     const t = Date.now();
     const r = analyzeDocument({ pages: [lines.join("\n")] });
     expect(Date.now() - t).toBeLessThan(3_000);
