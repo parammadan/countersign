@@ -208,7 +208,7 @@ function sealProblem(n: SealNames, events: { actor: string }[]): { what: string;
   }
   for (const e of events) {
     const bad = printForPdf(e.actor).bad;
-    if (bad.length) return { what: `a name in the file's history ("${e.actor}")`, chars: showChars(bad) };
+    if (bad.length) return { what: "a name in the file's history", chars: showChars(bad) };
   }
   return null;
 }
