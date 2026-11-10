@@ -40,12 +40,18 @@ test("Document Intelligence: read a document, see quarantined text, start a pre-
   await expect(page.getByText("State of Delaware").first()).toBeVisible();
 
   // the Studio form opens with only the extracted values filled in; the user confirms and completes it
+  const docUrl = page.url();
   await page.getByRole("link", { name: "Start a draft in Agreement Studio" }).click();
   await expect(page).toHaveURL(/\/draft$/);
   await expect(page.getByLabel("Provider (legal name) (from the document)")).toHaveValue("Northwind Advisory LLC");
   await expect(page.getByLabel("Client (legal name) (from the document)")).toHaveValue("Maple Row Studio Ltd");
   await expect(page.getByLabel("Fee (with currency, e.g. $5,000) (from the document)")).toHaveValue("$4,500.00");
   await expect(page.getByLabel("Payment due (days after invoice)")).toHaveValue("");
+  // switching the agreement type keeps the mark on fields it shares with the document
+  await page.getByLabel("Type of agreement").selectOption("consulting");
+  await expect(page.getByLabel("Client (legal name) (from the document)")).toHaveValue("Maple Row Studio Ltd");
+  await expect(page.getByLabel("Governing law (state or country) (from the document)")).toHaveValue("State of Delaware");
+  await page.getByLabel("Type of agreement").selectOption("services");
   const generate = page.getByRole("button", { name: "Generate draft" });
   await expect(generate).toBeDisabled();
   await page.getByLabel("Payment due (days after invoice)").fill("30");
@@ -54,6 +60,9 @@ test("Document Intelligence: read a document, see quarantined text, start a pre-
   await generate.click();
   await expect(page).toHaveURL(/\/app\/studio\/drf_/, { timeout: 30_000 });
   await expect(page.getByText("Northwind Advisory LLC").first()).toBeVisible();
+  // provenance: the document records that its values were confirmed and the draft started
+  await page.goto(docUrl);
+  await expect(page.getByText("A draft was started from this document")).toBeVisible();
 
   // workflow events: recorded per workspace, never delivered
   await page.goto("/app/workflow");
