@@ -2,7 +2,7 @@ import { documentTitle } from "./pdf/title";
 import { one, run, tx } from "./db";
 import { ConvertError, toPdf } from "./convert";
 import { extractPdf } from "./pdf/extract";
-import { detectFields, type Detection } from "./detect";
+import { detectFields, type Detection, type Party } from "./detect";
 import { appendSignaturePage } from "./pdf/stamp";
 import { putBlob } from "./storage";
 import { id, now, sha256 } from "./util";
@@ -18,7 +18,8 @@ export type DetectionInfo = Detection & { addedSignaturePage: boolean; ms: numbe
 export async function ingestAgreement(
   ws: Workspace,
   upload: { data: Buffer; filename: string },
-  opts: { templateId?: string; name?: string; actor: string },
+  // parties: the agreement's own parties when known (Agreement Studio), so detection can tell whose block is whose
+  opts: { templateId?: string; name?: string; actor: string; parties?: Party[] },
 ): Promise<{ template: Template; version: TemplateVersion }> {
   const t0 = Date.now();
   const recent = one<{ n: number }>("SELECT COUNT(*) n FROM template_versions WHERE workspace_id = ? AND created_at > ?", ws.id, new Date(Date.now() - 86400_000).toISOString())?.n ?? 0;
@@ -39,13 +40,14 @@ export async function ingestAgreement(
   } catch {
     throw new AppError("We couldn't read the text in this PDF. Try exporting it again from Word or Google Docs.", 422);
   }
-  let det = detectFields(ex, { firmName: ws.legal_name });
+  const detectOpts = { firmName: ws.legal_name, workspaceNames: [ws.name], parties: opts.parties };
+  let det = detectFields(ex, detectOpts);
   let added = false;
   if (!det.fields.some((f) => f.role === "client" && f.type === "signature")) {
     pdf = Buffer.from(await appendSignaturePage(pdf, ws.legal_name));
     ex = await extractPdf(pdf);
     const prev = det.warnings;
-    det = detectFields(ex, { firmName: ws.legal_name });
+    det = detectFields(ex, detectOpts);
     det.warnings = [
       "No client signature line was found in the agreement, so a signature page was added at the end. Move the fields if you'd rather sign somewhere else.",
       ...prev.filter((w) => !/No client signature|No signature line for your firm/.test(w)),

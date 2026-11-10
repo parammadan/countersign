@@ -348,8 +348,11 @@ export async function publishDraft(s: SessionLike, id: string, version: number) 
   const token = claim.claim;
   let agreementVersionId: string;
   try {
-    const pdf = await renderDocument(draft.version.doc as DraftDocument, "pdf");
-    const ingested = await ingestAgreement(getWorkspace(s.workspaceId), { data: Buffer.from(pdf.bytes), filename: pdf.filename }, { name: draft.draft.title, actor: s.userEmail });
+    const doc = draft.version.doc as DraftDocument;
+    const pdf = await renderDocument(doc, "pdf");
+    // the draft's parties tell the detector which signature block is the workspace's and which the client's
+    const parties = doc.parties.map((p) => ({ role: p.role, name: p.name }));
+    const ingested = await ingestAgreement(getWorkspace(s.workspaceId), { data: Buffer.from(pdf.bytes), filename: pdf.filename }, { name: draft.draft.title, actor: s.userEmail, parties });
     agreementVersionId = ingested.version.id;
   } catch (e) {
     store().abortPublish(principal(s), id, token);
