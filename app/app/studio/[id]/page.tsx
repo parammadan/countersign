@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/auth";
 import { all } from "@/lib/db";
-import { fallbackNotice, getDraft, versions } from "@/lib/drafts/service";
+import { fallbackNotice, getDraft, MODEL_NOTICES, versions } from "@/lib/drafts/service";
 import { authorizeDraft } from "@/lib/drafts/roles";
 import { claimIsStale } from "@/lib/drafts/store";
 import { Notice } from "@/components/ui";
@@ -49,7 +49,8 @@ export default async function Page({ params, searchParams }: { params: Promise<{
       <div className="mb-3 text-sm text-muted"><Link href="/app/studio" className="hover:text-ink">Agreement Studio</Link> / {g.draft.title}</div>
       {q.new === "template" && <div className="mb-4"><Notice tone="info">Drafted from the template with exactly the values you gave.</Notice></div>}
       {q.new === "template_fallback" && <div className="mb-4"><Notice tone="warn">{fallbackNotice(q.why)}</Notice></div>}
-      {q.new === "model" && <div className="mb-4"><Notice tone="info">Drafted from the template and reworded by AI; every figure, party and clause was checked against the template.</Notice></div>}
+      {q.new === "model" && <div className="mb-4"><Notice tone="info">{MODEL_NOTICES.model}</Notice></div>}
+      {q.new === "model_unchanged" && <div className="mb-4"><Notice tone="info">{MODEL_NOTICES.model_unchanged}</Notice></div>}
       <DraftEditor {...props} />
     </>
   );

@@ -8,6 +8,8 @@ import { seal, unseal } from "./secret";
 import { appUrl } from "./paths";
 import { addDays, escapeHtml, id, now, safeEqual, sha256, token } from "./util";
 import { appendCertificate, stampFields, type StampValue } from "./pdf/stamp";
+import { printForPdf, printProblem, showChars } from "./pdf/printable";
+import { printProblemFor } from "./sign-fields";
 import type { Field, PageSize } from "./fields";
 import type { FileRow, Template, TemplateVersion, Workspace } from "./types";
 
@@ -99,6 +101,7 @@ export async function createFile(ws: Workspace, input: NewFile, actor: Actor, ct
   if (today >= DAILY_FILE_CAP) throw new AppError(`This workspace has opened ${DAILY_FILE_CAP} files in the last 24 hours, the current limit. Contact support to raise it.`, 429);
   if (send) assertCanSendTo(ws.id, input.clientEmail);
   const { template, version } = resolveTemplate(ws.id, input.templateId);
+  assertPrintableFile(input, ws, template, version);
   if (input.ref && one("SELECT 1 FROM files WHERE workspace_id = ? AND ref = ? AND status NOT IN ('voided','declined')", ws.id, input.ref)) {
     throw new AppError(`A file with reference "${input.ref}" already exists.`, 409);
   }
@@ -130,8 +133,84 @@ export async function createFile(ws: Workspace, input: NewFile, actor: Actor, ct
   return f;
 }
 
+// What a file puts onto the signed PDF (stamps and certificate) must print exactly: refuse it here, before the
+// file exists, rather than at signing (lib/pdf/printable.ts). Only the prefill values a field stamps are checked.
+// The firm's names and the agreement name (both on the certificate) are checked too, so a file never reaches the
+// client only to be impossible to countersign.
+function assertPrintableFile(input: NewFile, ws: Workspace, template: Template, version: TemplateVersion) {
+  const custom = new Set(versionFields(version).flatMap((fl) => (fl.role === "prefill" && fl.type !== "checkbox" && fl.prefillKey?.startsWith("custom.") ? [fl.prefillKey.slice(7)] : [])));
+  const checks: [string | null | undefined, string, string][] = [
+    [input.clientName, "The client name", "name"],
+    [input.clientEmail, "The client email", "email"],
+    [input.clientCompany, "The client company", "name"],
+    [input.ref, "The file reference", "reference"],
+    [input.title, "The file title", "title"],
+    [template.name, `The agreement name "${template.name}"`, "name"],
+    [ws.legal_name, "Your firm's legal name (in Settings)", "name"],
+    [ws.countersigner_name, "The countersigner's name (in Settings)", "name"],
+    [ws.countersigner_title, "The countersigner's title (in Settings)", "title"],
+    [ws.countersigner_email, "The countersigner's email (in Settings)", "email"],
+    ...Object.entries(input.prefill ?? {}).filter(([k]) => custom.has(k.replace(/^custom\./, ""))).map(([k, v]): [string, string, string] => [v, `The value for "${k}"`, "value"]),
+  ];
+  for (const [v, subject, noun] of checks) {
+    const problem = printProblem(v, subject, noun);
+    if (problem) throw new AppError(problem, 422);
+  }
+}
+
 function templateName(f: FileRow) {
   return one<{ name: string }>("SELECT t.name FROM templates t JOIN template_versions v ON v.template_id = t.id WHERE v.id = ?", f.template_version_id)?.name ?? "agreement";
+}
+
+// Every name the firm's stamps and the certificate of completion print, from one place: countersignOnce prints
+// only these, and completeClientSigning checks them (sealProblem) before the client signs, so a file is never
+// signed by the client only to be impossible to countersign.
+type SealNames = {
+  clientName: string;
+  clientEmail: string;
+  title: string;
+  ref: string | null;
+  agreement: string;
+  legalName: string;
+  signerName: string;
+  signerTitle: string | null;
+  signerEmail: string | null;
+};
+const SEAL_LABELS: Record<keyof SealNames, string> = {
+  clientName: "the client name",
+  clientEmail: "the client email",
+  title: "the file title",
+  ref: "the file reference",
+  agreement: "the agreement name",
+  legalName: "the firm's legal name",
+  signerName: "the countersigner's name",
+  signerTitle: "the countersigner's title",
+  signerEmail: "the countersigner's email",
+};
+function sealNames(f: FileRow, ws: Workspace): SealNames {
+  return {
+    clientName: f.client_name,
+    clientEmail: f.client_email,
+    title: f.title,
+    ref: f.ref,
+    agreement: templateName(f),
+    legalName: ws.legal_name,
+    signerName: ws.countersigner_name || ws.legal_name,
+    signerTitle: ws.countersigner_title,
+    signerEmail: ws.countersigner_email,
+  };
+}
+/** The first name the certificate (or the firm's stamps) can't print exactly, with its characters; null when none. */
+function sealProblem(n: SealNames, events: { actor: string }[]): { what: string; chars: string } | null {
+  for (const k of Object.keys(SEAL_LABELS) as (keyof SealNames)[]) {
+    const bad = n[k] ? printForPdf(n[k]).bad : [];
+    if (bad.length) return { what: SEAL_LABELS[k], chars: showChars(bad) };
+  }
+  for (const e of events) {
+    const bad = printForPdf(e.actor).bad;
+    if (bad.length) return { what: "a name in the file's history", chars: showChars(bad) };
+  }
+  return null;
 }
 
 export async function sendFile(f: FileRow, ws: Workspace, kind: "invite" | "resend" | "reminder", actor: Actor, ctx: Ctx): Promise<FileRow> {
@@ -323,6 +402,9 @@ export async function completeClientSigning(tok: string, input: SignInput, ctx: 
   if (f.status === "expired") throw new AppError("This signing link has expired. Ask the sender for a new one.", 410);
   if (f.status !== "sent" && f.status !== "viewed") throw new AppError("This agreement has already been completed or is no longer available.", 409);
   if (!input.consent) throw new AppError("You need to agree to sign electronically.");
+  // the certificate is only printed at countersign: refuse now, before anything is written, if it couldn't be
+  const sealBad = sealProblem(sealNames(f, ws), [...fileEvents(f.id), { actor: f.client_email }]);
+  if (sealBad) throw new AppError(`This document can't be signed yet: the sender needs to correct ${sealBad.what} (it has ${sealBad.chars}, which the signed PDF can't print exactly). Nothing was signed.`, 422);
   if (locks.has(f.id)) throw new AppError("Already signing. Please wait.", 409);
   locks.add(f.id);
   try {
@@ -357,13 +439,15 @@ export async function completeClientSigning(tok: string, input: SignInput, ctx: 
         }
         if (fl.required && !v) throw new AppError(`Fill in "${fl.label}".`);
         if (fl.type === "email" && v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) throw new AppError(`"${fl.label}" needs a valid email.`);
+        const unprintable = v ? printProblemFor(fl, v) : null;
+        if (unprintable) throw new AppError(unprintable, 422);
         if (v) values.set(fl.id, { kind: "text", text: v });
         stored[fl.id] = v;
       }
     }
     if (!sigPng) sigPng = input.signature ? parsePng(input.signature, "signature") : undefined;
     const original = await verifiedBlob(version.pdf_path, version.sha256, { wsId: ws.id, fileId: f.id, document: "original", actor: f.client_email, ctx });
-    const signedPdf = Buffer.from(await stampFields(original, fields.filter((x) => x.role !== "firm"), values));
+    const signedPdf = Buffer.from(await stampFields(original, fields.filter((x) => x.role !== "firm"), values, "client"));
     const hash = sha256(signedPdf);
     const docPath = await putBlob(`ws/${ws.id}/files/${f.id}/client-signed.pdf`, signedPdf);
     if (sigPng) await putBlob(`ws/${ws.id}/files/${f.id}/client-signature.png`, sigPng);
@@ -415,45 +499,48 @@ async function countersignOnce(f: FileRow, ws: Workspace, actor: Actor, ctx: Ctx
   const doc = one<{ path: string; sha256: string }>("SELECT path, sha256 FROM documents WHERE file_id = ? AND kind = 'client_signed'", f.id);
   if (!doc) throw new AppError("Client-signed document missing.", 500);
   const t = now();
-  const signerName = ws.countersigner_name || ws.legal_name;
+  const n = sealNames(f, ws);
+  // the countersign event is written to the log only once the sealed file exists (below)
+  const events = [...fileEvents(f.id), { seq: 0, file_id: f.id, type: "file.countersigned", actor: actor.label, ip: ctx.ip ?? null, user_agent: null, data_json: "{}", created_at: t }];
+  const sealBad = sealProblem(n, events);
+  if (sealBad) throw new AppError(`This file can't be countersigned: ${sealBad.what} has a character the signed PDF can't print exactly (${sealBad.chars}), and it is never printed altered. Nothing was changed.`, 422);
+  const signerName = n.signerName;
   const values = new Map<string, StampValue>();
   const sigImg = ws.countersign_image ? new Uint8Array(await getBlob(ws.countersign_image)) : null;
   for (const fl of fields.filter((x) => x.role === "firm")) {
     if (fl.type === "signature" || fl.type === "initials") {
       values.set(fl.id, sigImg ? { kind: "image", png: sigImg } : { kind: "text", text: `/s/ ${signerName}` });
     } else if (fl.type === "name") values.set(fl.id, { kind: "text", text: signerName });
-    else if (fl.type === "title" && ws.countersigner_title) values.set(fl.id, { kind: "text", text: ws.countersigner_title });
+    else if (fl.type === "title" && n.signerTitle) values.set(fl.id, { kind: "text", text: n.signerTitle });
     else if (fl.type === "date") values.set(fl.id, { kind: "text", text: formatDate(t) });
-    else if (fl.type === "company") values.set(fl.id, { kind: "text", text: ws.legal_name });
-    else if (fl.type === "email" && ws.countersigner_email) values.set(fl.id, { kind: "text", text: ws.countersigner_email });
+    else if (fl.type === "company") values.set(fl.id, { kind: "text", text: n.legalName });
+    else if (fl.type === "email" && n.signerEmail) values.set(fl.id, { kind: "text", text: n.signerEmail });
     else if (fl.type === "checkbox") values.set(fl.id, { kind: "check", on: true });
   }
   const base = await verifiedBlob(doc.path, doc.sha256, { wsId: ws.id, fileId: f.id, document: "client_signed", actor: actor.label, ctx });
   const stamped = await stampFields(base, fields.filter((x) => x.role === "firm"), values);
   const method = actor.kind === "system" ? "adopted signature, applied automatically" : "applied by " + actor.label;
 
-  // the countersign event is written to the log only once the sealed file exists (below)
-  const events = [...fileEvents(f.id), { seq: 0, file_id: f.id, type: "file.countersigned", actor: actor.label, ip: ctx.ip ?? null, user_agent: null, data_json: "{}", created_at: t }];
   const signedEv = events.find((e) => e.type === "file.signed");
   const final = await appendCertificate(stamped, {
     envelopeId: f.id,
-    documentName: f.title.startsWith(templateName(f)) ? `${templateName(f)} (version ${version.version}), client ${f.client_name}${f.ref ? `, file ${f.ref}` : ""}` : `${templateName(f)} (version ${version.version}): ${f.title}`,
-    firmName: ws.legal_name,
+    documentName: n.title.startsWith(n.agreement) ? `${n.agreement} (version ${version.version}), client ${n.clientName}${n.ref ? `, file ${n.ref}` : ""}` : `${n.agreement} (version ${version.version}): ${n.title}`,
+    firmName: n.legalName,
     originalSha256: version.sha256,
     clientSignedSha256: doc.sha256,
     parties: [
       {
         role: "Client",
-        name: f.client_name,
-        email: f.client_email,
+        name: n.clientName,
+        email: n.clientEmail,
         signedAt: (f.client_signed_at ?? "").replace("T", " ").slice(0, 19) + " UTC",
         ip: signedEv?.ip ?? undefined,
         method: `${JSON.parse(signedEv?.data_json ?? "{}").method ?? "electronic"} signature, emailed link${ws.require_otp ? " + email code" : ""}`,
       },
       {
-        role: `Countersigned for ${ws.legal_name}`,
+        role: `Countersigned for ${n.legalName}`,
         name: signerName,
-        email: ws.countersigner_email || "-",
+        email: n.signerEmail || "-",
         signedAt: t.replace("T", " ").slice(0, 19) + " UTC",
         method: actor.kind === "system" ? "adopted signature, applied automatically" : `applied by ${actor.label}`,
       },

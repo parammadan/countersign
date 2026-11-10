@@ -228,6 +228,19 @@ export function metered(inner: ModelProvider, o: { feature: Feature; workspaceId
   return { provider, capped: () => hit };
 }
 
+export type AiState = { available: true; reason?: undefined } | { available: false; reason: "off" | "unverified" | "spend_cap" };
+
+/**
+ * aiGate's rules, without a provider or a reservation: whether AI would run for this workspace now, and if not why.
+ * For showing the state up front (a page can hide controls that would only fail); aiGate stays the check, at the call.
+ */
+export function aiState(workspaceId: string, configured: boolean, typicalUsd: number, env: Env = process.env): AiState {
+  if (!configured) return { available: false, reason: "off" };
+  if (aiNeedsVerifiedWorkspace(env) && !workspaceVerified(workspaceId)) return { available: false, reason: "unverified" };
+  if (!budgetAvailable(typicalUsd, env, workspaceId)) return { available: false, reason: "spend_cap" };
+  return { available: true };
+}
+
 export type AiGate = { provider: ModelProvider | null; reason?: "unverified" | "spend_cap"; notice?: string; capped(): boolean };
 
 /**
@@ -237,9 +250,10 @@ export type AiGate = { provider: ModelProvider | null; reason?: "unverified" | "
  */
 export function aiGate(feature: Feature, workspaceId: string, provider: ModelProvider | null, typicalUsd: number, env: Record<string, string | undefined> = process.env): AiGate {
   const off = { capped: () => false };
-  if (!provider) return { provider: null, ...off };
-  if (aiNeedsVerifiedWorkspace(env) && !workspaceVerified(workspaceId)) return { provider: null, reason: "unverified", notice: MESSAGES.unverified, ...off };
-  if (!budgetAvailable(typicalUsd, env, workspaceId)) return { provider: null, reason: "spend_cap", notice: MESSAGES.spendCap, capped: () => true };
+  const st = aiState(workspaceId, provider !== null, typicalUsd, env);
+  if (!provider || st.reason === "off") return { provider: null, ...off };
+  if (st.reason === "unverified") return { provider: null, reason: "unverified", notice: MESSAGES.unverified, ...off };
+  if (st.reason === "spend_cap") return { provider: null, reason: "spend_cap", notice: MESSAGES.spendCap, capped: () => true };
   const m = metered(provider, { feature, workspaceId }, env);
   return { provider: m.provider, capped: m.capped };
 }

@@ -38,7 +38,7 @@ export async function generateAgreement(input: GenerateInput, options: GenerateO
   if (printProblem) selfCheck.push(`cannot be printed: ${printProblem}`);
   if (selfCheck.length) return { status: "invalid", issues: selfCheck.map((r) => `template draft failed checks: ${r}`) };
 
-  if (!options.provider) return { status: "ok", draft: templateDraft, source: "template", fallbackReasons: [], notes };
+  if (!options.provider) return { status: "ok", draft: templateDraft, source: "template", fallbackReasons: [], notes, reworded: 0 };
 
   const step = await runModelStep(options.provider, baseline, hits.length ? undefined : input.instructions, options.timeoutMs);
   const reasons = step.ok
@@ -48,6 +48,8 @@ export async function generateAgreement(input: GenerateInput, options: GenerateO
         ...[pdfTextProblem(assemble(v, input, step.clauses))].filter((x): x is string => !!x).map((x) => `model output cannot be printed: ${x}`),
       ]
     : step.reasons;
-  if (!step.ok || reasons.length) return { status: "ok", draft: templateDraft, source: "template", fallbackReasons: reasons, notes };
-  return { status: "ok", draft: assemble(v, input, step.clauses), source: "model", fallbackReasons: [], notes };
+  if (!step.ok || reasons.length) return { status: "ok", draft: templateDraft, source: "template", fallbackReasons: reasons, notes, reworded: 0 };
+  // the AI step ran and passed; it may have found nothing to change within the rules (then the text is the template's)
+  const reworded = step.clauses.filter((c, i) => c.text !== baseline[i].text).length;
+  return { status: "ok", draft: assemble(v, input, step.clauses), source: "model", fallbackReasons: [], notes, reworded };
 }

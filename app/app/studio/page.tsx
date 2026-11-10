@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { requireSession } from "@/lib/auth";
-import { aiConfigured, kindSpecs, listDrafts } from "@/lib/drafts/service";
+import { kindSpecs, listDrafts, studioAiState } from "@/lib/drafts/service";
 import { Badge, Card, CardHeader, EmptyState, PageHeader, timeAgo } from "@/components/ui";
 import { NewAgreement } from "@/components/studio/NewAgreement";
+import { aiBadge } from "@/components/studio/ai-state";
 
 export const metadata = { title: "Agreement Studio" };
 
@@ -12,13 +13,15 @@ export default async function Page() {
   const s = await requireSession();
   const list = listDrafts(s);
   const drafts = list.ok ? list.drafts : [];
-  const ai = aiConfigured();
+  // shown up front so controls that would only fail are hidden; each AI step is still gated on the server when it runs
+  const ai = studioAiState(s);
+  const badge = aiBadge(ai);
   return (
     <>
       <PageHeader
         title="Agreement Studio"
         sub="Draft an agreement from a description, edit it clause by clause, get it approved, then publish it to Agreements for signing."
-        actions={<Badge tone={ai ? "ok" : "neutral"} icon="spark">{ai ? "AI on" : "AI off: templates only"}</Badge>}
+        actions={<Badge tone={badge.tone} icon="spark">{badge.text}</Badge>}
       />
       <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
         <NewAgreement kinds={kindSpecs()} ai={ai} />

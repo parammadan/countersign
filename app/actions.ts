@@ -20,6 +20,7 @@ import { escapeHtml } from "@/lib/util";
 import { checkWebhookUrl } from "@/lib/ssrf";
 import { confirmEmail, sendVerification, userVerified, verificationRequired, workspaceVerified } from "@/lib/emailverify";
 import { BRAND } from "@/lib/brand";
+import { printProblem } from "@/lib/pdf/printable";
 
 export type FormState = { error?: string; ok?: string; secret?: string } | undefined;
 
@@ -32,6 +33,14 @@ const LIMIT_X = Math.max(1, Number(process.env.AUTH_RATE_LIMIT_X) || 1);
 async function throttle(bucket: string, max: number) {
   const ip = clientIp(await headers());
   if (limited(`${bucket}:${ip}`, max * LIMIT_X, 60_000)) throw new AppError("Too many attempts. Wait a minute and try again.", 429);
+}
+
+// Names the signed PDF prints (stamps, certificate) must print exactly; refuse them before they are saved.
+function assertPrintable(...checks: [string | null | undefined, string, string][]) {
+  for (const [v, subject, noun] of checks) {
+    const problem = printProblem(v, subject, noun);
+    if (problem) throw new AppError(problem, 422);
+  }
 }
 
 function fail(e: unknown): FormState {
@@ -57,6 +66,7 @@ export async function signupAction(_: FormState, fd: FormData): Promise<FormStat
     await throttle("signup", 10);
     const b = Signup.parse({ name: s(fd.get("name")), email: s(fd.get("email")), password: String(fd.get("password") ?? ""), firm: s(fd.get("firm")), legal: s(fd.get("legal")) || undefined });
     if (one("SELECT 1 FROM users WHERE email = ?", b.email)) return { error: "An account with this email already exists. Sign in instead." };
+    assertPrintable([b.legal || b.firm, b.legal ? "Your firm's legal name" : "Your firm's name", "name"], [b.name, "Your name", "name"]);
     const uid = id("usr_");
     const wid = id("ws_");
     tx(() => {
@@ -274,6 +284,7 @@ export async function templateAction(_: FormState, fd: FormData): Promise<FormSt
     if (op === "rename") {
       const name = s(fd.get("name")).slice(0, 120);
       if (!name) throw new AppError("Enter a name.");
+      assertPrintable([name, "The agreement name", "name"]);
       run("UPDATE templates SET name = ? WHERE id = ?", name, tid);
       done = "Renamed.";
     } else if (op === "default") {
@@ -338,6 +349,12 @@ export async function settingsAction(_: FormState, fd: FormData): Promise<FormSt
       reminder_days: s(fd.get("reminder_days")),
       expiry_days: s(fd.get("expiry_days")),
     });
+    assertPrintable(
+      [b.legal_name, "Your firm's legal name", "name"],
+      [b.countersigner_name, "The countersigner's name", "name"],
+      [b.countersigner_title, "The countersigner's title", "title"],
+      [b.countersigner_email, "The countersigner's email", "email"],
+    );
     if (b.require_otp && emailMode() === "outbox") return { error: "Email codes need email delivery, which isn't configured on this server yet." };
     run(
       `UPDATE workspaces SET name=?, legal_name=?, sender_name=?, reply_to=?, brand_color=?, countersigner_name=?, countersigner_title=?, countersigner_email=?,
@@ -402,6 +419,7 @@ export async function apiKeyAction(_: FormState, fd: FormData): Promise<FormStat
       return { ok: "Key revoked." };
     }
     const name = s(fd.get("name")).slice(0, 60) || "API key";
+    assertPrintable([name, "The key name", "name"]); // shown as the actor on the certificate's event history
     const key = `cs_live_${token(24)}`;
     run("INSERT INTO api_keys (id, workspace_id, name, prefix, key_hash, created_at) VALUES (?,?,?,?,?,?)", id("key_"), sess.workspaceId, name, key.slice(0, 12), sha256(key), now());
     audit(sess.workspaceId, null, "api_key.created", sess.userEmail, {}, { name });
