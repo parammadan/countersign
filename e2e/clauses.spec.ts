@@ -47,7 +47,9 @@ test("Clause Library: create, submit, approve by a second admin; the author and 
   await page.getByLabel("Title").fill("Bad clause");
   await page.getByLabel("Clause text").fill("See <b>this</b> term.");
   await page.getByRole("button", { name: "Create draft" }).click();
-  await expect(page.getByText(/Contains markup or HTML tag/)).toBeVisible();
+  await expect(page.getByText("The clause text isn't valid. It contains markup or an HTML tag.")).toBeVisible();
+  // the URL carries codes only, never text
+  expect(page.url()).toMatch(/\/app\/clauses\?error=invalid_body&issue=unsafe_html$/);
 
   // submit; the author cannot approve their own text
   await page.goto(url);

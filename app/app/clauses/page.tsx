@@ -3,11 +3,12 @@ import { requireSession } from "@/lib/auth";
 import { CLAUSE_KINDS, SOURCE_KINDS } from "@/lib/clauses";
 import { CLAUSE_KIND_LABEL, SOURCE_KIND_LABEL, STATE_LABEL, STATE_TONE, capabilitiesOf, listClauses } from "@/lib/clauses/app/service";
 import { createClauseAction } from "@/app/clauses-actions";
+import { failureText } from "@/lib/clauses/app/messages";
 import { Badge, Button, Card, CardHeader, EmptyState, Field, Notice, PageHeader, Select, inputCls, timeAgo } from "@/components/ui";
 
 export const metadata = { title: "Clause Library" };
 
-export default async function Page({ searchParams }: { searchParams: Promise<{ error?: string; msg?: string }> }) {
+export default async function Page({ searchParams }: { searchParams: Promise<{ error?: string; issue?: string }> }) {
   const s = await requireSession();
   const q = await searchParams;
   const caps = capabilitiesOf(s);
@@ -19,7 +20,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ e
         title="Clause Library"
         sub="Your firm's standard clauses, with {{placeholders}} for the details that change. A clause is written as a draft, submitted, and approved by a different owner or admin; only approved text can be used in an agreement. Every version and decision is kept."
       />
-      {q.error && <div className="mb-4"><Notice tone="error">{q.msg || "That didn't work. Try again."}</Notice></div>}
+      {q.error && <div className="mb-4"><Notice tone="error">{failureText(q.error, q.issue)}</Notice></div>}
       <div className="grid gap-5 lg:grid-cols-[1fr_380px]">
         <Card>
           <CardHeader title="Clauses" description="Every clause in this workspace, newest version first." />

@@ -12,6 +12,7 @@ process.env.DATA_DIR = dir;
 const session = { current: null as null | Record<string, unknown> };
 vi.mock("@/lib/auth", () => ({ requireSession: async () => session.current }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
+vi.mock("@/lib/http", () => ({ ctxFromHeaders: async () => ({ ip: "203.0.113.9", ua: "clause-test" }) }));
 vi.mock("next/navigation", () => ({
   redirect: (url: string) => {
     throw Object.assign(new Error("NEXT_REDIRECT"), { url });
@@ -97,7 +98,7 @@ describe("clause library in countersign.db", () => {
     const id = newClause();
     expect(code(svc.submitVersion(staffA, id, 1))).toBe("ok");
     expect(code(svc.approveVersion(adminA, id, 1))).toBe("ok");
-    expect(ok<string>(svc.useApproved(staffA, id, 1, VALUES))).toBe("Example Client LLC shall pay $1,500.00 within 30 days of the invoice date.");
+    expect(ok<string>(svc.renderApproved(staffA, id, 1, VALUES))).toBe("Example Client LLC shall pay $1,500.00 within 30 days of the invoice date.");
     const c = ok<{ versions: { state: string; approvedBy: string; history: { to: string; by: string }[] }[] }>(svc.getClause(staffA, id));
     expect(c.versions[0]).toMatchObject({ state: "approved", approvedBy: "u-admin-a" });
     expect(c.versions[0].history.map((h) => [h.to, h.by])).toEqual([["draft", "u-staff-a"], ["in_review", "u-staff-a"], ["approved", "u-admin-a"]]);
@@ -139,7 +140,8 @@ describe("roles come from the session: editing never implies approval", () => {
   });
   it("the authorizer answers only for the signed-in member", () => {
     const p = svc.principalOf({ ...staffA, roles: ["approver"], extra: "x" })!;
-    expect(Object.keys(p).sort()).toEqual(["role", "userId", "workspaceId"]);
+    expect(Object.keys(p).sort()).toEqual(["label", "role", "userId", "workspaceId"]); // never "roles" or "extra"
+    expect(p.label).toBe("u-staff-a@example.com");
     const a = svc.authorizerFor(p);
     expect(a.rolesOf("ws_a", "u-staff-a")).toEqual(["viewer", "editor"]);
     expect(a.rolesOf("ws_a", "u-owner-a")).toBeNull();
@@ -158,9 +160,9 @@ describe("workspace isolation", () => {
     svc.approveVersion(adminA, id, 1);
     expect(code(svc.retireVersion(adminB, id, 1))).toBe("not_found");
     expect(code(svc.previewVersion(adminB, id, 1, VALUES))).toBe("not_found");
-    expect(code(svc.useApproved(adminB, id, 1, VALUES))).toBe("not_found");
+    expect(code(svc.renderApproved(adminB, id, 1, VALUES))).toBe("not_found");
     expect(ok<{ id: string }[]>(svc.listClauses(adminB)).map((c) => c.id)).not.toContain(id);
-    expect(ok<unknown[]>(svc.approvedClauses(adminB))).toEqual([]);
+    expect(svc.approvedClausePicks(adminB)).toEqual([]);
   });
 });
 
@@ -172,16 +174,16 @@ describe("the library rules hold in the app", () => {
     ok(svc.addVersion(staffA, id, "Pay {{fee:money}} promptly.", { kind: "negotiated" }));
     svc.submitVersion(staffA, id, 2);
     svc.approveVersion(adminA, id, 2);
-    expect(code(svc.useApproved(staffA, id, 1, VALUES))).toBe("superseded");
+    expect(code(svc.renderApproved(staffA, id, 1, VALUES))).toBe("superseded");
     svc.retireVersion(adminA, id, 2, "withdrawn");
-    expect(code(svc.useApproved(staffA, id, 1, VALUES))).toBe("superseded");
+    expect(code(svc.renderApproved(staffA, id, 1, VALUES))).toBe("superseded");
     expect(ok<unknown>(svc.latestApproved(staffA, id))).toBeNull();
   });
   it("preview renders any readable version with sample values and refuses unsafe ones", () => {
     const id = newClause(staffA, "Preview me");
     expect(ok<string>(svc.previewVersion(staffA, id, 1, VALUES))).toContain("$1,500.00");
     expect(code(svc.previewVersion(staffA, id, 1, { ...VALUES, "client.name": "<script>x</script>" }))).toBe("invalid_params");
-    expect(code(svc.useApproved(staffA, id, 1, VALUES))).toBe("not_approved");
+    expect(code(svc.renderApproved(staffA, id, 1, VALUES))).toBe("not_approved");
   });
   it("sources are structured; free text claiming approval is refused", () => {
     expect(svc.sourceFrom("firm_template", "tpl-9")).toEqual({ kind: "firm_template", ref: "TPL-9" });
@@ -204,7 +206,7 @@ describe("server actions: the session decides, forged form fields do not", () =>
     expect(ok<{ workspaceId: string; createdBy: string }>(svc.getClause(staffA, id))).toMatchObject({ workspaceId: "ws_a", createdBy: "u-staff-a" });
     expect(await redirected(() => act.submitClauseAction(fd({ id, n: "1" })))).toBe(`/app/clauses/${id}?ok=submitted`);
     // staff forging an approver role in the form is still staff
-    expect(await redirected(() => act.approveClauseAction(fd({ id, n: "1", role: "owner", roles: "approver" })))).toMatch(/\?error=forbidden&msg=/);
+    expect(await redirected(() => act.approveClauseAction(fd({ id, n: "1", role: "owner", roles: "approver" })))).toBe(`/app/clauses/${id}?error=forbidden`);
     session.current = adminA;
     expect(await redirected(() => act.approveClauseAction(fd({ id, n: "1" })))).toBe(`/app/clauses/${id}?ok=approved`);
   });
@@ -226,7 +228,7 @@ describe("server actions: the session decides, forged form fields do not", () =>
   });
   it("bad input is refused with a message, never an exception", async () => {
     session.current = staffA;
-    expect(await redirected(() => act.createClauseAction(fd({ title: "Bad", kind: "fees", body: "<b>x</b>", sourceKind: "firm_template" })))).toMatch(/^\/app\/clauses\?error=invalid_body&msg=/);
+    expect(await redirected(() => act.createClauseAction(fd({ title: "Bad", kind: "fees", body: "<b>x</b>", sourceKind: "firm_template" })))).toBe("/app/clauses?error=invalid_body&issue=unsafe_html");
     expect(await redirected(() => act.createClauseAction(fd({ title: "Bad", kind: "fees", body: "x", sourceKind: "Approved by GC" })))).toMatch(/error=bad_source/);
     expect(await redirected(() => act.submitClauseAction(fd({ id: "nope-nope", n: "x" })))).toMatch(/error=not_found/);
   });
@@ -245,7 +247,109 @@ describe("Agreement Studio insert: approved, current text only, rendered with th
     expect(await act.renderApprovedClauseAction(id, 1, JSON.parse('{"client.name":"A","fee":"1","days":"2","__proto__":"x"}'))).toMatchObject({ ok: false });
     expect(await act.renderApprovedClauseAction(id, 1, { "client.name": "<b>x</b>", fee: "1", days: "2" })).toMatchObject({ ok: false });
     session.current = adminB;
-    expect(await act.renderApprovedClauseAction(id, 1, { "client.name": "A", fee: "1", days: "2" })).toMatchObject({ ok: false, message: expect.stringMatching(/No clause/) });
-    expect(ok<{ clause: { id: string } }[]>(svc.approvedClauses(staffA)).map((x) => x.clause.id)).toContain(id);
+    expect(await act.renderApprovedClauseAction(id, 1, { "client.name": "A", fee: "1", days: "2" })).toEqual({ ok: false, message: "That clause or version doesn't exist in this workspace." });
+    expect(svc.approvedClausePicks(staffA).find((x) => x.id === id)).toEqual({ id, title: "Studio insert", version: 1, placeholders: [{ path: "client.name", type: "text" }, { path: "fee", type: "money" }, { path: "days", type: "int" }] });
   });
 });
+
+describe("review of #64: audit trail, throttle, fixed messages, provenance", () => {
+  const events = (clauseId: string) =>
+    db.all<{ type: string; actor: string; ip: string | null; data_json: string }>("SELECT type, actor, ip, data_json FROM audit_events WHERE workspace_id = 'ws_a' AND data_json LIKE ? ORDER BY seq", `%"clauseId":"${clauseId}"%`);
+  it("create, submit, approve, send back and retire are written to audit_events with the actor and request context", async () => {
+    session.current = staffA;
+    const url = await redirected(() => act.createClauseAction(fd({ title: "Audited", kind: "fees", body: "Fee {{fee:money}}.", sourceKind: "precedent" })));
+    const id = decodeURIComponent(url.match(/^\/app\/clauses\/([^?]+)\?/)![1]);
+    await redirected(() => act.submitClauseAction(fd({ id, n: "1" })));
+    session.current = adminA;
+    await redirected(() => act.sendBackClauseAction(fd({ id, n: "1", note: "clearer please" })));
+    session.current = staffA;
+    await redirected(() => act.submitClauseAction(fd({ id, n: "1" })));
+    session.current = adminA;
+    await redirected(() => act.approveClauseAction(fd({ id, n: "1" })));
+    await redirected(() => act.retireClauseAction(fd({ id, n: "1" })));
+    const ev = events(id);
+    expect(ev.map((e) => [e.type, e.actor])).toEqual([
+      ["clause.created", "u-staff-a@example.com"], ["clause.submitted", "u-staff-a@example.com"], ["clause.sent_back", "u-admin-a@example.com"],
+      ["clause.submitted", "u-staff-a@example.com"], ["clause.approved", "u-admin-a@example.com"], ["clause.retired", "u-admin-a@example.com"],
+    ]);
+    expect(ev.every((e) => e.ip === "203.0.113.9")).toBe(true);
+    expect(JSON.parse(ev[4].data_json)).toEqual({ clauseId: id, version: 1, userId: "u-admin-a" });
+    // refused actions write nothing
+    session.current = staffA;
+    await redirected(() => act.approveClauseAction(fd({ id, n: "1" })));
+    expect(events(id)).toHaveLength(6);
+  });
+  it("a change and its audit entry commit together: if the audit insert fails, the approval is rolled back", () => {
+    const id = newClause(staffA, "Atomic");
+    svc.submitVersion(staffA, id, 1);
+    db.run("CREATE TRIGGER clause_test_fail BEFORE INSERT ON audit_events WHEN NEW.type = 'clause.approved' BEGIN SELECT RAISE(ABORT, 'audit down'); END");
+    try {
+      expect(() => svc.approveVersion(adminA, id, 1)).toThrow(/audit down/);
+    } finally {
+      db.run("DROP TRIGGER clause_test_fail");
+    }
+    expect(ok<{ versions: { state: string }[] }>(svc.getClause(staffA, id)).versions[0].state).toBe("in_review");
+    expect(code(svc.approveVersion(adminA, id, 1))).toBe("ok");
+  });
+  it("clause writes are throttled per workspace", () => {
+    const at = new Date().toISOString();
+    db.run("INSERT INTO workspaces (id, name, legal_name, sender_name, countersigner_name, countersigner_email, inbound_token, created_at) VALUES ('ws_c','C','C LLC','C','Avery','avery-c@example.com','inb_ws_c',?)", at);
+    db.run("INSERT INTO users (id, email, name, password_hash, created_at) VALUES ('u-staff-c','c@example.com','C','x',?)", at);
+    db.run("INSERT INTO members (workspace_id, user_id, role, created_at) VALUES ('ws_c','u-staff-c','staff',?)", at);
+    const staffC = S("u-staff-c", "ws_c", "staff");
+    const results = Array.from({ length: svc.CLAUSE_WRITES_PER_MINUTE + 1 }, (_, i) => code(svc.createClause(staffC, { title: `Bulk ${i}`, kind: "other", body: "x", source: { kind: "imported" } })));
+    expect(results.slice(0, svc.CLAUSE_WRITES_PER_MINUTE).every((c) => c === "ok")).toBe(true);
+    expect(results.at(-1)).toBe("throttled");
+    expect(code(svc.createClause(staffA, { title: "Other workspace is not throttled", kind: "other", body: "x", source: { kind: "imported" } }))).toBe("ok");
+  });
+  it("failure text is fixed per code; nothing from the URL or an error message is shown", async () => {
+    const { failureText, failureCodes } = await import("../../lib/clauses/app/messages");
+    expect(failureText("forbidden")).toBe("You don't have permission to do that.");
+    expect(failureText("<script>alert(1)</script>", "unsafe_html")).toBe("That didn't work. Try again. It contains markup or an HTML tag.");
+    expect(failureText("forbidden", "Your account is locked, call 555")).toBe("You don't have permission to do that.");
+    expect(failureText("__proto__", "constructor")).toBe("That didn't work. Try again.");
+    expect(failureCodes({ code: "made-up", issues: [{ code: "also made-up" }] })).toEqual({ error: "failed" });
+    const r = svc.createClause(staffA, { title: "T", kind: "fees", body: "<b>x</b>", source: { kind: "firm_template" } });
+    expect(r).toMatchObject({ ok: false, code: "invalid_body", issues: ["unsafe_html"], message: "The clause text isn't valid. It contains markup or an HTML tag." });
+  });
+  it("a failed ROLLBACK does not hide the error that caused it", async () => {
+    const { SqliteClauseStore } = await import("../../lib/clauses");
+    const { TestAuth } = await import("./helpers");
+    const conn = {
+      prepare: (sql: string) => ({ all: () => (/table_info/.test(sql) ? [{ name: "workspace_id" }] : []), get: () => undefined, run: () => ({}) }),
+      exec: (sql: string) => { if (sql === "ROLLBACK") throw new Error("cannot rollback"); },
+      isTransaction: false,
+    };
+    const store = new SqliteClauseStore(conn as never, { authorizer: new TestAuth() });
+    // inside the transaction the clause is missing (not_found); the ROLLBACK then fails, and the caller still sees not_found
+    expect(() => store.saveVersion("ws-a", "missing-one", {} as never)).toThrow(/^No clause missing-one$/);
+  });
+  it("Agreement Studio records library provenance only when the added text is exactly the approved clause", async () => {
+    const drafts = await import("../../lib/drafts/service");
+    const id = newClause(staffA, "Provenance clause");
+    svc.submitVersion(staffA, id, 1);
+    svc.approveVersion(adminA, id, 1);
+    const values = { "client.name": "Acme Widgets Inc", fee: "900", days: "14" };
+    const text = ok<string>(svc.renderApproved(staffA, id, 1, values));
+    const c = await drafts.createDraft(ownerA, {
+      kind: "nda", parties: [{ role: "Disclosing Party", name: "Northwind Advisory LLC" }, { role: "Receiving Party", name: "Acme Widgets Inc" }],
+      terms: { startDate: "2027-02-01", confidentialityYears: 3, governingLaw: "Delaware" },
+    });
+    expect(c, JSON.stringify(c)).toMatchObject({ ok: true });
+    const draftId = (c as { draftId: string }).draftId;
+    const g = drafts.getDraft(staffA, draftId);
+    if (!g.ok) throw new Error("no draft");
+    // after the last unlocked clause, so no later "clause N" reference has to be renumbered
+    const after = (g.version.doc as { clauses: { id: string; locked?: boolean }[] }).clauses.filter((x) => !x.locked).at(-1)!.id;
+    // edited after filling: refused as a library insert
+    expect(drafts.editDraft(staffA, draftId, 1, { op: "add_clause", after, text: text + " Changed.", library: { id, version: 1, values } })).toMatchObject({ ok: false, code: "invalid" });
+    // a forged reference to a clause in another workspace or a draft version is refused too
+    expect(drafts.editDraft(adminB, draftId, 1, { op: "add_clause", after, text, library: { id, version: 1, values } }).ok).toBe(false);
+    const r = drafts.editDraft(staffA, draftId, 1, { op: "add_clause", after, text, heading: "Payment", library: { id, version: 1, values } });
+    expect(r, JSON.stringify(r)).toMatchObject({ ok: true });
+    const row = db.one<{ rationale: string; status: string; after_text: string; created_by: string }>("SELECT rationale, status, after_text, created_by FROM draft_proposals WHERE draft_id = ? AND workspace_id = 'ws_a'", draftId)!;
+    expect(row).toEqual({ rationale: `added from the Clause Library: Provenance clause (${id} v1)`, status: "accepted", after_text: text, created_by: "u-staff-a" });
+    expect(events(id).map((e) => e.type)).toContain("clause.used");
+  });
+});
+

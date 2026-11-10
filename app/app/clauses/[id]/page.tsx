@@ -9,6 +9,7 @@ import {
   addVersionAction, approveClauseAction, editDraftAction, retireClauseAction, sendBackClauseAction, submitClauseAction,
 } from "@/app/clauses-actions";
 import { Badge, Button, Card, CardHeader, Field, Notice, PageHeader, Select, inputCls, timeAgo } from "@/components/ui";
+import { failureText } from "@/lib/clauses/app/messages";
 
 export const metadata = { title: "Clause" };
 
@@ -55,7 +56,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         sub={<>{CLAUSE_KIND_LABEL[c.kind]} · created by {who(c.createdBy)} {timeAgo(c.createdAt)}</>}
         actions={<Badge tone={STATE_TONE[latest.state]}>{`v${latest.version} ${STATE_LABEL[latest.state]}`}</Badge>}
       />
-      {q.error && <div className="mb-4"><Notice tone="error">{q.msg || "That didn't work. Try again."}</Notice></div>}
+      {q.error && <div className="mb-4"><Notice tone="error">{failureText(q.error, q.issue)}</Notice></div>}
       {q.ok && Object.hasOwn(OK, q.ok) && <div className="mb-4"><Notice tone="ok">{OK[q.ok]}</Notice></div>}
 
       <div className="grid gap-5 lg:grid-cols-[1fr_380px]">
@@ -67,11 +68,16 @@ export default async function Page({ params, searchParams }: { params: Promise<{
               <form action={addVersionAction} className="space-y-4 px-5 pb-5">
                 <input type="hidden" name="id" value={c.id} />
                 <Field label="Clause text"><textarea name="body" required rows={6} maxLength={20000} defaultValue={latest.body} className={inputCls} /></Field>
-                <Field label="Source">
-                  <Select name="sourceKind" defaultValue={latest.provenance.source.kind}>
-                    {SOURCE_KINDS.map((k) => <option key={k} value={k}>{SOURCE_KIND_LABEL[k]}</option>)}
-                  </Select>
-                </Field>
+                <div className="grid grid-cols-[1fr_120px] gap-3">
+                  <Field label="Source">
+                    <Select name="sourceKind" defaultValue={latest.provenance.source.kind}>
+                      {SOURCE_KINDS.map((k) => <option key={k} value={k}>{SOURCE_KIND_LABEL[k]}</option>)}
+                    </Select>
+                  </Field>
+                  <Field label="Reference" hint="Optional, e.g. TPL-2026">
+                    <input name="sourceRef" maxLength={15} defaultValue={latest.provenance.source.ref ?? ""} className={inputCls} pattern="[A-Za-z]{2,6}-[0-9]{1,8}" />
+                  </Field>
+                </div>
                 <Button type="submit" variant="secondary" icon="plus">Create version {c.versions.length + 1}</Button>
               </form>
             </Card>

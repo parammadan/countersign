@@ -52,6 +52,8 @@ export function DraftEditor(p: EditorProps) {
   const [heading, setHeading] = useState("");
   const [pick, setPick] = useState("");
   const [values, setValues] = useState<Record<string, string>>({});
+  // the library clause the box was filled from, and the exact text it rendered; sent with the edit only if unchanged
+  const [filled, setFilled] = useState<{ id: string; version: number; values: Record<string, string>; text: string } | null>(null);
   const [msg, setMsg] = useState<{ tone: "error" | "ok" | "warn"; text: string } | null>(null);
   const [pending, start] = useTransition();
   const editable = p.can.edit && p.status !== "published";
@@ -115,18 +117,22 @@ export function DraftEditor(p: EditorProps) {
                           setMsg(null);
                           const r = await renderApprovedClauseAction(c.id, c.version, values);
                           if (!r.ok) setMsg({ tone: "error", text: r.message });
-                          else { setText(r.text); setHeading(r.title.slice(0, 120)); setMsg({ tone: "ok", text: "Approved clause filled in below. Check it, then add it." }); }
+                          else {
+                            setText(r.text); setHeading(r.title.slice(0, 120));
+                            setFilled({ id: c.id, version: c.version, values, text: r.text });
+                            setMsg({ tone: "ok", text: "Approved clause filled in below. Check it, then add it." });
+                          }
                         })} />
                     )}
                     <input className={inputCls} placeholder="Heading" value={heading} maxLength={120} onChange={(e) => setHeading(e.target.value)} />
                     <textarea className={cx(inputCls, "min-h-24")} placeholder="Clause text" value={text} onChange={(e) => setText(e.target.value)} />
                     <div className="flex gap-2">
-                      <Button size="sm" loading={pending} onClick={() => run(() => editAction(p.draftId, p.version, { op: "add_clause", after: c.id, text, heading }), "Clause added; later clauses and references were renumbered.")}>Add clause</Button>
+                      <Button size="sm" loading={pending} onClick={() => run(() => editAction(p.draftId, p.version, { op: "add_clause", after: c.id, text, heading, ...(filled && filled.text === text ? { library: { id: filled.id, version: filled.version, values: filled.values } } : {}) }), "Clause added; later clauses and references were renumbered.")}>Add clause</Button>
                       <Button size="sm" variant="ghost" onClick={() => setAdding(null)}>Cancel</Button>
                     </div>
                   </div>
                 ) : (
-                  <button className="mt-2 text-[12px] text-muted hover:text-ink" onClick={() => { setAdding(c.id); setText(""); setHeading(""); setPick(""); setValues({}); }}>+ Add a clause after this one</button>
+                  <button className="mt-2 text-[12px] text-muted hover:text-ink" onClick={() => { setAdding(c.id); setText(""); setHeading(""); setPick(""); setValues({}); setFilled(null); }}>+ Add a clause after this one</button>
                 ))}
               </li>
             ))}
