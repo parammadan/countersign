@@ -4,22 +4,29 @@
 
 import { PDFDocument, PDFFont, PDFPage, StandardFonts, degrees, rgb } from "pdf-lib";
 import type { Field } from "../fields";
+import { AppError } from "../errors";
+import { printForPdf, showChars } from "./printable";
 
 export type StampValue = { kind: "text"; text: string } | { kind: "image"; png: Uint8Array } | { kind: "check"; on: boolean };
 
 const INK = rgb(0.05, 0.12, 0.35);
 
-// pdf-lib standard fonts are WinAnsi only. Keep what they can draw, swap the rest.
-export function winAnsi(s: string): string {
-  return s
-    .normalize("NFC")
-    .replace(/[‘’]/g, "'")
-    .replace(/[“”]/g, '"')
-    .replace(/[–—]/g, "-")
-    .replace(/[^\x20-\x7E\xA0-\xFF]/g, (c) => {
-      const d = c.normalize("NFD").replace(/[̀-ͯ]/g, "");
-      return /^[\x20-\x7E]+$/.test(d) ? d : "?";
-    });
+// pdf-lib standard fonts are WinAnsi only. Print what they can exactly (and the typographic equivalents in
+// printable.ts); never alter anything else. Inputs refuse such text before it is saved (printProblem), so this
+// only fires on older data: fail closed, before anything is signed or saved, instead of printing a different name.
+export class StampTextError extends AppError {
+  constructor(public chars: string[]) {
+    super(
+      `This can't be signed: a name or value written onto the PDF has a character the PDF can't print exactly (${showChars(chars)}), and it is never printed altered. Nothing was signed or saved. It needs correcting to letters from Western European alphabets first.`,
+      422,
+    );
+  }
+}
+
+export function pdfText(s: string): string {
+  const { text, bad } = printForPdf(s);
+  if (bad.length) throw new StampTextError(bad);
+  return text;
 }
 
 // Field coordinates are pdf.js viewport coordinates: top-left origin, crop box applied, and the
@@ -61,7 +68,7 @@ export async function stampFields(pdfBytes: Uint8Array, fields: Field[], values:
     if (!page) continue;
     const { pt, rotate } = viewportMapper(page);
     if (v.kind === "text") {
-      const text = winAnsi(v.text).trim();
+      const text = pdfText(v.text).trim();
       if (!text) continue;
       const size = fitText(font, text, f.w, f.h);
       const [x, y] = pt(f.x + 1, f.y + f.h - Math.max(3, (f.h - size) / 2 + 1));
@@ -113,7 +120,7 @@ export async function appendCertificate(pdfBytes: Uint8Array, info: CertInfo): P
     const f = opts.f ?? font;
     const maxW = W - M - (opts.x ?? M);
     // wrap
-    const words = winAnsi(text).split(" ");
+    const words = pdfText(text).split(" ");
     let cur = "";
     const flush = () => {
       if (y < M + 20) {
@@ -173,9 +180,9 @@ export async function appendSignaturePage(pdfBytes: Uint8Array, firmName: string
   const page = doc.addPage([W, H]);
   const M = 72;
   page.drawText("SIGNATURE PAGE", { x: M, y: H - M, size: 13, font: bold });
-  page.drawText(winAnsi("By signing below, the parties agree to the terms of the agreement above."), { x: M, y: H - M - 22, size: 10, font });
+  page.drawText("By signing below, the parties agree to the terms of the agreement above.", { x: M, y: H - M - 22, size: 10, font });
   const block = (title: string, top: number) => {
-    page.drawText(winAnsi(title), { x: M, y: top, size: 11, font: bold });
+    page.drawText(pdfText(title), { x: M, y: top, size: 11, font: bold });
     const rows = ["Signature:", "Name:", "Title:", "Date:"];
     rows.forEach((r, i) => {
       const yy = top - 34 - i * 30;
@@ -184,6 +191,8 @@ export async function appendSignaturePage(pdfBytes: Uint8Array, firmName: string
     });
   };
   block("CLIENT", H - M - 70);
-  block(firmName.toUpperCase(), H - M - 260);
+  // upper case can leave WinAnsi (µ becomes Greek Μ); keep the name as written then
+  const upper = firmName.toUpperCase();
+  block(printForPdf(upper).bad.length ? firmName : upper, H - M - 260);
   return doc.save({ useObjectStreams: false });
 }

@@ -3,6 +3,7 @@
 // client hears about a problem on the field itself instead of after pressing "Sign and finish". The server
 // stays the authority; nothing here is trusted by it.
 import { TYPE_LABEL, type Field } from "./fields";
+import { printProblem } from "./pdf/printable";
 
 type F = Pick<Field, "type" | "label" | "required">;
 
@@ -22,7 +23,12 @@ export function fieldError(f: F, value: string | boolean | undefined): string | 
   const v = typeof value === "string" ? value.trim() : "";
   if (!v) return mustComplete(f) ? `Fill in "${fieldName(f)}".` : null;
   if (f.type === "email" && !EMAIL_RE.test(v)) return `"${fieldName(f)}" needs a valid email, like name@example.com.`;
-  return null;
+  return printProblemFor(f, v);
+}
+
+/** A typed value the signed PDF can't print exactly is refused, never stamped altered (lib/pdf/printable.ts). */
+export function printProblemFor(f: F, v: string): string | null {
+  return f.type === "name" ? printProblem(v) : printProblem(v, `"${fieldName(f)}"`, f.type === "email" ? "email" : "text");
 }
 
 /** A drawn mark this small (in CSS pixels) is a tap or a slip, not a signature. */

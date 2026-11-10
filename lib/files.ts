@@ -8,6 +8,8 @@ import { seal, unseal } from "./secret";
 import { appUrl } from "./paths";
 import { addDays, escapeHtml, id, now, safeEqual, sha256, token } from "./util";
 import { appendCertificate, stampFields, type StampValue } from "./pdf/stamp";
+import { printProblem } from "./pdf/printable";
+import { printProblemFor } from "./sign-fields";
 import type { Field, PageSize } from "./fields";
 import type { FileRow, Template, TemplateVersion, Workspace } from "./types";
 
@@ -99,6 +101,7 @@ export async function createFile(ws: Workspace, input: NewFile, actor: Actor, ct
   if (today >= DAILY_FILE_CAP) throw new AppError(`This workspace has opened ${DAILY_FILE_CAP} files in the last 24 hours, the current limit. Contact support to raise it.`, 429);
   if (send) assertCanSendTo(ws.id, input.clientEmail);
   const { template, version } = resolveTemplate(ws.id, input.templateId);
+  assertPrintableFile(input, ws, template, version);
   if (input.ref && one("SELECT 1 FROM files WHERE workspace_id = ? AND ref = ? AND status NOT IN ('voided','declined')", ws.id, input.ref)) {
     throw new AppError(`A file with reference "${input.ref}" already exists.`, 409);
   }
@@ -128,6 +131,31 @@ export async function createFile(ws: Workspace, input: NewFile, actor: Actor, ct
   emit(ws.id, "file.created", fileJson(f));
   if (send) return sendFile(f, ws, "invite", actor, ctx);
   return f;
+}
+
+// What a file puts onto the signed PDF (stamps and certificate) must print exactly: refuse it here, before the
+// file exists, rather than at signing (lib/pdf/printable.ts). Only the prefill values a field stamps are checked.
+// The firm's names and the agreement name (both on the certificate) are checked too, so a file never reaches the
+// client only to be impossible to countersign.
+function assertPrintableFile(input: NewFile, ws: Workspace, template: Template, version: TemplateVersion) {
+  const custom = new Set(versionFields(version).flatMap((fl) => (fl.role === "prefill" && fl.prefillKey?.startsWith("custom.") ? [fl.prefillKey.slice(7)] : [])));
+  const checks: [string | null | undefined, string, string][] = [
+    [input.clientName, "The client name", "name"],
+    [input.clientEmail, "The client email", "email"],
+    [input.clientCompany, "The client company", "name"],
+    [input.ref, "The file reference", "reference"],
+    [input.title, "The file title", "title"],
+    [template.name, `The agreement name "${template.name}"`, "name"],
+    [ws.legal_name, "Your firm's legal name (in Settings)", "name"],
+    [ws.countersigner_name, "The countersigner's name (in Settings)", "name"],
+    [ws.countersigner_title, "The countersigner's title (in Settings)", "title"],
+    [ws.countersigner_email, "The countersigner's email (in Settings)", "email"],
+    ...Object.entries(input.prefill ?? {}).filter(([k]) => custom.has(k.replace(/^custom\./, ""))).map(([k, v]): [string, string, string] => [v, `The value for "${k}"`, "value"]),
+  ];
+  for (const [v, subject, noun] of checks) {
+    const problem = printProblem(v, subject, noun);
+    if (problem) throw new AppError(problem, 422);
+  }
 }
 
 function templateName(f: FileRow) {
@@ -357,6 +385,8 @@ export async function completeClientSigning(tok: string, input: SignInput, ctx: 
         }
         if (fl.required && !v) throw new AppError(`Fill in "${fl.label}".`);
         if (fl.type === "email" && v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) throw new AppError(`"${fl.label}" needs a valid email.`);
+        const unprintable = v ? printProblemFor(fl, v) : null;
+        if (unprintable) throw new AppError(unprintable, 422);
         if (v) values.set(fl.id, { kind: "text", text: v });
         stored[fl.id] = v;
       }
