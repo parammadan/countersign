@@ -1,0 +1,93 @@
+diff --git a/lib/db.ts b/lib/db.ts
+index fe7446b..363ace2 100644
+--- a/lib/db.ts
++++ b/lib/db.ts
+@@ -256,6 +256,88 @@ const MIGRATIONS: string[] = [
+   CREATE INDEX qa_answers_version ON qa_answers(workspace_id, template_version_id, created_at);
+   CREATE INDEX qa_answers_day ON qa_answers(workspace_id, created_at);
+   `,
++  // M4 Document Intelligence results and the internal workflow outbox (lib/intake/store.ts INTAKE_DDL and
++  // lib/workflow/outbox.ts OUTBOX_DDL: the same statements). IF NOT EXISTS: the app may already have created them at first use.
++  `
++  CREATE TABLE IF NOT EXISTS intake_results (
++    id           TEXT PRIMARY KEY,
++    workspace_id TEXT NOT NULL REFERENCES workspaces(id),
++    created_by   TEXT NOT NULL REFERENCES users(id),
++    created_at   TEXT NOT NULL,
++    source       TEXT NOT NULL CHECK (source IN ('upload', 'paste')),
++    filename     TEXT,
++    doc_type     TEXT NOT NULL,
++    decision     TEXT NOT NULL CHECK (decision IN ('needs_review', 'ready_to_prepare', 'unsupported')),
++    text_sha256  TEXT NOT NULL,
++    record_json  TEXT NOT NULL
++  );
++  CREATE INDEX IF NOT EXISTS intake_results_ws ON intake_results (workspace_id, created_at);
++  CREATE TABLE IF NOT EXISTS wf_events (
++    id TEXT PRIMARY KEY,
++    workspace_id TEXT NOT NULL,
++    type TEXT NOT NULL,
++    payload_json TEXT NOT NULL,
++    payload_hash TEXT NOT NULL,
++    idempotency_key TEXT NOT NULL,
++    created_at INTEGER NOT NULL,
++  UNIQUE (workspace_id, idempotency_key)
++  );
++  CREATE TABLE IF NOT EXISTS wf_deliveries (
++    id TEXT PRIMARY KEY,
++    event_id TEXT NOT NULL REFERENCES wf_events(id),
++    workspace_id TEXT NOT NULL,
++    target_id TEXT NOT NULL,
++    target_url TEXT NOT NULL,
++    status TEXT NOT NULL,
++    attempts INTEGER NOT NULL DEFAULT 0,
++    next_attempt_at INTEGER NOT NULL,
++    lease_until INTEGER,
++    last_error TEXT,
++    dead_reason TEXT,
++    created_at INTEGER NOT NULL,
++    updated_at INTEGER NOT NULL,
++  UNIQUE (event_id, target_id)
++  );
++  CREATE INDEX IF NOT EXISTS wf_deliveries_due ON wf_deliveries (status, next_attempt_at);
++  CREATE TABLE IF NOT EXISTS wf_audit (
++    id INTEGER PRIMARY KEY AUTOINCREMENT,
++    delivery_id TEXT NOT NULL,
++    event_id TEXT NOT NULL,
++    workspace_id TEXT NOT NULL,
++    attempt INTEGER NOT NULL,
++    at INTEGER NOT NULL,
++    outcome TEXT NOT NULL,
++    status_code INTEGER,
++    error TEXT,
++    duration_ms INTEGER,
++    payload_hash TEXT NOT NULL,
++    actor TEXT
++  );
++  CREATE TABLE IF NOT EXISTS wf_steps (
++    id INTEGER PRIMARY KEY AUTOINCREMENT,
++    workspace_id TEXT NOT NULL,
++    subject_id TEXT NOT NULL,
++    step TEXT NOT NULL,
++    outcome TEXT NOT NULL,
++    detail TEXT NOT NULL,
++    at INTEGER NOT NULL
++  );
++  CREATE TABLE IF NOT EXISTS wf_claims (
++    workspace_id TEXT NOT NULL,
++    event_id TEXT NOT NULL,
++    consumer TEXT NOT NULL,
++    token TEXT NOT NULL,
++    lease_until INTEGER NOT NULL,
++  PRIMARY KEY (workspace_id, event_id, consumer)
++  );
++  CREATE TABLE IF NOT EXISTS wf_processed (
++    workspace_id TEXT NOT NULL,
++    event_id TEXT NOT NULL,
++    consumer TEXT NOT NULL,
++    processed_at INTEGER NOT NULL,
++  PRIMARY KEY (workspace_id, event_id, consumer)
++  );
++  `,
+ ];
+ 
+ function open(): DatabaseSync {
