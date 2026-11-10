@@ -15,10 +15,26 @@ export function pageLines(ex: Extracted): PageLines[] {
     const items = p.items.map((i) => ({ ...i, str: clean(i.str) })).filter((i) => i.str.trim().length > 0);
     items.sort((a, b) => a.y + a.h * 0.8 - (b.y + b.h * 0.8) || a.x - b.x);
     const rows: { base: number; parts: { x: number; w: number; s: string }[] }[] = [];
+    // items arrive in baseline order, so rows are created in baseline order too and every existing row's base is <=
+    // this item's: the first row within tolerance is the first with base >= base - tol, found by binary search
+    // (same row as a linear scan, without its quadratic cost on pages of many lines). Non-finite positions keep the scan.
+    const finite = items.every((i) => Number.isFinite(i.y + i.h * 0.8));
+    const firstWithin = (base: number, tol: number) => {
+      if (!finite) return rows.find((r) => Math.abs(r.base - base) <= tol);
+      let lo = 0;
+      let hi = rows.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (rows[mid].base < base - tol) lo = mid + 1;
+        else hi = mid;
+      }
+      const r = rows[lo];
+      return r && Math.abs(r.base - base) <= tol ? r : undefined;
+    };
     for (const it of items) {
       const base = it.y + it.h * 0.8;
       const tol = Math.max(2, it.h * 0.35);
-      const row = rows.find((r) => Math.abs(r.base - base) <= tol);
+      const row = firstWithin(base, tol);
       if (row) row.parts.push({ x: it.x, w: it.w, s: it.str });
       else rows.push({ base, parts: [{ x: it.x, w: it.w, s: it.str }] });
     }

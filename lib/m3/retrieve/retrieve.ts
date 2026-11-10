@@ -169,12 +169,16 @@ const ABBREV = new Set(["sec", "no", "art", "inc", "ltd", "co", "corp", "cl", "p
 export function sentenceSpans(text: string): [number, number][] {
   const spans: [number, number][] = [];
   let start = 0;
-  const re = /[.!?]+(?=\s|$)|\n/g;
+  // a run of punctuation is matched once, from its start (no retry at every position inside a long "....." run)
+  const re = /(?<![.!?])[.!?]+(?=\s|$)|\n/g;
+  const after = /\s*(\S)/y;
   for (let m = re.exec(text); m; m = re.exec(text)) {
     const end = m.index + m[0].length;
     if (m[0] !== "\n") {
       const word = (text.slice(Math.max(start, m.index - 24), m.index).match(/([\p{L}.]+)$/u)?.[1] ?? "").toLowerCase();
-      const next = text.slice(end).match(/^\s*(\S)/)?.[1] ?? "";
+      // the next visible character, read in place (no copy of the rest of the text per match)
+      after.lastIndex = end;
+      const next = after.exec(text)?.[1] ?? "";
       if (ABBREV.has(word) || (next !== "" && !/[\p{Lu}\p{N}"“(]/u.test(next))) continue;
     }
     if (text.slice(start, end).trim()) spans.push([start, end]);
