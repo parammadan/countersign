@@ -70,8 +70,8 @@ describe("Studio form: AI is obvious, honest about what it does, and its suggest
   });
   it("a field Claude filled is labelled as its suggestion; one the person filled is not", async () => {
     const { FormField } = await import("@/components/studio/NewAgreement");
-    const a = renderToStaticMarkup(createElement(FormField, { label: "Start date", suggested: true }, createElement("input")));
-    const b = renderToStaticMarkup(createElement(FormField, { label: "Start date", suggested: false }, createElement("input")));
+    const a = renderToStaticMarkup(createElement(FormField, { label: "Start date", suggested: true, children: createElement("input") }));
+    const b = renderToStaticMarkup(createElement(FormField, { label: "Start date", suggested: false, children: createElement("input") }));
     expect(a).toContain("Suggested by Claude");
     expect(b).not.toContain("Suggested by Claude");
   });
