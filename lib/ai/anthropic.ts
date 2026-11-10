@@ -115,5 +115,7 @@ export function toProviderSchema(s: unknown): Record<string, unknown> {
     }
     out[k] = k === "properties" ? Object.fromEntries(Object.entries(v as object).map(([pk, pv]) => [pk, toProviderSchema(pv)])) : toProviderSchema(v);
   }
+  // structured outputs reject an object schema that doesn't close it explicitly (400 invalid_request_error)
+  if (out.type === "object" && !("additionalProperties" in out)) out.additionalProperties = false;
   return out;
 }

@@ -221,6 +221,8 @@ describe("Anthropic adapter (no network: mocked client)", () => {
 
   it("strips schema limits structured outputs doesn't accept (they're enforced afterwards by zod)", () => {
     expect(toProviderSchema(req().schema)).toEqual({ type: "object", additionalProperties: false, required: ["a"], properties: { a: { anyOf: [{ type: "string" }, { type: "null" }] }, b: { type: "array", items: { type: "string" } } } });
+    // an object schema that doesn't say is closed explicitly, nested ones too (the Studio draft schema didn't, and the API refused it)
+    expect(toProviderSchema({ type: "object", properties: { clauses: { type: "array", items: { type: "object", properties: { id: { type: "string" } } } } } })).toEqual({ type: "object", additionalProperties: false, properties: { clauses: { type: "array", items: { type: "object", additionalProperties: false, properties: { id: { type: "string" } } } } } });
   });
 });
 
