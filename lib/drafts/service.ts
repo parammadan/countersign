@@ -17,7 +17,7 @@ import { auditLibraryUse, verifyLibraryUse } from "../clauses/app/service";
 import { id as newId, now } from "../util";
 import { generationProvider, generationProviderFrom, GENERATION_LIMITS, type GenerationProvider } from "./provider";
 import { configuredProvider } from "../ai/anthropic";
-import { aiGate, estimateUsd } from "../ai/budget";
+import { aiGate, aiState, estimateUsd, type AiState } from "../ai/budget";
 import type { ModelProvider } from "../understand/model";
 import type { Principal } from "./roles";
 import { generateAgreement, TEMPLATES, KINDS, type GenerateInput, type Kind, type TermKey } from "../m23/m23-generate";
@@ -42,6 +42,17 @@ export type SessionLike = { userId: string; workspaceId: string; role: "owner" |
 const principal = (s: SessionLike): Principal => ({ userId: s.userId, workspaceId: s.workspaceId, role: s.role });
 
 export const aiConfigured = () => generationProvider() !== null;
+
+/**
+ * Whether Studio's two AI steps would run for this workspace now (no model call, nothing reserved): `suggest` fills
+ * the form from a description, `draft` rewords the generated draft. Only for showing the page; each step still goes
+ * through aiGate when it runs.
+ */
+export type StudioAi = { suggest: AiState; draft: AiState };
+export function studioAiState(s: Pick<SessionLike, "workspaceId">, env: Record<string, string | undefined> = process.env): StudioAi {
+  const configured = configuredProvider(env) !== null;
+  return { suggest: aiState(s.workspaceId, configured, SUGGEST_TYPICAL_USD, env), draft: aiState(s.workspaceId, configured, DRAFT_TYPICAL_USD, env) };
+}
 
 // ---------- the form the user fills (or confirms after a suggestion) ----------
 
