@@ -7,7 +7,7 @@ import type { DraftDocument } from "./types";
 export type { DraftDocument, Clause } from "./types";
 export { renderDocx, renderPdf, validateDraft };
 export { DraftValidationError, LIMITS, charProblem } from "./validate";
-export { pdfTextProblem, pdfCanPrint, unprintableChars } from "./pdf-text";
+export { pdfTextProblem, pdfCanPrint, unprintableChars, pdfEquivalents, PDF_EQUIVALENTS } from "./pdf-text";
 export type { DraftErrorCode } from "./validate";
 
 export async function renderDocument(doc: DraftDocument, format: "pdf" | "docx"): Promise<{ bytes: Uint8Array; contentType: string; filename: string }> {

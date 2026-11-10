@@ -136,6 +136,44 @@ describe("export refuses unprintable PDF text with a message", () => {
     const docx = await svc.exportDraft(S.owner, c.draftId, "docx");
     expect(docx.ok).toBe(true);
   });
+
+  /** A submitted draft whose first editable clause ends with `extra`. */
+  async function submittedWith(extra: string) {
+    const c = await svc.createDraft(S.owner, input);
+    if (!c.ok) throw new Error("create");
+    const g = svc.getDraft(S.owner, c.draftId);
+    const cl = g.ok ? (g.version.doc as { clauses: { id: string; locked?: boolean; text: string }[] }).clauses.find((x) => !x.locked && x.id !== "parties")! : null;
+    const e = svc.editDraft(S.staff, c.draftId, 1, { op: "replace_clause", clauseId: cl!.id, text: `${cl!.text} ${extra}` });
+    if (!e.ok) throw new Error(e.message);
+    expect(svc.submitDraft(S.staff, c.draftId, 2).ok).toBe(true);
+    return c.draftId;
+  }
+
+  it("names the characters it can't print, and refuses approval and publishing before anything is created", async () => {
+    const id = await submittedWith("Meetings take place in \u0141\u00f3d\u017a.");
+    const pdf = await svc.exportDraft(S.owner, id, "pdf");
+    expect(pdf.ok).toBe(false);
+    expect(!pdf.ok && pdf.message).toMatch(/^The PDF can't print this text yet: clause \d+ text: cannot print \u0141 \(U\+0141\), \u017a \(U\+017A\)\. Export DOCX instead/);
+    expect((await svc.exportDraft(S.owner, id, "docx")).ok).toBe(true);
+    const before = agreements();
+    const a = await svc.approveDraft(S.admin, id, 2);
+    expect(a.ok === false && a.code).toBe("check_failed");
+    expect(!a.ok && a.message).toMatch(/cannot print \u0141 \(U\+0141\), \u017a \(U\+017A\)/);
+    const p = await svc.publishDraft(S.owner, id, 2);
+    expect(p.ok).toBe(false);
+    expect(agreements()).toBe(before);
+    const g = svc.getDraft(S.owner, id);
+    expect(g.ok && g.draft.status).not.toBe("approved");
+  });
+
+  it("prints typographic dashes, spaces and quotes outside WinAnsi as their equivalents, through to publishing", async () => {
+    const id = await submittedWith("Late fees of \u20ac1\u202F000 apply \u2011 net of a \u22125% credit \u2015 \u201Fas agreed\u201D.");
+    expect((await svc.exportDraft(S.owner, id, "pdf")).ok).toBe(true);
+    const a = await svc.approveDraft(S.admin, id, 2);
+    if (!a.ok) throw new Error(a.message);
+    const p = await svc.publishDraft(S.owner, id, 2);
+    expect(p.ok).toBe(true);
+  });
 });
 
 describe("publishing an NDA assigns its signature blocks from the draft's parties", () => {

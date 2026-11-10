@@ -1,14 +1,16 @@
 import { PDFDocument, StandardFonts, type PDFFont, type PDFPage } from "pdf-lib";
 import { clauseLabel, type DraftDocument } from "./types";
 import { DraftValidationError, LIMITS, oneLine, prepareDraft } from "./validate";
+import { pdfEquivalents } from "./pdf-text";
 
 const W = 612, H = 792, M = 72;
 const BODY = 11, LEAD = 15, HEAD = 12, TITLE = 20;
 
-// Standard fonts only encode WinAnsi. Anything else is replaced with "?" so rendering never throws
-// (and is visible, not silently dropped).
+// Standard fonts only encode WinAnsi. Typographic characters with a WinAnsi equivalent print as that (pdf-text.ts);
+// anything else is replaced with "?" so rendering never throws (and is visible, not silently dropped). Callers
+// refuse such documents first with pdfTextProblem.
 function winAnsi(s: string, font: PDFFont): string {
-  const t = s.replace(/\t/g, "    ");
+  const t = pdfEquivalents(s).replace(/\t/g, "    ");
   try {
     font.encodeText(t); // fast path: whole string encodes, so nothing to replace
     return t;
