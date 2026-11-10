@@ -256,6 +256,16 @@ const MIGRATIONS: string[] = [
   CREATE INDEX qa_answers_version ON qa_answers(workspace_id, template_version_id, created_at);
   CREATE INDEX qa_answers_day ON qa_answers(workspace_id, created_at);
   `,
+  // 7: M2.2 AI answers: conversations (a follow-up shares its first question's thread) and what each call cost,
+  // including prompt-cache tokens. Additive; older code ignores the new columns.
+  `
+  ALTER TABLE qa_answers ADD COLUMN thread_id TEXT;
+  ALTER TABLE qa_answers ADD COLUMN cache_write_tokens INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE qa_answers ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE qa_answers ADD COLUMN cost_microusd INTEGER NOT NULL DEFAULT 0;
+  CREATE INDEX qa_answers_thread ON qa_answers(workspace_id, thread_id, created_at);
+  CREATE INDEX qa_answers_cost ON qa_answers(created_at, cost_microusd);
+  `,
 ];
 
 function open(): DatabaseSync {
