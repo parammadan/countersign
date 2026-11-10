@@ -29,3 +29,17 @@ The Knowledge Hub is correct without any of them:
 | `m3-archive-restore.patch` | `app/actions.ts` | Archive removes the agreement from the index; restore indexes it again (best effort). |
 
 The DDL must stay identical to `M3_INDEX_DDL`: `openIndexOnDatabase` compares the stored definitions with it (case and whitespace aside) and refuses a different one with `IndexError("schema_missing")`.
+
+## Clause Library
+
+The Clause Library (`lib/clauses`, `/app/clauses`) is correct without the patch:
+- `lib/clauses/sqlite-store.ts` creates its tables and triggers idempotently (`CREATE ... IF NOT EXISTS`) at first use on the app's own connection.
+- It sets no pragma on that connection and never touches `PRAGMA user_version`.
+
+| patch | file | what |
+|---|---|---|
+| `clause-library-migration.patch` | `lib/db.ts` | Appends `CLAUSES_DDL` (imported from `lib/clauses/sqlite-store`, so it can't drift) as the next migration: `clause_library_clauses`, `clause_library_versions` and their five immutability triggers. Because it is `IF NOT EXISTS`, it is a no-op on a database that already used the Clause Library. If M2.3's or M3's migration lands first, keep this one last. |
+
+How it was checked:
+- `git apply --check` passes on this branch.
+- With the patch applied, `npx tsc --noEmit` is clean and `test/clauses/app.test.ts` passes (18/18): the migration runs at open, then the first-use creation is a no-op.

@@ -1,0 +1,22 @@
+diff --git a/lib/db.ts b/lib/db.ts
+index fe7446b..cc97ba5 100644
+--- a/lib/db.ts
++++ b/lib/db.ts
+@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
+ import fs from "node:fs";
+ import path from "node:path";
+ import { dataDir } from "./paths";
++import { CLAUSES_DDL } from "./clauses/sqlite-store";
+ 
+ const MIGRATIONS: string[] = [
+   `
+@@ -256,6 +257,9 @@ const MIGRATIONS: string[] = [
+   CREATE INDEX qa_answers_version ON qa_answers(workspace_id, template_version_id, created_at);
+   CREATE INDEX qa_answers_day ON qa_answers(workspace_id, created_at);
+   `,
++  // Clause Library: clauses, append-only versions and immutability triggers, workspace-scoped. Idempotent
++  // (IF NOT EXISTS) because lib/clauses creates the same tables at first use; keep it identical to CLAUSES_DDL.
++  CLAUSES_DDL,
+ ];
+ 
+ function open(): DatabaseSync {
