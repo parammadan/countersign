@@ -16,9 +16,14 @@ export function signerOr404(tok: string) {
 const name = (fileId: string) => `cs_v_${fileId.replace(/[^A-Za-z0-9_-]/g, "")}`;
 const TTL = 12 * 3600_000;
 
-export async function markSignerVerified(fileId: string) {
+/** The sealed cookie value. Made before the code is used up, so a sealing failure (no APP_SECRET) leaves it usable. */
+export function signerProof(fileId: string): string {
+  return seal(`${fileId}|${Date.now() + TTL}`);
+}
+
+export async function markSignerVerified(fileId: string, proof = signerProof(fileId)) {
   const jar = await cookies();
-  jar.set(name(fileId), seal(`${fileId}|${Date.now() + TTL}`), {
+  jar.set(name(fileId), proof, {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production" && !process.env.APP_URL?.startsWith("http://"),
