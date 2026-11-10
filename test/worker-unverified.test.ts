@@ -14,7 +14,7 @@ process.env.DISABLE_WORKER = "1";
 process.env.SMTP_HOST = "127.0.0.1";
 process.env.SMTP_PORT = "1";
 process.env.SMTP_USER = "test@example.com";
-process.env.SMTP_PASS = "test-password";
+process.env.SMTP_PASS = "pw"; // dummy; short so it never looks like a real credential
 
 describe("worker reminders and the email-confirmation gate", () => {
   let files: typeof import("../lib/files");
