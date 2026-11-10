@@ -215,7 +215,9 @@ function mapRefs(text: string, r: Renumbering, where: string): Mapped {
     // the rest, so "end of text" checks can't pass on a cut-off window ("clauses 3 and 4<300 spaces>copies").
     const afterEnd = offset + all.length + REF_WINDOW;
     const cutShort = afterEnd < string.length;
-    const after = string.slice(offset + all.length, afterEnd) + (cutShort ? "\u0000" : "");
+    // when cut short, the last word may be cut in half: drop it, so only complete words are read
+    const raw = string.slice(offset + all.length, afterEnd);
+    const after = cutShort ? raw.replace(/\S+$/u, "") + "\u0000" : raw;
     const rest = list + after;
     const changes = (m: RegExpMatchArray) => (r.map.get(m[1]) ?? m[1]) !== m[1];
     const from = Math.max(0, offset - REF_WINDOW);

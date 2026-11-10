@@ -54,7 +54,7 @@ describe("hotfix review: a cut-off window never turns a conflict into a rewrite"
     `Deliver under clauses 3 and 4${sp}copies to the Client.`,
     `As set out in clause 3 of${sp}the Master Agreement.`,
     `As set out in clause 3 to${sp}the Provider Agreement.`,
-    `As set out in clause 3 of the ${"x".repeat(250)} Agreement.`,
+    `As set out in clause 3 of the ${"x".repeat(250)} Agreement.`, ...[216, 218, 220, 223].map((n) => `As set out in clause 3 of${" ".repeat(n)}the big long agreement and more words follow here.`),
   ]) {
     it(`still a conflict: ${JSON.stringify(text.slice(0, 40))}…`, () => {
       const r = applyProposal(docOf(["Parties.", "B.", "C.", "D.", text]), add("c1"));
