@@ -135,7 +135,11 @@ export class SqliteClauseStore implements ClauseStore {
       this.db.exec("COMMIT");
       return r;
     } catch (e) {
-      this.db.exec("ROLLBACK");
+      try {
+        this.db.exec("ROLLBACK");
+      } catch {
+        // a failed rollback must not hide the error that caused it (SQLite may already have rolled back)
+      }
       throw e;
     }
   }
