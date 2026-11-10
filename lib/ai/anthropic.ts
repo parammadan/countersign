@@ -41,7 +41,9 @@ export function anthropicProvider(o: { apiKey?: string; model: string; effort?: 
         },
         { signal: req.signal },
       );
-      req.onUsage?.({ inputTokens: res.usage.input_tokens, outputTokens: res.usage.output_tokens });
+      // cached input (none is requested today) is counted as ordinary input: the spending limit errs high
+      const u = res.usage as { input_tokens: number; output_tokens: number; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null };
+      req.onUsage?.({ inputTokens: u.input_tokens + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0), outputTokens: u.output_tokens });
       if (res.stop_reason === "refusal") throw new ProviderError("The model declined this request.");
       if (res.stop_reason === "max_tokens") throw new ProviderError("The answer was cut off.");
       // after a server-side fallback, only what follows the last fallback block is the answer
