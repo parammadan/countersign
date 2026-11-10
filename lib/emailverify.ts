@@ -22,10 +22,14 @@ export function workspaceVerified(wsId: string) {
   return !!one("SELECT 1 FROM members m JOIN users u ON u.id = m.user_id WHERE m.workspace_id = ? AND m.role = 'owner' AND u.email_verified_at IS NOT NULL LIMIT 1", wsId);
 }
 
+/** Whether the workspace may email this address now (the rule assertCanSendTo enforces). */
+export function canSendTo(wsId: string, to: string): boolean {
+  if (!verificationRequired() || workspaceVerified(wsId)) return true;
+  return !!one("SELECT 1 FROM members m JOIN users u ON u.id = m.user_id WHERE m.workspace_id = ? AND u.email = ? LIMIT 1", wsId, to.toLowerCase());
+}
+
 export function assertCanSendTo(wsId: string, to: string) {
-  if (!verificationRequired() || workspaceVerified(wsId)) return;
-  const member = one("SELECT 1 FROM members m JOIN users u ON u.id = m.user_id WHERE m.workspace_id = ? AND u.email = ? LIMIT 1", wsId, to.toLowerCase());
-  if (member) return;
+  if (canSendTo(wsId, to)) return;
   throw new AppError(
     "Confirm your email address first. Until the workspace owner does, agreements can only be sent to your own team (try Send a test to me). Check your inbox for the confirmation link.",
     403,

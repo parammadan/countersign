@@ -25,6 +25,20 @@ function key(): Buffer {
   return cached;
 }
 
+/** Throws now, rather than at first use, when there is no secret (APP_SECRET unset in production). */
+export function requireSecret(): void {
+  key();
+}
+
+/**
+ * Called at server start (instrumentation.ts): a production server without APP_SECRET refuses to start, instead of
+ * failing mid-request after it has changed things. Skipped outside production and while `next build` runs.
+ */
+export function checkSecretAtBoot(): void {
+  if (process.env.NODE_ENV !== "production" || process.env.NEXT_PHASE === "phase-production-build") return;
+  requireSecret();
+}
+
 export function seal(plain: string): string {
   const iv = crypto.randomBytes(12);
   const c = crypto.createCipheriv("aes-256-gcm", key(), iv);
