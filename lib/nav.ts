@@ -37,7 +37,7 @@ export const NAV: NavItem[] = [
 
   // Approved roadmap (M2+). Not rendered until built.
   { id: "studio", label: "Agreement Studio", href: "/app/studio", icon: "spark", section: "intelligence", status: "live" },
-  { id: "knowledge", label: "Knowledge Hub", href: "/app/knowledge", icon: "agreement", section: "intelligence", status: "planned" },
+  { id: "knowledge", label: "Knowledge Hub", href: "/app/knowledge", icon: "agreement", section: "intelligence", status: "live" },
   { id: "documents", label: "Document Intelligence", href: "/app/documents", icon: "files", section: "intelligence", status: "planned" },
   { id: "inbox", label: "Smart Inbox", href: "/app/inbox", icon: "mail", section: "intelligence", status: "planned" },
   { id: "voice", label: "Voice", href: "/app/voice", icon: "send", section: "intelligence", status: "planned" },
