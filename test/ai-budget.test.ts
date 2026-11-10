@@ -30,7 +30,7 @@ beforeAll(async () => {
   M = await import("../lib/understand/model");
   const at = new Date().toISOString();
   db.run("INSERT INTO workspaces (id, name, legal_name, sender_name, countersigner_name, countersigner_email, inbound_token, created_at) VALUES (?,?,?,?,?,?,?,?)", "ws_a", "Northwind", "Northwind Advisory, LLC", "Northwind", "Avery Tester", "avery@example.com", "inb_a", at);
-  db.run("INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?,?,?,?,?)", "u_owner", "owner@example.com", "Avery Tester", "h", at);
+  db.run("INSERT INTO users (id, email, name, password_hash, created_at, email_verified_at) VALUES (?,?,?,?,?,?)", "u_owner", "owner@example.com", "Avery Tester", "h", at, at);
   db.run("INSERT INTO members (workspace_id, user_id, role, created_at) VALUES (?,?,?,?)", "ws_a", "u_owner", "owner", at);
 });
 beforeEach(() => {
@@ -110,13 +110,13 @@ describe("a metered provider", () => {
     expect(db.one<{ state: string }>("SELECT state FROM ai_spend")!.state).toBe("booked");
   });
 
-  it("keeps the estimate for a call stopped at the deadline without usage, and releases one that failed outright", async () => {
+  it("keeps the estimate for a call stopped at the deadline without usage, and releases one the API refused outright", async () => {
     const hung: ModelProvider = { name: "fake", model: "claude-opus-5-5", complete: (r) => new Promise((_, reject) => r.signal.addEventListener("abort", () => reject(new Error("aborted")))) };
     await expect(M.callModel(B.metered(hung, { feature: "m3", workspaceId: "ws_a" }, env).provider, req(2_000, 1_000), 10)).rejects.toThrow(/too long/);
     await wait(10);
     close(B.spentUsd(), B.estimateUsd(2_000, 1_000));
     db.run("DELETE FROM ai_spend");
-    const down: ModelProvider = { name: "fake", model: "claude-opus-5-5", complete: async () => { throw new Error("connection refused"); } };
+    const down: ModelProvider = { name: "fake", model: "claude-opus-5-5", complete: async () => { throw Object.assign(new Error("bad request"), { status: 400 }); } };
     await expect(M.callModel(B.metered(down, { feature: "m3", workspaceId: "ws_a" }, env).provider, req(), 1_000)).rejects.toThrow(M.AnalysisError);
     expect(B.spentUsd()).toBe(0);
     expect(db.one<{ state: string }>("SELECT state FROM ai_spend")!.state).toBe("released");
@@ -150,6 +150,7 @@ describe("only confirmed workspaces use AI", () => {
     const counting: ModelProvider = { name: "fake", model: "claude-opus-5-5", complete: async () => { calls++; return {}; } };
     process.env.SMTP_USER = "test@example.com";
     process.env.SMTP_PASS = "pw"; // dummy: email "can leave the server", so confirmation is required
+    db.run("UPDATE users SET email_verified_at = NULL WHERE id = 'u_owner'");
     try {
       const g = B.aiGate("qa", "ws_a", counting, 0.01);
       expect(g).toMatchObject({ provider: null, reason: "unverified", notice: B.MESSAGES.unverified });
@@ -162,7 +163,7 @@ describe("only confirmed workspaces use AI", () => {
     } finally {
       delete process.env.SMTP_USER;
       delete process.env.SMTP_PASS;
-      db.run("UPDATE users SET email_verified_at = NULL WHERE id = 'u_owner'");
+      db.run("UPDATE users SET email_verified_at = ? WHERE id = 'u_owner'", new Date().toISOString());
     }
   });
 

@@ -66,6 +66,9 @@ describe("M3 Knowledge Hub", () => {
       "INSERT INTO workspaces (id, name, legal_name, sender_name, countersigner_name, countersigner_email, inbound_token, created_at) VALUES (?,?,?,?,?,?,?,?)",
       id, `Firm ${id}`, `Firm ${id} LLC`, `Firm ${id}`, "Avery Tester", `avery-${id}@example.com`, `inb_${id}`, new Date().toISOString(),
     );
+    // a confirmed owner: AI answers only for confirmed workspaces, whatever the email mode
+    db.run("INSERT INTO users (id, email, name, password_hash, created_at, email_verified_at) VALUES (?,?,?,?,?,?)", `uo_${id}`, `owner-${id}@example.com`, "Owner", "h", new Date().toISOString(), new Date().toISOString());
+    db.run("INSERT INTO members (workspace_id, user_id, role, created_at) VALUES (?,?,?,?)", id, `uo_${id}`, "owner", new Date().toISOString());
   }
   const upload = async (ws: string, name: string, lines: string[]) => {
     const r = await T.ingestAgreement(files.getWorkspace(ws), { data: await pdf([lines]), filename: `${name}.pdf` }, { actor: "owner@example.com" });

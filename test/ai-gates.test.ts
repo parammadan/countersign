@@ -58,6 +58,7 @@ const askAll = async (q: string, p: ModelProvider | null) => {
 const confirmationOn = () => {
   process.env.SMTP_USER = "test@example.com";
   process.env.SMTP_PASS = "pw"; // dummy: email "can leave the server", so confirmation is required
+  db.run("UPDATE users SET email_verified_at = NULL");
 };
 
 async function pdf(lines: string[]): Promise<Buffer> {
@@ -77,7 +78,7 @@ beforeAll(async () => {
   const T = await import("../lib/templates");
   for (const ws of ["ws_a", "ws_h"]) {
     db.run("INSERT INTO workspaces (id, name, legal_name, sender_name, countersigner_name, countersigner_email, inbound_token, created_at) VALUES (?,?,?,?,?,?,?,?)", ws, `Firm ${ws}`, `Firm ${ws} LLC`, `Firm ${ws}`, "Avery Tester", `avery-${ws}@example.com`, `inb_${ws}`, at());
-    db.run("INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?,?,?,?,?)", `u_${ws}`, `owner-${ws}@example.com`, "Avery Tester", "h", at());
+    db.run("INSERT INTO users (id, email, name, password_hash, created_at, email_verified_at) VALUES (?,?,?,?,?,?)", `u_${ws}`, `owner-${ws}@example.com`, "Avery Tester", "h", at(), at());
     db.run("INSERT INTO members (workspace_id, user_id, role, created_at) VALUES (?,?,?,?)", ws, `u_${ws}`, "owner", at());
   }
   const ws = files.getWorkspace("ws_a");
@@ -86,6 +87,7 @@ beforeAll(async () => {
 });
 
 afterEach(() => {
+  db.run("UPDATE users SET email_verified_at = ?", at());
   delete process.env.AI_DAILY_USD_CAP;
   delete process.env.SMTP_USER;
   delete process.env.SMTP_PASS;
@@ -115,14 +117,14 @@ describe("Knowledge Hub (M3)", () => {
   });
 
   it("two concurrent questions with room for one: one model answer, one passages answer saying why", async () => {
-    // room for one reservation (each is at least $0.084 for the 4,000-token output cap) but not two
-    process.env.AI_DAILY_USD_CAP = "0.16";
+    // room for one reservation but not two: each is the worst case, about $0.25-0.33 for a 4,000-token output cap
+    process.env.AI_DAILY_USD_CAP = "0.45";
     const p = counting(notFound, 30);
     const [a, b] = await Promise.all([askAll("When are invoices due?", p.provider), askAll("When is payment due?", p.provider)]);
     expect(p.calls).toBe(1);
     expect([a.result.mode, b.result.mode].sort()).toEqual(["model", "passages"]);
     expect((a.result.mode === "passages" ? a : b).result.warnings[0]).toBe(B.MESSAGES.spendCap);
-    expect(B.spentUsd()).toBeLessThanOrEqual(0.16);
+    expect(B.spentUsd()).toBeLessThanOrEqual(0.45);
   });
 
   it("an unconfirmed workspace never reaches the provider and is asked to confirm", async () => {

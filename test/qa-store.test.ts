@@ -189,8 +189,9 @@ describe("questions about an agreement", () => {
     const [h] = Q.recentAnswers("ws_a", vid);
     expect(h.result.mode).toBe("passages");
     expect(h.result.warnings[0]).toMatch(/spending limit/);
-    expect(Q.aiDailyBudgetUsd({})).toBe(10);
-    expect(Q.aiDailyBudgetUsd({ AI_DAILY_BUDGET_USD: "abc" })).toBe(10);
+    // one limit for every AI feature (lib/ai/budget), $5 by default
+    expect(Q.aiDailyBudgetUsd({})).toBe(5);
+    expect(Q.aiDailyBudgetUsd({ AI_DAILY_BUDGET_USD: "abc" })).toBe(5);
   });
 
   it("a call that fails without reporting usage keeps its worst-case cost booked; a failure before any call books nothing", async () => {

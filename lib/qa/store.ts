@@ -13,8 +13,8 @@ import { id, now, sha256 } from "../util";
 import { pageLines } from "../understand/text";
 import { latestAnalysis, MAX_PAGES } from "../understand/store";
 import { AnalysisError, type ModelProvider, type Usage } from "../understand/model";
-import { meteredSpentUsd } from "../ai/budget";
-import { configuredProvider, configuredVerifier, TEST_KEY } from "../ai/anthropic";
+import { aiNeedsVerifiedWorkspace, dailyCapUsd as aiDailyBudgetUsd, meteredSpentUsd, NEW_WORKSPACE_DAYS, newWorkspaceCapUsd as aiNewWorkspaceDailyBudgetUsd, workspaceCapUsd as aiWorkspaceDailyBudgetUsd } from "../ai/budget";
+import { configuredProvider, configuredVerifier } from "../ai/anthropic";
 import { costMicroUsd, worstCaseMicroUsd } from "../ai/pricing";
 import { answerFromPassages, answerWithModel, cleanQuestion, modelContext, QA_LIMITS, QaModelError, requestTokens, tokensAtMost, type QaResult, type Turn } from "./answer";
 import type { PageLines } from "../understand/text";
@@ -24,33 +24,8 @@ import { VERIFY_JSON_SCHEMA, VERIFY_LIMITS, VERIFY_SYSTEM } from "./verify";
 export const QA_PER_USER_PER_MINUTE = 6;
 /** Questions per workspace per 24 hours: tight when a paid model answers, generous for passages only. */
 export const QA_DAILY = { model: 50, passages: 300 };
-/** Spend on AI answers across all workspaces per 24 hours (USD); past it, answers fall back to passages. */
-export const aiDailyBudgetUsd = (env: Record<string, string | undefined> = process.env) => {
-  const v = Number(env.AI_DAILY_BUDGET_USD);
-  return Number.isFinite(v) && v >= 0 ? v : 10;
-};
-/** Spend on AI answers per workspace per 24 hours (USD), so one workspace can't use up the global budget. */
-export const aiWorkspaceDailyBudgetUsd = (env: Record<string, string | undefined> = process.env) => {
-  const v = Number(env.AI_WORKSPACE_DAILY_BUDGET_USD);
-  return Number.isFinite(v) && v >= 0 ? v : 3;
-};
-/**
- * Spend on AI answers per 24 hours (USD) shared by all workspaces created in the last 7 days. Verifying an email
- * proves a mailbox, not a person: one inbox can verify many "+alias" sign-ups, so new workspaces together get a
- * smaller pool and can't use up the global budget that established customers rely on.
- */
-export const aiNewWorkspaceDailyBudgetUsd = (env: Record<string, string | undefined> = process.env) => {
-  const v = Number(env.AI_NEW_WORKSPACE_DAILY_BUDGET_USD);
-  return Number.isFinite(v) && v >= 0 ? v : 2;
-};
-export const NEW_WORKSPACE_DAYS = 7;
-/**
- * Whether AI answers need a workspace whose owner confirmed their email. Always, whatever the email mode: with no
- * email provider (outbox) there is nothing to gate for mail, but model answers still cost money. Only the browser
- * tests, which sign up without a mailbox, turn it off, and only with the test key: a real key is never ungated.
- */
-export const aiNeedsVerifiedWorkspace = (env: Record<string, string | undefined> = process.env) =>
-  !(env.AI_ALLOW_UNVERIFIED_FOR_TESTS === "1" && env.ANTHROPIC_API_KEY === TEST_KEY);
+// Every AI limit and the confirmed-email rule live in lib/ai/budget, so Q&A, Studio and the Knowledge Hub share them.
+export { dailyCapUsd as aiDailyBudgetUsd, workspaceCapUsd as aiWorkspaceDailyBudgetUsd, newWorkspaceCapUsd as aiNewWorkspaceDailyBudgetUsd, NEW_WORKSPACE_DAYS, aiNeedsVerifiedWorkspace } from "../ai/budget";
 const COMPLETED = "('passages', 'model', 'model_failed')";
 
 export type QaEntry = { id: string; threadId: string; question: string; result: QaResult; askedBy: string; createdAt: string };
@@ -118,7 +93,7 @@ export async function askQuestion(
     if (model) {
       // one total across every AI feature: Q&A plus Studio and the Knowledge Hub (lib/ai/budget)
       const all = (one<{ n: number | null }>("SELECT SUM(cost_microusd) n FROM qa_answers WHERE created_at > ?", since)?.n ?? 0) + Math.ceil(meteredSpentUsd() * 1e6);
-      const mine = one<{ n: number | null }>("SELECT SUM(cost_microusd) n FROM qa_answers WHERE workspace_id = ? AND created_at > ?", wsId, since)?.n ?? 0;
+      const mine = (one<{ n: number | null }>("SELECT SUM(cost_microusd) n FROM qa_answers WHERE workspace_id = ? AND created_at > ?", wsId, since)?.n ?? 0) + Math.ceil(meteredSpentUsd({ workspaceId: wsId }) * 1e6);
       if (all + reserve > aiDailyBudgetUsd() * 1e6) {
         model = false;
         notes.push("AI answers have reached today's spending limit, so these are the most relevant passages instead.");
@@ -130,7 +105,7 @@ export async function askQuestion(
         const newSince = new Date(Date.now() - NEW_WORKSPACE_DAYS * 86400_000).toISOString();
         const isNew = !!one("SELECT 1 FROM workspaces WHERE id = ? AND created_at > ?", wsId, newSince);
         if (isNew) {
-          const fresh = one<{ n: number | null }>("SELECT SUM(q.cost_microusd) n FROM qa_answers q JOIN workspaces w ON w.id = q.workspace_id WHERE q.created_at > ? AND w.created_at > ?", since, newSince)?.n ?? 0;
+          const fresh = (one<{ n: number | null }>("SELECT SUM(q.cost_microusd) n FROM qa_answers q JOIN workspaces w ON w.id = q.workspace_id WHERE q.created_at > ? AND w.created_at > ?", since, newSince)?.n ?? 0) + Math.ceil(meteredSpentUsd({ newSince }) * 1e6);
           if (fresh + reserve > aiNewWorkspaceDailyBudgetUsd() * 1e6) {
             model = false;
             notes.push("AI answers for new workspaces have reached today's limit, so these are the most relevant passages instead.");

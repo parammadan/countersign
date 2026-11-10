@@ -584,7 +584,10 @@ export function knownSigners(parties: Party[] | undefined, workspaceNames: (stri
 
 /** partyOf for known parties: only their names and roles count, not the generic firm/client words. */
 function knownPartyOf(s: { firm: Party; client: Party }) {
-  const words = (p: Party) => [norm(p.name), norm(p.role)].filter(Boolean);
+  // a name that is only a form word once LLC/Inc are dropped ("Signature LLC" -> "signature") would match the field
+  // labels of every block, so it never counts
+  const FIELD = new Set(["signature", "sign", "signed", "date", "dated", "name", "print", "printed", "title", "by", "email", "initials", "witness"]);
+  const words = (p: Party) => [norm(p.name), norm(p.role)].filter((w) => w.length >= 2 && !FIELD.has(w));
   const d = { firm: words(s.firm), client: words(s.client) };
   return (text: string): Role | undefined => {
     const t = " " + norm(text) + " ";
@@ -676,6 +679,7 @@ function assignRoles(raws: Raw[], allLines: Line[][], d: { firm: string[]; clien
   const known = knownSigners(opts.parties, [opts.firmName, ...(opts.workspaceNames ?? [])]);
   if (known) {
     const who = knownPartyOf(known);
+    const set: typeof blocks = [];
     for (const b of blocks) {
       const lp = b.members.map((m) => who(m.label)).find(Boolean);
       const h = lp ? undefined : headingParty(b.anchor, allLines[b.anchor.page], who, sigs.filter((k) => k !== b.anchor && k.page === b.anchor.page).map((k) => k.lineY));
@@ -684,7 +688,11 @@ function assignRoles(raws: Raw[], allLines: Line[][], d: { firm: string[]; clien
       b.party = party;
       b.why = `${lp ? "label" : `under "${h!.text}"`}: the ${party === "firm" ? "workspace's" : "other"} party (${(party === "firm" ? known.firm : known.client).role})`;
       b.conf = lp ? 0.9 : h!.conf;
+      set.push(b);
     }
+    // two or more blocks all given to the same party means the names didn't tell them apart: drop this pass and
+    // detect as for any upload rather than have one party sign on the other's line
+    if (set.length >= 2 && set.every((b) => b.party === set[0].party)) for (const b of set) { b.party = undefined; b.why = ""; b.conf = 0.5; }
   }
   // party for each block: label party, else heading above in same column
   for (const b of blocks) {
