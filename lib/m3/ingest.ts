@@ -81,41 +81,44 @@ export function passagesFromExtraction(ex: Extracted, addedSignaturePage: boolea
   // the signature page AgreementOS added isn't part of what the agreement says
   const keep = <T,>(pages: T[]) => pages.slice(0, addedSignaturePage && ex.pages.length > 1 ? -1 : undefined);
   const clean = passages(keep(pageLines(ex)));
-  const asIs = () => clean.passages.map((p) => ({ id: p.id, page: p.page, text: p.text, binding: true }));
-  // only pages with an invisible character can read differently with them as spaces
+  const gate = (t: string) => looksLikeInjection(t);
+  // Hidden instructions: only pages with an invisible character can read differently with them as spaces, and only
+  // sentences of that reading that differ from the clean one need the gate (a word-for-word sentence is gated below).
   const hasInvisible = new RegExp(INVISIBLE.source, "u");
   const pagesWithInvisible = new Set(ex.pages.filter((p) => p.items.some((i) => hasInvisible.test(i.str))).map((p) => p.index + 1));
-  if (!pagesWithInvisible.size) return asIs();
-  const spacedEx: Extracted = { ...ex, pages: ex.pages.map((p) => ({ ...p, items: p.items.map((i) => ({ ...i, str: i.str.replace(INVISIBLE, " ") })) })) };
-  const spaced = passages(keep(pageLines(spacedEx)));
-  const gate = (t: string) => looksLikeInjection(t);
-  // Every gate call is a few dozen regexes over two folds, so each runs once per passage or sentence at most, and only
-  // where the spaced reading differs; containment is tested only within a page. A sentence the clean reading has
-  // word for word reads the same either way: the gate sees it there (S4 flags its passage at put).
-  const cleanSentences = new Set([...clean.passages, ...clean.excluded].flatMap((p) => p.text.split(SENTENCE)));
-  // per page: hidden instruction sentences, by squashed text (whitespace aside, the same as in the clean reading)
   const hidden = new Map<number, Map<string, string>>();
-  for (const p of [...spaced.passages, ...spaced.excluded]) {
-    if (!pagesWithInvisible.has(p.page)) continue;
-    for (const text of p.text.split(SENTENCE)) {
-      const key = squash(text);
-      if (!key || cleanSentences.has(text) || hidden.get(p.page)?.has(key) || !gate(text)) continue;
-      (hidden.get(p.page) ?? hidden.set(p.page, new Map()).get(p.page)!).set(key, text);
+  if (pagesWithInvisible.size) {
+    const spacedEx: Extracted = { ...ex, pages: ex.pages.map((p) => ({ ...p, items: p.items.map((i) => ({ ...i, str: i.str.replace(INVISIBLE, " ") })) })) };
+    const spaced = passages(keep(pageLines(spacedEx)));
+    const cleanSentences = new Set([...clean.passages, ...clean.excluded].flatMap((p) => p.text.split(SENTENCE)));
+    for (const p of [...spaced.passages, ...spaced.excluded]) {
+      if (!pagesWithInvisible.has(p.page)) continue;
+      for (const text of p.text.split(SENTENCE)) {
+        const key = squash(text);
+        if (!key || cleanSentences.has(text) || hidden.get(p.page)?.has(key) || !gate(text)) continue;
+        (hidden.get(p.page) ?? hidden.set(p.page, new Map()).get(p.page)!).set(key, text);
+      }
     }
   }
-  if (!hidden.size) return asIs();
+  // On every page: a passage the gate flags as a whole is kept (S4 flags it at put). Otherwise each of its sentences
+  // is gated on its own too, because start- and line-anchored patterns ("System: ...") only see a sentence that opens
+  // its passage. A flagged sentence, or one holding a hidden instruction, becomes a passage of its own (in the spaced
+  // form for a hidden one); the rest keep the normal reading, in runs of consecutive sentences (verbatim runs of the
+  // page). One gate call per passage and per sentence: linear in the page.
   const out: { id: string; page: number; text: string; binding: boolean }[] = [];
   for (const p of clean.passages) {
-    const onPage = hidden.get(p.page);
-    const key = onPage ? squash(p.text) : "";
-    const mine = onPage ? [...onPage.keys()].filter((k) => key.includes(k)) : [];
-    // a passage the gate already flags as it is needs nothing more (S4 flags it at put)
-    if (!mine.length || gate(p.text)) {
+    if (gate(p.text)) {
       out.push({ id: p.id, page: p.page, text: p.text, binding: true });
       continue;
     }
-    // each sentence that is (or contains) a hidden instruction becomes a passage of its own, in the spaced form; the
-    // others keep the normal reading, in runs of consecutive sentences (still verbatim runs of the page)
+    const onPage = hidden.get(p.page);
+    const key = onPage ? squash(p.text) : "";
+    const mine = onPage ? [...onPage.keys()].filter((k) => key.includes(k)) : [];
+    const sentences = p.text.split(SENTENCE);
+    if (sentences.length === 1 && !mine.length) {
+      out.push({ id: p.id, page: p.page, text: p.text, binding: true });
+      continue;
+    }
     let run: string[] = [];
     let part = 0;
     let x = 0;
@@ -123,16 +126,17 @@ export function passagesFromExtraction(ex: Extracted, addedSignaturePage: boolea
       if (run.length) out.push({ id: part++ === 0 ? p.id : `${p.id}~${part}`, page: p.page, text: run.join(" "), binding: true });
       run = [];
     };
-    for (const sentence of p.text.split(SENTENCE)) {
+    for (const sentence of sentences) {
       const k = squash(sentence);
       // reading invisible characters as spaces only adds sentence breaks, so a clean sentence holds the hidden one
-      const hit = onPage!.has(k) ? k : mine.find((h) => k.includes(h));
-      if (hit === undefined || !k) {
-        run.push(sentence);
-        continue;
-      }
-      flush();
-      out.push({ id: `${p.id}~x${++x}`, page: p.page, text: onPage!.get(hit)!, binding: true });
+      const hiddenKey = mine.length && k ? (onPage!.has(k) ? k : mine.find((h) => k.includes(h))) : undefined;
+      if (hiddenKey !== undefined) {
+        flush();
+        out.push({ id: `${p.id}~x${++x}`, page: p.page, text: onPage!.get(hiddenKey)!, binding: true });
+      } else if (k && gate(sentence)) {
+        flush();
+        out.push({ id: `${p.id}~x${++x}`, page: p.page, text: sentence, binding: true });
+      } else run.push(sentence);
     }
     flush();
   }
