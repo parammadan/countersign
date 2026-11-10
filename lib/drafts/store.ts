@@ -264,8 +264,9 @@ export function draftStore(db: DatabaseSync) {
         if (refused) return fail("check_failed", refused);
         // only the publish that holds this claim may finish it
         if (typeof claim !== "string" || !claim || a.row.publish_claim !== claim) return fail("invalid_state", "This publish no longer holds the draft; reload it.");
-        if (!move(a.p, a.row.id, ["publishing"], "status = 'published', published_version_id = ?, publish_claim = NULL, publish_claimed_at = NULL", publishedVersionId as string))
-          return fail("invalid_state", "Only a draft being published can be published.");
+        const done = db.prepare("UPDATE drafts SET status = 'published', published_version_id = ?, publish_claim = NULL, publish_claimed_at = NULL, updated_at = ? WHERE id = ? AND workspace_id = ? AND status = 'publishing' AND publish_claim = ?")
+          .run(publishedVersionId as string, now(), a.row.id, a.p.workspaceId, claim).changes === 1;
+        if (!done) return fail("invalid_state", "Only a draft being published can be published.");
         log(a.p, a.row.id, v.number, "publish", now());
         return { ok: true as const };
       }));
