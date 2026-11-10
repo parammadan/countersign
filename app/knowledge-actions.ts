@@ -24,7 +24,7 @@ export async function indexAgreementsAction(fd: FormData) {
     const o = await runIndex(sess, { force: force || !!templateId, templateId: templateId || undefined });
     q = `?indexed=${o.indexed}&unchanged=${o.unchanged}&removed=${o.removed}&failed=${o.failed.length}`;
   } catch (e) {
-    if (e instanceof AppError) redirect(`${PAGE}?error=${e.status === 429 ? "indexslow" : "failed"}`);
+    if (e instanceof AppError) redirect(`${PAGE}?error=${e.status === 429 ? "indexslow" : e.status === 403 ? "admin" : "failed"}`);
     throw e;
   }
   redirect(PAGE + q);

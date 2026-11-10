@@ -11,7 +11,8 @@ const ERRORS: Record<string, string> = {
   question: "Ask a question of up to 500 characters.",
   slow: "You're asking quickly. Wait a minute and try again.",
   limit: `This workspace has reached today's question limit (${M3_DAILY.model} with the AI assistant, ${M3_DAILY.passages} without). Try again tomorrow.`,
-  indexslow: "Indexing was just run. Wait a minute and try again.",
+  indexslow: "Indexing was just run, or is still running. Wait a minute and try again.",
+  admin: "Only admins can re-index agreements.",
   failed: "Something went wrong. Try again.",
 };
 const STATUS: Record<M3Status, { label: string; tone: "ok" | "warn" | "neutral" }> = {
@@ -48,7 +49,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ e
   const s = await requireSession();
   const q = await searchParams;
   const status = indexStatus(s.workspaceId);
-  const history = recentQuestions(s.workspaceId);
+  const history = recentQuestions(s);
   const mode = assistantMode();
   const ran = q.indexed !== undefined;
 
@@ -98,10 +99,12 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ e
                 </span>
                 <span className="flex items-center gap-2">
                   {a.indexed ? <Badge tone="ok">Indexed {timeAgo(a.indexedAt)}</Badge> : <Badge tone="warn">Not indexed</Badge>}
-                  <form action={indexAgreementsAction}>
-                    <input type="hidden" name="templateId" value={a.templateId} />
-                    <Button size="sm" variant="ghost">Re-index</Button>
-                  </form>
+                  {s.role !== "staff" && (
+                    <form action={indexAgreementsAction}>
+                      <input type="hidden" name="templateId" value={a.templateId} />
+                      <Button size="sm" variant="ghost">Re-index</Button>
+                    </form>
+                  )}
                 </span>
               </li>
             ))}
