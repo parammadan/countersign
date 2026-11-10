@@ -47,3 +47,5 @@ next-env.d.ts
 /playwright-report
 /.e2e-data
 /.e2e-mail
+/evals/results
+/.e2e-ai
