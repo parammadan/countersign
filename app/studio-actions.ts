@@ -11,6 +11,16 @@ const id = (v: unknown) => (typeof v === "string" ? v.slice(0, 100) : "");
 const int = (v: unknown) => (typeof v === "number" && Number.isSafeInteger(v) ? v : -1);
 const text = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : "");
 const path = (draftId: string) => `/app/studio/${encodeURIComponent(draftId)}`;
+// A Clause Library reference on an added clause: an id, a version and string values only (the server re-renders it).
+const libraryRef = (v: unknown): { library?: { id: string; version: number; values: Record<string, string> } } => {
+  const l = v as { id?: unknown; version?: unknown; values?: unknown } | null | undefined;
+  if (!l || typeof l !== "object" || typeof l.id !== "string" || typeof l.version !== "number" || !Number.isSafeInteger(l.version)) return {};
+  const values = Object.fromEntries(
+    Object.entries(l.values && typeof l.values === "object" ? l.values : {}).slice(0, 40)
+      .filter(([, x]) => typeof x === "string").map(([k, x]) => [k.slice(0, 200), (x as string).slice(0, 2_000)]),
+  );
+  return { library: { id: id(l.id), version: l.version, values } };
+};
 
 export async function suggestAction(description: string) {
   const s = await requireSession();
@@ -35,7 +45,7 @@ export async function editAction(draftId: string, expected: number, edit: svc.Cl
   const s = await requireSession();
   const e: svc.ClauseEdit | null =
     edit?.op === "replace_clause" ? { op: "replace_clause", clauseId: id(edit.clauseId), text: text(edit.text, 20_000) }
-      : edit?.op === "add_clause" ? { op: "add_clause", after: id(edit.after), text: text(edit.text, 20_000), heading: text(edit.heading, 120) }
+      : edit?.op === "add_clause" ? { op: "add_clause", after: id(edit.after), text: text(edit.text, 20_000), heading: text(edit.heading, 120), ...libraryRef(edit.library) }
         : edit?.op === "delete_clause" ? { op: "delete_clause", clauseId: id(edit.clauseId) }
           : null;
   if (!e) return { ok: false as const, code: "invalid", message: "Unknown edit." };

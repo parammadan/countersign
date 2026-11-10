@@ -7,6 +7,7 @@ import { authorizeDraft } from "@/lib/drafts/roles";
 import { claimIsStale } from "@/lib/drafts/store";
 import { Notice } from "@/components/ui";
 import { DraftEditor, type EditorProps } from "@/components/studio/DraftEditor";
+import { approvedClausePicks } from "@/lib/clauses/app/service";
 
 export const metadata = { title: "Draft" };
 
@@ -39,6 +40,9 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     },
     versions: h.versions.map((v) => ({ ...v, author: who(v.author) })),
     log: h.log.map((l) => ({ ...l, actor: who(l.actor) })),
+    // usable Clause Library clauses (id, title, version, placeholders; one query; empty on any failure). The server
+    // renders and re-checks the clause when it is used.
+    library: approvedClausePicks(s),
   };
   return (
     <>
