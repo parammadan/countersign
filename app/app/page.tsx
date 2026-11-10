@@ -7,6 +7,9 @@ import { activity, agreements, attention, ATTENTION_TEXT, fileMetrics, nextActio
 import { Badge, Card, CardHeader, cx, EmptyState, LinkButton, Notice, PageHeader, Stat, timeAgo } from "@/components/ui";
 import { Icon, type IconName } from "@/components/icons";
 import { FileTable } from "@/components/FileTable";
+import { ExploreAi } from "@/components/ExploreAi";
+import { aiState } from "@/lib/ai/budget";
+import { configuredProvider } from "@/lib/ai/anthropic";
 
 export const metadata = { title: "Overview" };
 
@@ -54,6 +57,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ e
   );
 
   const live = ags.filter((a) => a.liveVersion != null).length;
+  // no model call: whether AI would run for this workspace now, for the "Explore AI features" card
+  const ai = aiState(ws.id, configuredProvider() !== null, 0.05);
+  const askable = ags.find((a) => a.liveVersionId) ?? null;
   const drafts = ags.filter((a) => a.draftVersionId).length;
   const firstDraft = ags.find((a) => a.draftVersionId && a.liveVersion == null) ?? ags.find((a) => a.draftVersionId);
   const steps = [
@@ -84,6 +90,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ e
         {confirmed && <Notice tone="ok">Email confirmed. You can now send agreements to clients.</Notice>}
 
         <NextStep next={next} steps={setupLeft > 0 ? steps : null} admin={admin} />
+
+        <ExploreAi ai={ai} askHref={askable ? `/app/agreements/${askable.liveVersionId}/ask` : null} />
 
         <section aria-label="Key numbers" className="grid grid-cols-2 gap-3 lg:grid-cols-4 [&>*]:min-w-0">
           <Stat label="Needs attention" value={att.total} tone={att.total ? "warn" : undefined} href="#attention" hint={att.total ? reasonSummary : "Nothing waiting on you"} />

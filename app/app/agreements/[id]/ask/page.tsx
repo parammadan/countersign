@@ -243,7 +243,8 @@ export default async function Page({ params, searchParams }: { params: Promise<{
           {turns.length > 0 ? (
             <ol aria-label="Conversation" className="mb-4 space-y-5">{turns.map((h) => <Turn key={h.id} h={h} />)}</ol>
           ) : (
-            <nav aria-label="Example questions" className="mb-3 flex flex-wrap gap-1.5 text-xs">
+            <nav aria-label="Example questions" className="mb-3 flex flex-wrap items-center gap-1.5 text-xs">
+              <span className="mr-1 text-muted">Try an example:</span>
               {EXAMPLES.map((e) => (
                 <Link key={e} href={`?q=${encodeURIComponent(e)}`} className="rounded-full border border-line bg-white px-2.5 py-1 text-muted hover:border-line-strong hover:text-ink">{e}</Link>
               ))}
