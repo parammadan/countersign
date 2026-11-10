@@ -17,7 +17,7 @@ import { auditLibraryUse, verifyLibraryUse } from "../clauses/app/service";
 import { id as newId, now } from "../util";
 import { generationProvider, generationProviderFrom, GENERATION_LIMITS, type GenerationProvider } from "./provider";
 import { configuredProvider } from "../ai/anthropic";
-import { aiGate, estimateUsd } from "../ai/budget";
+import { aiGate, aiState, estimateUsd, type AiState } from "../ai/budget";
 import type { ModelProvider } from "../understand/model";
 import type { Principal } from "./roles";
 import { generateAgreement, TEMPLATES, KINDS, type GenerateInput, type Kind, type TermKey } from "../m23/m23-generate";
@@ -42,6 +42,17 @@ export type SessionLike = { userId: string; workspaceId: string; role: "owner" |
 const principal = (s: SessionLike): Principal => ({ userId: s.userId, workspaceId: s.workspaceId, role: s.role });
 
 export const aiConfigured = () => generationProvider() !== null;
+
+/**
+ * Whether Studio's two AI steps would run for this workspace now (no model call, nothing reserved): `suggest` fills
+ * the form from a description, `draft` rewords the generated draft. Only for showing the page; each step still goes
+ * through aiGate when it runs.
+ */
+export type StudioAi = { suggest: AiState; draft: AiState };
+export function studioAiState(s: Pick<SessionLike, "workspaceId">, env: Record<string, string | undefined> = process.env): StudioAi {
+  const configured = configuredProvider(env) !== null;
+  return { suggest: aiState(s.workspaceId, configured, SUGGEST_TYPICAL_USD, env), draft: aiState(s.workspaceId, configured, DRAFT_TYPICAL_USD, env) };
+}
 
 // ---------- the form the user fills (or confirms after a suggestion) ----------
 
@@ -201,8 +212,11 @@ const GENERATE_WITH_AI_PER_HOUR = 30;
 
 /** Why a draft is the plain template although a model is configured (the draft page says so). */
 export type DraftFallback = "unverified" | "spend_cap" | "hourly_limit" | "provider_error" | "checks";
-/** What the draft page shows first: `template_fallback` when AI was meant to reword it but didn't. */
-export type DraftLanding = "template" | "model" | "template_fallback";
+/**
+ * What the draft page shows first: `template_fallback` when AI was meant to reword it but didn't; `model_unchanged`
+ * when the AI step ran and passed the checks but changed nothing (the draft is the template's wording).
+ */
+export type DraftLanding = "template" | "model" | "model_unchanged" | "template_fallback";
 
 export async function createDraft(s: SessionLike, input: GenerateInput, model: ModelProvider | null = configuredProvider()) {
   // the model step is optional: without it (or when it fails) the draft is the template alone, and that is said
@@ -226,9 +240,15 @@ export async function createDraft(s: SessionLike, input: GenerateInput, model: M
   let fallback = skipped;
   if (!fallback && provider && r.source === "template")
     fallback = gate.capped() ? "spend_cap" : r.fallbackReasons.some((x) => x.startsWith("model provider failed")) ? "provider_error" : "checks";
-  const landing: DraftLanding = fallback ? "template_fallback" : r.source;
-  return { ok: true as const, draftId: c.draftId, source: r.source, landing, ...(fallback && { fallback }), fallbackReasons: r.fallbackReasons, notes: r.notes };
+  const landing: DraftLanding = fallback ? "template_fallback" : r.source === "model" && r.reworded === 0 ? "model_unchanged" : r.source;
+  return { ok: true as const, draftId: c.draftId, source: r.source, landing, reworded: r.reworded, ...(fallback && { fallback }), fallbackReasons: r.fallbackReasons, notes: r.notes };
 }
+
+/** The draft page's notice when the AI step ran and was accepted (fixed text). */
+export const MODEL_NOTICES = {
+  model: "Drafted from the template and reworded by AI; every figure, party and clause was checked against the template.",
+  model_unchanged: "AI review found nothing to reword within the template's rules, so this draft is the template with exactly your values.",
+} as const;
 
 /** The draft page's notice for a fallback (fixed text; the reason comes from the URL, so unknown ones get a generic line). */
 export function fallbackNotice(why: string | undefined): string {

@@ -129,14 +129,14 @@ export function protectedTokens(text: string): Set<string> {
  * The only rewording the meaning check allows, besides spacing and typographic quotes/dashes: these
  * phrase swaps, each folded to one canonical spelling before comparing. Keep this list small and literal.
  */
-const SWAPS: [RegExp, (m: string, ...g: string[]) => string][] = [
+export const SWAPS: [RegExp, (m: string, ...g: string[]) => string][] = [
   [/\b(carry|carries|carried|carrying)\s+out\b/gi, (_m, v) => ({ carry: "perform", carries: "performs", carried: "performed", carrying: "performing" })[v.toLowerCase()]!],
   [/\b(?:(?:on|upon)\s+request|when\s+asked)\b/gi, () => "onrequest"],
   [/\b(?:begin|commence)(s?)\b/gi, (_m, s) => `start${s}`],
   [/\b(?:began|begun|commenced)\b/gi, () => "started"],
 ];
 /** Punctuation a reword may add. Any other symbol (markup, entities, brackets, ?, !, :, newlines) must already be in the clause. */
-const SAFE_PUNCT = new Set([..." .,;'\"()-\u00a0\u2018\u2019\u201c\u201d\u2013\u2014"]);
+export const SAFE_PUNCT = new Set([..." .,;'\"()-\u00a0\u2018\u2019\u201c\u201d\u2013\u2014"]);
 
 type Tok = { t: string; cap: boolean; initial: boolean };
 /**

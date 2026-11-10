@@ -4,7 +4,8 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Card, CardHeader, Field, Notice, Select, inputCls, cx } from "@/components/ui";
 import { createDraftAction, suggestAction } from "@/app/studio-actions";
-import type { KindSpec, SuggestFailure, Suggestion } from "@/lib/drafts/service";
+import type { KindSpec, StudioAi, SuggestFailure, Suggestion } from "@/lib/drafts/service";
+import { AI_UNAVAILABLE } from "./ai-state";
 
 const TERM_LABEL: Record<string, string> = {
   fee: "Fee (with currency, e.g. $5,000)", paymentDays: "Payment due (days after invoice)", startDate: "Start date", endDate: "End date",
@@ -25,7 +26,11 @@ const SUGGEST_FAILED: Record<SuggestFailure, string> = {
 const label = (k: string) => TERM_LABEL[k] ?? k;
 const inputType = (t: string) => (t === "date" ? "date" : t === "int" || t === "percent" ? "number" : "text");
 
-export function NewAgreement({ kinds, ai }: { kinds: KindSpec[]; ai: boolean }) {
+export function NewAgreement({ kinds, ai }: { kinds: KindSpec[]; ai: StudioAi }) {
+  const canSuggest = ai.suggest.available;
+  const canReword = ai.draft.available;
+  // one notice when both steps are unavailable for the same reason
+  const rewordNotice = !ai.draft.available && (ai.suggest.available || ai.suggest.reason !== ai.draft.reason) ? AI_UNAVAILABLE[ai.draft.reason] : null;
   const router = useRouter();
   const [description, setDescription] = useState("");
   const [kind, setKind] = useState(kinds[0]?.kind ?? "services");
@@ -74,7 +79,7 @@ export function NewAgreement({ kinds, ai }: { kinds: KindSpec[]; ai: boolean }) 
       t[term.key] = term.type === "int" || term.type === "percent" ? Number(v) : v;
     }
     start(async () => {
-      const r = await createDraftAction({ kind: spec.kind, parties, terms: t, ...(instructions.trim() && { instructions }) });
+      const r = await createDraftAction({ kind: spec.kind, parties, terms: t, ...(canReword && instructions.trim() && { instructions }) });
       if (!r.ok) {
         setErrors(r.issues.length ? r.issues : ["The draft couldn't be generated."]);
         return;
@@ -87,7 +92,7 @@ export function NewAgreement({ kinds, ai }: { kinds: KindSpec[]; ai: boolean }) 
     <Card>
       <CardHeader title="New agreement" description="Describe what you need, check the details, then generate a draft. A person always reviews and approves before anything is sent." />
       <div className="space-y-5 px-5 py-4">
-        <Field label="Describe the agreement" hint={ai ? "AI reads this and fills in the form below. It never invents values." : "AI isn't configured on this server; the form below works on its own."}>
+        <Field label="Describe the agreement" hint={canSuggest ? "AI reads this and fills in the form below. It never invents values." : "Without the AI assistant, fill in the form below yourself."}>
           <textarea
             className={cx(inputCls, "min-h-24")}
             value={description}
@@ -96,10 +101,12 @@ export function NewAgreement({ kinds, ai }: { kinds: KindSpec[]; ai: boolean }) 
             placeholder="e.g. A consulting agreement between Northwind Advisory LLC (consultant) and Acme Corp (client), $12,000 fee, payable within 30 days, starting 2027-01-15, 30 days' notice, Delaware law, the client owns the work."
           />
         </Field>
-        {ai && (
+        {canSuggest ? (
           <Button type="button" variant="secondary" icon="spark" onClick={suggest} loading={pending} disabled={!description.trim()}>
             Fill in from description
           </Button>
+        ) : (
+          <Notice tone={ai.suggest.reason === "off" ? "info" : "warn"}>{AI_UNAVAILABLE[ai.suggest.reason]}</Notice>
         )}
         {info && <Notice tone="info">{info}</Notice>}
         {suggested && suggested.unclear.length > 0 && (
@@ -130,7 +137,8 @@ export function NewAgreement({ kinds, ai }: { kinds: KindSpec[]; ai: boolean }) 
             </Field>
           ))}
         </div>
-        {ai && (
+        {rewordNotice && <Notice tone="warn">{rewordNotice}</Notice>}
+        {canReword && (
           <Field label="Wording notes (optional)" hint="Tone or style only. They can't change parties, figures or clauses.">
             <input className={inputCls} value={instructions} maxLength={1000} onChange={(e) => setInstructions(e.target.value)} placeholder="e.g. plain English" />
           </Field>
