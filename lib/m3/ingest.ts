@@ -81,34 +81,60 @@ export function passagesFromExtraction(ex: Extracted, addedSignaturePage: boolea
   // the signature page AgreementOS added isn't part of what the agreement says
   const keep = <T,>(pages: T[]) => pages.slice(0, addedSignaturePage && ex.pages.length > 1 ? -1 : undefined);
   const clean = passages(keep(pageLines(ex)));
+  const asIs = () => clean.passages.map((p) => ({ id: p.id, page: p.page, text: p.text, binding: true }));
+  // only pages with an invisible character can read differently with them as spaces
+  const hasInvisible = new RegExp(INVISIBLE.source, "u");
+  const pagesWithInvisible = new Set(ex.pages.filter((p) => p.items.some((i) => hasInvisible.test(i.str))).map((p) => p.index + 1));
+  if (!pagesWithInvisible.size) return asIs();
   const spacedEx: Extracted = { ...ex, pages: ex.pages.map((p) => ({ ...p, items: p.items.map((i) => ({ ...i, str: i.str.replace(INVISIBLE, " ") })) })) };
   const spaced = passages(keep(pageLines(spacedEx)));
   const gate = (t: string) => looksLikeInjection(t);
-  // instructions only the spaced reading shows: whitespace aside, their text is the same as in the normal reading
-  const hits = [...spaced.passages, ...spaced.excluded]
-    .flatMap((p) => p.text.split(SENTENCE).map((t) => ({ page: p.page, text: t })))
-    .filter((h) => squash(h.text).length > 0 && gate(h.text))
-    .filter((h) => !clean.passages.some((c) => c.page === h.page && gate(c.text) && squash(c.text).includes(squash(h.text))));
+  // Every gate call is a few dozen regexes over two folds, so each runs once per passage or sentence at most, and only
+  // where the spaced reading differs; containment is tested only within a page. A sentence the clean reading has
+  // word for word reads the same either way: the gate sees it there (S4 flags its passage at put).
+  const cleanSentences = new Set([...clean.passages, ...clean.excluded].flatMap((p) => p.text.split(SENTENCE)));
+  // per page: hidden instruction sentences, by squashed text (whitespace aside, the same as in the clean reading)
+  const hidden = new Map<number, Map<string, string>>();
+  for (const p of [...spaced.passages, ...spaced.excluded]) {
+    if (!pagesWithInvisible.has(p.page)) continue;
+    for (const text of p.text.split(SENTENCE)) {
+      const key = squash(text);
+      if (!key || cleanSentences.has(text) || hidden.get(p.page)?.has(key) || !gate(text)) continue;
+      (hidden.get(p.page) ?? hidden.set(p.page, new Map()).get(p.page)!).set(key, text);
+    }
+  }
+  if (!hidden.size) return asIs();
   const out: { id: string; page: number; text: string; binding: boolean }[] = [];
   for (const p of clean.passages) {
-    const mine = hits.filter((h) => h.page === p.page && squash(p.text).includes(squash(h.text)));
-    if (!mine.length) {
+    const onPage = hidden.get(p.page);
+    const key = onPage ? squash(p.text) : "";
+    const mine = onPage ? [...onPage.keys()].filter((k) => key.includes(k)) : [];
+    // a passage the gate already flags as it is needs nothing more (S4 flags it at put)
+    if (!mine.length || gate(p.text)) {
       out.push({ id: p.id, page: p.page, text: p.text, binding: true });
       continue;
     }
-    const covered = (s: string) => mine.some((h) => squash(h.text).includes(squash(s)) || squash(s).includes(squash(h.text)));
+    // each sentence that is (or contains) a hidden instruction becomes a passage of its own, in the spaced form; the
+    // others keep the normal reading, in runs of consecutive sentences (still verbatim runs of the page)
     let run: string[] = [];
     let part = 0;
+    let x = 0;
     const flush = () => {
       if (run.length) out.push({ id: part++ === 0 ? p.id : `${p.id}~${part}`, page: p.page, text: run.join(" "), binding: true });
       run = [];
     };
     for (const sentence of p.text.split(SENTENCE)) {
-      if (covered(sentence)) flush();
-      else run.push(sentence);
+      const k = squash(sentence);
+      // reading invisible characters as spaces only adds sentence breaks, so a clean sentence holds the hidden one
+      const hit = onPage!.has(k) ? k : mine.find((h) => k.includes(h));
+      if (hit === undefined || !k) {
+        run.push(sentence);
+        continue;
+      }
+      flush();
+      out.push({ id: `${p.id}~x${++x}`, page: p.page, text: onPage!.get(hit)!, binding: true });
     }
     flush();
-    mine.forEach((h, k) => out.push({ id: `${p.id}~x${k + 1}`, page: p.page, text: h.text, binding: true }));
   }
   return out.slice(0, LIMITS.passagesPerVersion).map((p) => ({ ...p, text: p.text.slice(0, LIMITS.passageChars) }));
 }
