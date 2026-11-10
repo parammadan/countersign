@@ -285,9 +285,13 @@ export async function templateAction(_: FormState, fd: FormData): Promise<FormSt
       });
     } else if (op === "archive") {
       run("UPDATE templates SET archived = 1, is_default = 0 WHERE id = ?", tid);
+      // M3 Knowledge Hub: drop it from the index (the Hub already stops serving archived agreements)
+      void import("@/lib/m3/db").then((m) => m.appIndex().remove(sess.workspaceId, tid)).catch(() => {});
       then = `/app/agreements?archived=${encodeURIComponent(tid)}`;
     } else if (op === "restore") {
       run("UPDATE templates SET archived = 0 WHERE id = ?", tid);
+      // M3 Knowledge Hub: index it again (best effort)
+      void import("@/lib/m3/ingest").then((m) => m.indexWorkspace(sess.workspaceId, { templateId: tid, force: true })).catch(() => {});
       then = `/app/agreements?restored=${encodeURIComponent(tid)}`;
     } else {
       throw new AppError("Unknown action.");
