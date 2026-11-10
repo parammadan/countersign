@@ -81,34 +81,64 @@ export function passagesFromExtraction(ex: Extracted, addedSignaturePage: boolea
   // the signature page AgreementOS added isn't part of what the agreement says
   const keep = <T,>(pages: T[]) => pages.slice(0, addedSignaturePage && ex.pages.length > 1 ? -1 : undefined);
   const clean = passages(keep(pageLines(ex)));
-  const spacedEx: Extracted = { ...ex, pages: ex.pages.map((p) => ({ ...p, items: p.items.map((i) => ({ ...i, str: i.str.replace(INVISIBLE, " ") })) })) };
-  const spaced = passages(keep(pageLines(spacedEx)));
   const gate = (t: string) => looksLikeInjection(t);
-  // instructions only the spaced reading shows: whitespace aside, their text is the same as in the normal reading
-  const hits = [...spaced.passages, ...spaced.excluded]
-    .flatMap((p) => p.text.split(SENTENCE).map((t) => ({ page: p.page, text: t })))
-    .filter((h) => squash(h.text).length > 0 && gate(h.text))
-    .filter((h) => !clean.passages.some((c) => c.page === h.page && gate(c.text) && squash(c.text).includes(squash(h.text))));
+  // Hidden instructions: only pages with an invisible character can read differently with them as spaces, and only
+  // sentences of that reading that differ from the clean one need the gate (a word-for-word sentence is gated below).
+  const hasInvisible = new RegExp(INVISIBLE.source, "u");
+  const pagesWithInvisible = new Set(ex.pages.filter((p) => p.items.some((i) => hasInvisible.test(i.str))).map((p) => p.index + 1));
+  const hidden = new Map<number, Map<string, string>>();
+  if (pagesWithInvisible.size) {
+    const spacedEx: Extracted = { ...ex, pages: ex.pages.map((p) => ({ ...p, items: p.items.map((i) => ({ ...i, str: i.str.replace(INVISIBLE, " ") })) })) };
+    const spaced = passages(keep(pageLines(spacedEx)));
+    const cleanSentences = new Set([...clean.passages, ...clean.excluded].flatMap((p) => p.text.split(SENTENCE)));
+    for (const p of [...spaced.passages, ...spaced.excluded]) {
+      if (!pagesWithInvisible.has(p.page)) continue;
+      for (const text of p.text.split(SENTENCE)) {
+        const key = squash(text);
+        if (!key || cleanSentences.has(text) || hidden.get(p.page)?.has(key) || !gate(text)) continue;
+        (hidden.get(p.page) ?? hidden.set(p.page, new Map()).get(p.page)!).set(key, text);
+      }
+    }
+  }
+  // On every page: a passage the gate flags as a whole is kept (S4 flags it at put). Otherwise each of its sentences
+  // is gated on its own too, because start- and line-anchored patterns ("System: ...") only see a sentence that opens
+  // its passage. A flagged sentence, or one holding a hidden instruction, becomes a passage of its own (in the spaced
+  // form for a hidden one); the rest keep the normal reading, in runs of consecutive sentences (verbatim runs of the
+  // page). One gate call per passage and per sentence: linear in the page.
   const out: { id: string; page: number; text: string; binding: boolean }[] = [];
   for (const p of clean.passages) {
-    const mine = hits.filter((h) => h.page === p.page && squash(p.text).includes(squash(h.text)));
-    if (!mine.length) {
+    if (gate(p.text)) {
       out.push({ id: p.id, page: p.page, text: p.text, binding: true });
       continue;
     }
-    const covered = (s: string) => mine.some((h) => squash(h.text).includes(squash(s)) || squash(s).includes(squash(h.text)));
+    const onPage = hidden.get(p.page);
+    const key = onPage ? squash(p.text) : "";
+    const mine = onPage ? [...onPage.keys()].filter((k) => key.includes(k)) : [];
+    const sentences = p.text.split(SENTENCE);
+    if (sentences.length === 1 && !mine.length) {
+      out.push({ id: p.id, page: p.page, text: p.text, binding: true });
+      continue;
+    }
     let run: string[] = [];
     let part = 0;
+    let x = 0;
     const flush = () => {
       if (run.length) out.push({ id: part++ === 0 ? p.id : `${p.id}~${part}`, page: p.page, text: run.join(" "), binding: true });
       run = [];
     };
-    for (const sentence of p.text.split(SENTENCE)) {
-      if (covered(sentence)) flush();
-      else run.push(sentence);
+    for (const sentence of sentences) {
+      const k = squash(sentence);
+      // reading invisible characters as spaces only adds sentence breaks, so a clean sentence holds the hidden one
+      const hiddenKey = mine.length && k ? (onPage!.has(k) ? k : mine.find((h) => k.includes(h))) : undefined;
+      if (hiddenKey !== undefined) {
+        flush();
+        out.push({ id: `${p.id}~x${++x}`, page: p.page, text: onPage!.get(hiddenKey)!, binding: true });
+      } else if (k && gate(sentence)) {
+        flush();
+        out.push({ id: `${p.id}~x${++x}`, page: p.page, text: sentence, binding: true });
+      } else run.push(sentence);
     }
     flush();
-    mine.forEach((h, k) => out.push({ id: `${p.id}~x${k + 1}`, page: p.page, text: h.text, binding: true }));
   }
   return out.slice(0, LIMITS.passagesPerVersion).map((p) => ({ ...p, text: p.text.slice(0, LIMITS.passageChars) }));
 }
