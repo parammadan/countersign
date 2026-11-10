@@ -28,7 +28,7 @@ const label = (k: string) => TERM_LABEL[k] ?? k;
 const inputType = (t: string) => (t === "date" ? "date" : t === "int" || t === "percent" ? "number" : "text");
 
 /** A form field whose label says when its value is Claude's suggestion (until the person changes it). */
-export function FormField({ label: text, suggested, children }: { label: string; suggested: boolean; children: ReactNode }) {
+export function FormField({ label: text, suggested, children }: { label: string; suggested: boolean; children?: ReactNode }) {
   return (
     <label className="block">
       <span className="mb-1.5 flex flex-wrap items-center gap-2 text-[13px] font-medium text-ink-2">
