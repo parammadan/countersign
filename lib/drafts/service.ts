@@ -123,12 +123,18 @@ function wholeName(description: string, name: string): boolean {
   const esc = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
   for (const m of description.matchAll(new RegExp(`(?<![\\p{L}\\p{N}])${esc}(?![\\p{L}\\p{N}])`, "giu"))) {
     // a capitalised word right before (whitespace allowed between): walk back once, no regex over the prefix
+    // walk by code point (an astral capital such as "𝐀" counts), skipping whitespace first
+    const prev = (j: number) => (j > 0 && /[\udc00-\udfff]/.test(description[j]) && /[\ud800-\udbff]/.test(description[j - 1]) ? j - 1 : j);
     let i = m.index! - 1;
     while (i >= 0 && /\s/u.test(description[i])) i--;
     let before = false;
-    for (let steps = 0; i >= 0 && /[\p{L}&.'-]/u.test(description[i]); i--, steps++) {
+    for (let steps = 0; i >= 0; steps++) {
+      const at = prev(i);
+      const ch = String.fromCodePoint(description.codePointAt(at)!);
+      if (!/[\p{L}&.'-]/u.test(ch)) break;
       // a capital in the adjacent word, or a run too long to be a word: not a complete name (fail closed)
-      if (/\p{Lu}/u.test(description[i]) || steps >= 120) { before = true; break; }
+      if (/\p{Lu}/u.test(ch) || steps >= 120) { before = true; break; }
+      i = at - 1;
     }
     const AFTER = /\s*\p{Lu}/uy;
     AFTER.lastIndex = m.index! + m[0].length;

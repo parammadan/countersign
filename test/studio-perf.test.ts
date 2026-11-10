@@ -47,3 +47,26 @@ describe("AI suggestion name check is linear (sweep finding 2)", () => {
     expect(ms(() => cleanSuggestion({ parties: [{ role: "Client", name: "Bob" }] }, description))).toBeLessThan(200);
   });
 });
+
+describe("hotfix review: a cut-off window never turns a conflict into a rewrite", () => {
+  const sp = " ".repeat(300);
+  for (const text of [
+    `Deliver under clauses 3 and 4${sp}copies to the Client.`,
+    `As set out in clause 3 of${sp}the Master Agreement.`,
+    `As set out in clause 3 to${sp}the Provider Agreement.`,
+    `As set out in clause 3 of the ${"x".repeat(250)} Agreement.`,
+  ]) {
+    it(`still a conflict: ${JSON.stringify(text.slice(0, 40))}…`, () => {
+      const r = applyProposal(docOf(["Parties.", "B.", "C.", "D.", text]), add("c1"));
+      expect(r.ok === false && r.status).toBe("conflict");
+    });
+  }
+  it("a reference that really ends the text still renumbers", () => {
+    const r = applyProposal(docOf(["Parties.", "B.", "C.", "D.", "See clauses 3 and 4."]), add("c1"));
+    expect(r.ok).toBe(true);
+  });
+  it("an astral capital before a name is still a capitalised word", () => {
+    expect(cleanSuggestion({ parties: [{ role: "Client", name: "Bob Ltd" }] }, "between \u{1D400} Bob Ltd and others").parties).toEqual([]);
+  });
+});
+

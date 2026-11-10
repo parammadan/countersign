@@ -211,7 +211,11 @@ function mapRefs(text: string, r: Renumbering, where: string): Mapped {
     // When renumbering would change such a number, refuse instead of guessing: a last number not followed by end or
     // closing punctuation (see endsReference), or a later number below the one before it.
     const nums = parts.filter((m) => m[1] !== undefined);
-    const after = string.slice(offset + all.length, offset + all.length + REF_WINDOW);
+    // The window after the reference. When it stops short of the real end of the text, a sentinel takes the place of
+    // the rest, so "end of text" checks can't pass on a cut-off window ("clauses 3 and 4<300 spaces>copies").
+    const afterEnd = offset + all.length + REF_WINDOW;
+    const cutShort = afterEnd < string.length;
+    const after = string.slice(offset + all.length, afterEnd) + (cutShort ? "\u0000" : "");
     const rest = list + after;
     const changes = (m: RegExpMatchArray) => (r.map.get(m[1]) ?? m[1]) !== m[1];
     const from = Math.max(0, offset - REF_WINDOW);
@@ -219,7 +223,9 @@ function mapRefs(text: string, r: Renumbering, where: string): Mapped {
     if (!introducesReference(before, from === 0) && nums.some(changes))
       failure ??= `${where} has "${(/\S*\s*$/.exec(before)?.[0] ?? "").trim()} ${all.trim()}", where the number may not be a clause number (a quantity, a sub-clause or another document's clause); write the reference as "under clause N" or "see clause N"`;
     const bracketOpen = insideBrackets(before);
-    if (!tail && nums.some(changes) && otherDocument(after, r.roles))
+    // a cut-off window with fewer than 5 words can't show what document the reference names: treat it as another one
+    const tooShortToTell = cutShort && (after.match(/[^\s\u0000]+/g)?.length ?? 0) < 5;
+    if (!tail && nums.some(changes) && (tooShortToTell || otherDocument(after, r.roles)))
       failure ??= `${where} has "${all.trim()}" followed by another document's name, so it may not be a clause of this agreement; check it and renumber it by hand`;
     for (let i = 1; i < nums.length; i++) {
       const m = nums[i];
