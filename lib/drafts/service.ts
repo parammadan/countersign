@@ -13,6 +13,8 @@ import { AppError, getWorkspace } from "../files";
 import { ingestAgreement } from "../templates";
 import { DRAFTS_DDL_IF_NOT_EXISTS } from "./schema";
 import { draftStore, type ContentCheck } from "./store";
+import { auditLibraryUse, verifyLibraryUse } from "../clauses/app/service";
+import { id as newId, now } from "../util";
 import { generationProvider } from "./provider";
 import type { Principal } from "./roles";
 import { generateAgreement, TEMPLATES, KINDS, type GenerateInput, type Kind, type TermKey } from "../m23/m23-generate";
@@ -210,7 +212,9 @@ export function versions(s: SessionLike, id: string) {
 
 export type ClauseEdit =
   | { op: "replace_clause"; clauseId: string; text: string }
-  | { op: "add_clause"; after: string; text: string; heading?: string }
+  // `library`: the clause was filled from the Clause Library. The server re-renders the approved, current version with
+  // these values; only an exact match is recorded as library provenance (otherwise the edit is refused).
+  | { op: "add_clause"; after: string; text: string; heading?: string; library?: { id: string; version: number; values: Record<string, string> } }
   | { op: "delete_clause"; clauseId: string };
 
 /** Applies one edit through the S2 editor rules (locked clauses, renumbering, character checks) and saves a version. */
@@ -227,7 +231,13 @@ export function editDraft(s: SessionLike, id: string, expected: number, edit: Cl
     if (c.text === edit.text) return { ok: false as const, code: "invalid", message: "Nothing changed." };
     proposal = { id: pid, clauseId: c.id, op: "replace", before: c.text, after: edit.text, rationale: "edited in Agreement Studio", status: "proposed" };
   } else if (edit.op === "add_clause") {
-    proposal = { id: pid, clauseId: edit.after, op: "add_clause", before: "", after: edit.text, rationale: "added in Agreement Studio", status: "proposed" };
+    let rationale = "added in Agreement Studio";
+    if (edit.library) {
+      const v = verifyLibraryUse(s, edit.library, edit.text);
+      if (!v.ok) return { ok: false as const, code: "invalid", message: "The library clause no longer matches this text. Fill it again from the library, or add it as your own text." };
+      rationale = `added from the Clause Library: ${v.value.title} (${edit.library.id} v${edit.library.version})`;
+    }
+    proposal = { id: pid, clauseId: edit.after, op: "add_clause", before: "", after: edit.text, rationale, status: "proposed" };
   } else {
     const c = doc.clauses.find((x) => x.id === edit.clauseId);
     if (!c) return { ok: false as const, code: "not_found", message: "That clause no longer exists." };
@@ -242,7 +252,38 @@ export function editDraft(s: SessionLike, id: string, expected: number, edit: Cl
   if (edit.op === "add_clause" && edit.heading?.trim()) {
     next = { ...next, clauses: next.clauses.map((c) => (c.id === `new:${pid}` ? { ...c, heading: edit.heading!.trim().slice(0, 120) } : c)) };
   }
-  return store().commit(principal(s), id, { expected, doc: next });
+  const r = store().commit(principal(s), id, { expected, doc: next });
+  if (r.ok && edit.op === "add_clause" && edit.library) recordLibraryProvenance(s, id, expected, r.number, proposal, edit.library, next);
+  return r;
+}
+
+/**
+ * Keeps where a library clause came from: a draft_proposals row (op add_clause, status accepted, the rationale naming
+ * the library clause and version) and a clause.used event in audit_events, in one transaction after the commit. The
+ * drafts store commits in its own transaction, so this cannot join it; a failure here is logged, the edit stands.
+ */
+function recordLibraryProvenance(
+  s: SessionLike, draftId: string, base: number, number: number, proposal: EditProposal,
+  library: { id: string; version: number }, doc: DraftDocument,
+) {
+  const d = db();
+  const clauseId = doc.clauses.find((c) => c.id === `new:${proposal.id}`)?.id ?? proposal.clauseId;
+  const at = now();
+  try {
+    d.exec("BEGIN IMMEDIATE");
+    d.prepare(
+      "INSERT INTO draft_proposals (id, draft_id, workspace_id, base_version, clause_id, op, before_text, after_text, rationale, status, created_by, created_at, decided_by, decided_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    ).run(newId("dpr"), draftId, s.workspaceId, base, clauseId, "add_clause", "", proposal.after, proposal.rationale, "accepted", s.userId, at, s.userId, at);
+    auditLibraryUse(s, library, { id: draftId, version: number });
+    d.exec("COMMIT");
+  } catch (e) {
+    try {
+      d.exec("ROLLBACK");
+    } catch {
+      // keep the original error
+    }
+    console.error("clause library provenance not recorded", e);
+  }
 }
 
 export const rollbackDraft = (s: SessionLike, id: string, expected: number, to: number) =>
