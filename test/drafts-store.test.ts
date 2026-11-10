@@ -247,4 +247,17 @@ describe("review of 5a8d9dc", () => {
     a.close(); b.close();
     fs.rmSync(dir, { recursive: true, force: true });
   });
+  it("one agreement version is the published form of at most one draft", () => {
+    const one = pending();
+    s.approve(P.adminA, one, 2, pass);
+    expect(code(s.publish(P.ownerA, one, 2, pass, "tv1"))).toBe("ok");
+    const two = pending();
+    s.approve(P.adminA, two, 2, pass);
+    expect(code(s.publish(P.ownerA, two, 2, pass, "tv1"))).toBe("invalid");
+    expect(() => db.prepare("UPDATE drafts SET status = 'published', published_version_id = 'tv1' WHERE id = ?").run(two)).toThrow(/UNIQUE/);
+  });
+  it("commit by a principal whose user row is missing is a Result", () => {
+    const id = created();
+    expect(code(s.commit({ userId: "ghost", workspaceId: "ws-a", role: "staff" }, id, { expected: 1, doc: doc("x") }))).toBe("invalid");
+  });
 });

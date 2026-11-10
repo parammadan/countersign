@@ -18,6 +18,7 @@ export const DRAFTS_DDL = `
     CHECK (approved_by IS NULL OR approved_by != last_editor)
   );
   CREATE INDEX drafts_ws ON drafts(workspace_id, updated_at);
+  CREATE UNIQUE INDEX drafts_published_version ON drafts(published_version_id) WHERE published_version_id IS NOT NULL;
   CREATE TABLE draft_versions (
     id TEXT PRIMARY KEY,
     draft_id TEXT NOT NULL REFERENCES drafts(id),

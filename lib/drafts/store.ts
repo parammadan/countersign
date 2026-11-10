@@ -195,7 +195,9 @@ export function draftStore(db: DatabaseSync) {
           return { ok: true as const, number };
         });
       } catch (e) {
-        if (/UNIQUE|state changed/.test((e as Error).message) || busy(e)) return fail("stale", "Someone saved a newer version; reload and reapply your edits.");
+        if (busy(e)) return fail("stale", "Someone else is saving this draft; try again.");
+        if (/UNIQUE|state changed/.test((e as Error).message)) return fail("stale", "Someone saved a newer version; reload and reapply your edits.");
+        if (fk(e)) return fail("invalid", "The request refers to something that does not exist.");
         throw e;
       }
     },
@@ -246,6 +248,8 @@ export function draftStore(db: DatabaseSync) {
         // the agreement version must exist in THIS workspace (never trust the id from the request)
         if (!get1("SELECT 1 AS x FROM template_versions WHERE id = ? AND workspace_id = ?", publishedVersionId as string, a.p.workspaceId))
           return fail("not_found", "The published agreement version was not found.");
+        if (get1("SELECT 1 AS x FROM drafts WHERE published_version_id = ? AND id != ?", publishedVersionId as string, a.row.id))
+          return fail("invalid", "That agreement version is already the published form of another draft.");
         const v = latest(a.p, a.row.id)!;
         if (v.number !== version) return fail("stale", "The approval applies to a different version.");
         const refused = runCheck(check, a.p, a.row.id, v);
