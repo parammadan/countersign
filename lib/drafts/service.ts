@@ -15,7 +15,10 @@ import { DRAFTS_DDL_IF_NOT_EXISTS } from "./schema";
 import { draftStore, type ContentCheck } from "./store";
 import { auditLibraryUse, verifyLibraryUse } from "../clauses/app/service";
 import { id as newId, now } from "../util";
-import { generationProvider } from "./provider";
+import { generationProvider, generationProviderFrom, GENERATION_LIMITS, type GenerationProvider } from "./provider";
+import { configuredProvider } from "../ai/anthropic";
+import { aiGate, estimateUsd } from "../ai/budget";
+import type { ModelProvider } from "../understand/model";
 import type { Principal } from "./roles";
 import { generateAgreement, TEMPLATES, KINDS, type GenerateInput, type Kind, type TermKey } from "../m23/m23-generate";
 import { CHOICES, TERM_TYPES } from "../m23/m23-generate/terms";
@@ -82,11 +85,24 @@ const SUGGEST_PER_HOUR = 30;
 
 export type Suggestion = { kind: Kind | null; parties: { role: string; name: string }[]; terms: Partial<Record<TermKey, string>>; unclear: string[] };
 
-export async function suggestFromDescription(s: SessionLike, description: string): Promise<{ ok: true; suggestion: Suggestion } | { ok: false; code: "ai_off" | "limit" | "invalid" | "failed" }> {
-  const provider = generationProvider({ maxOutputTokens: 1_000 });
-  if (!provider) return { ok: false, code: "ai_off" };
+/** Rough costs of one call, for deciding up front (each call is reserved at its real size). */
+const SUGGEST_TYPICAL_USD = estimateUsd(6_000, 1_000);
+const DRAFT_TYPICAL_USD = estimateUsd(10_000, GENERATION_LIMITS.maxOutputTokens);
+
+export type SuggestFailure = "ai_off" | "unverified" | "spend_cap" | "limit" | "invalid" | "failed";
+
+export async function suggestFromDescription(
+  s: SessionLike,
+  description: string,
+  model: ModelProvider | null = configuredProvider(),
+): Promise<{ ok: true; suggestion: Suggestion } | { ok: false; code: SuggestFailure }> {
+  if (!model) return { ok: false, code: "ai_off" };
   const text = description.trim();
   if (!text || text.length > 4_000) return { ok: false, code: "invalid" };
+  // only for a confirmed workspace and within the server's daily spending limit
+  const gate = aiGate("studio_suggest", s.workspaceId, model, SUGGEST_TYPICAL_USD);
+  if (!gate.provider) return { ok: false, code: gate.reason ?? "ai_off" };
+  const provider = generationProviderFrom(gate.provider, { maxOutputTokens: 1_000 });
   const now = Date.now();
   const hits = (recentSuggest.get(s.workspaceId) ?? []).filter((t) => now - t < 3_600_000);
   if (hits.length >= SUGGEST_PER_HOUR) return { ok: false, code: "limit" };
@@ -95,7 +111,7 @@ export async function suggestFromDescription(s: SessionLike, description: string
   try {
     raw = await provider.complete({ system: SUGGEST_SYSTEM, prompt: JSON.stringify({ description: text, choices: CHOICES }), schema: SUGGEST_SCHEMA });
   } catch {
-    return { ok: false, code: "failed" };
+    return { ok: false, code: gate.capped() ? "spend_cap" : "failed" };
   }
   return { ok: true, suggestion: cleanSuggestion(raw, text) };
 }
@@ -183,20 +199,49 @@ export function cleanSuggestion(raw: unknown, description: string): Suggestion {
 const recentGenerate = new Map<string, number[]>();
 const GENERATE_WITH_AI_PER_HOUR = 30;
 
-export async function createDraft(s: SessionLike, input: GenerateInput) {
-  let provider = generationProvider() ?? undefined;
-  if (provider) {
-    // the model step is optional: over the hourly allowance, generate from the template alone
+/** Why a draft is the plain template although a model is configured (the draft page says so). */
+export type DraftFallback = "unverified" | "spend_cap" | "hourly_limit" | "provider_error" | "checks";
+/** What the draft page shows first: `template_fallback` when AI was meant to reword it but didn't. */
+export type DraftLanding = "template" | "model" | "template_fallback";
+
+export async function createDraft(s: SessionLike, input: GenerateInput, model: ModelProvider | null = configuredProvider()) {
+  // the model step is optional: without it (or when it fails) the draft is the template alone, and that is said
+  let provider: GenerationProvider | undefined;
+  let skipped: DraftFallback | undefined;
+  const gate = aiGate("studio_draft", s.workspaceId, model, DRAFT_TYPICAL_USD);
+  if (model && !gate.provider) skipped = gate.reason === "unverified" ? "unverified" : "spend_cap";
+  else if (gate.provider) {
     const now = Date.now();
     const hits = (recentGenerate.get(s.workspaceId) ?? []).filter((t) => now - t < 3_600_000);
-    if (hits.length >= GENERATE_WITH_AI_PER_HOUR) provider = undefined;
-    else recentGenerate.set(s.workspaceId, [...hits, now]);
+    if (hits.length >= GENERATE_WITH_AI_PER_HOUR) skipped = "hourly_limit";
+    else {
+      recentGenerate.set(s.workspaceId, [...hits, now]);
+      provider = generationProviderFrom(gate.provider);
+    }
   }
   const r = await generateAgreement(input, { provider });
   if (r.status !== "ok") return { ok: false as const, status: r.status, issues: r.status === "needs_input" ? [...r.missing.map((m) => `missing: ${m}`), ...r.issues] : r.issues };
   const c = store().create(principal(s), { kind: input.kind, title: r.draft.title, doc: r.draft, origin: "generated" });
   if (!c.ok) return { ok: false as const, status: "refused", issues: [c.message] };
-  return { ok: true as const, draftId: c.draftId, source: r.source, fallbackReasons: r.fallbackReasons, notes: r.notes };
+  let fallback = skipped;
+  if (!fallback && provider && r.source === "template")
+    fallback = gate.capped() ? "spend_cap" : r.fallbackReasons.some((x) => x.startsWith("model provider failed")) ? "provider_error" : "checks";
+  const landing: DraftLanding = fallback ? "template_fallback" : r.source;
+  return { ok: true as const, draftId: c.draftId, source: r.source, landing, ...(fallback && { fallback }), fallbackReasons: r.fallbackReasons, notes: r.notes };
+}
+
+/** The draft page's notice for a fallback (fixed text; the reason comes from the URL, so unknown ones get a generic line). */
+export function fallbackNotice(why: string | undefined): string {
+  const reasons: Record<DraftFallback, string> = {
+    unverified: "confirm your email address to use the AI assistant",
+    spend_cap: "AI isn't available right now: daily limit",
+    hourly_limit: "this workspace's hourly AI allowance is used up",
+    provider_error: "the AI service didn't answer",
+    checks: "the AI's wording didn't pass the checks against the template",
+  };
+  const reason = why && Object.hasOwn(reasons, why) ? reasons[why as DraftFallback] : "it wasn't available";
+  if (why === "checks") return `AI rewording was discarded (${reason}), so this draft is the template with exactly your values.`;
+  return `AI rewording didn't run (${reason}), so this draft is the template with exactly your values.`;
 }
 
 export const listDrafts = (s: SessionLike) => store().list(principal(s));

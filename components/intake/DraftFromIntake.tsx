@@ -37,7 +37,7 @@ export function DraftFromIntake({ intakeId, kinds, initial }: { intakeId: string
     start(async () => {
       const r = await startDraftAction(intakeId, { kind: spec.kind, parties, terms: t }, confirmed);
       if (!r.ok) return setErrors("issues" in r && r.issues.length ? r.issues : ["message" in r ? r.message : "The draft couldn't be generated."]);
-      router.push(`/app/studio/${r.draftId}?new=${r.source}`);
+      router.push(`/app/studio/${r.draftId}?new=${r.landing}${r.fallback ? `&why=${r.fallback}` : ""}`);
     });
   }
 

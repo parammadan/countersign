@@ -8,10 +8,11 @@ import { limited } from "../ratelimit";
 import { id, now } from "../util";
 import type { Session } from "../auth";
 import { configuredProvider } from "../ai/anthropic";
+import { aiGate, estimateUsd, MESSAGES } from "../ai/budget";
 import { AnalysisError, type ModelProvider } from "../understand/model";
 import { cleanQuestion } from "../qa/answer";
 import { QA_DAILY, QA_PER_USER_PER_MINUTE } from "../qa/store";
-import { answerAcrossAgreements, M3ModelError, type M3Result, type Meter } from "./answer";
+import { answerAcrossAgreements, M3_LIMITS, M3ModelError, type M3Result, type Meter } from "./answer";
 import { looksLikeInjection } from "./index/injection";
 import { canRead } from "./security/policy";
 import { detectAddressedToReader, detectInjection } from "./security/sanitize";
@@ -23,6 +24,8 @@ import type { Index } from "./index/types";
 /** Same allowances as M2.2: tight when a paid model answers, generous for passages only. */
 export const M3_DAILY = QA_DAILY;
 export const M3_PER_USER_PER_MINUTE = QA_PER_USER_PER_MINUTE;
+/** A rough cost of one answer (cited passages in, the output cap out), for deciding up front. */
+export const M3_TYPICAL_USD = estimateUsd(M3_LIMITS.maxContextChars + 2_000, M3_LIMITS.maxOutputTokens);
 
 export type Principal = Pick<Session, "userId" | "userEmail" | "workspaceId" | "role">;
 export type M3Entry = { id: string; question: string; result: M3Result; askedBy: string; createdAt: string };
@@ -136,6 +139,9 @@ export async function askAcrossAgreements(s: Principal, rawQuestion: string, pro
   if (!question) throw new AppError("Ask a question of up to 500 characters.", 422);
   if (limited(`m3-user:${s.userId}`, M3_PER_USER_PER_MINUTE, 60_000)) throw new AppError("You're asking quickly. Wait a minute and try again.", 429);
   const index = appIndex();
+  // the model only for a confirmed workspace and within the server's daily spending limit; otherwise as with AI off
+  const gate = aiGate("m3", s.workspaceId, provider, M3_TYPICAL_USD);
+  provider = gate.provider;
   // the daily allowance is taken atomically before any work; a failed attempt still counts (it may have cost a call)
   const cap = provider ? M3_DAILY.model : M3_DAILY.passages;
   const qid = id("m3q_");
@@ -153,13 +159,20 @@ export async function askAcrossAgreements(s: Principal, rawQuestion: string, pro
     try {
       result = await answerAcrossAgreements(ctx, question, provider, meter);
       mode = result.mode === "model" ? "model" : "passages";
+      if (gate.notice) result.warnings.unshift(gate.notice);
     } catch (e) {
       if (!(e instanceof AnalysisError)) throw e;
-      // the assistant failed (timeout, refusal, outage): the extractive answer instead, and keep what it cost
       result = await answerAcrossAgreements(ctx, question, null);
-      result.usage = (e instanceof M3ModelError ? e.usage : undefined) ?? meter.usage;
-      result.warnings.unshift("The AI assistant couldn't answer just now, so these are the passages instead.");
-      mode = "model_failed";
+      if (gate.capped()) {
+        // the spending limit was reached as this call was about to start: nothing was sent, as with AI off
+        result.warnings.unshift(MESSAGES.spendCap);
+        mode = "passages";
+      } else {
+        // the assistant failed (timeout, refusal, outage): the extractive answer instead, and keep what it cost
+        result.usage = (e instanceof M3ModelError ? e.usage : undefined) ?? meter.usage;
+        result.warnings.unshift("The AI assistant couldn't answer just now, so these are the passages instead.");
+        mode = "model_failed";
+      }
     }
   } catch (e) {
     // whatever failed, a model call that already happened is booked
@@ -176,7 +189,7 @@ export async function askAcrossAgreements(s: Principal, rawQuestion: string, pro
     qid,
     s.workspaceId,
   );
-  audit(s.workspaceId, null, "agreements.question_asked", s.userEmail, {}, { scope: "workspace", mode, status: result.status, input_tokens: result.usage?.inputTokens ?? 0, output_tokens: result.usage?.outputTokens ?? 0 });
+  audit(s.workspaceId, null, "agreements.question_asked", s.userEmail, {}, { scope: "workspace", mode, status: result.status, input_tokens: result.usage?.inputTokens ?? 0, output_tokens: result.usage?.outputTokens ?? 0, ...(gate.reason && { ai_withheld: gate.reason }) });
   return qid;
 }
 
@@ -210,6 +223,12 @@ export function recentQuestions(viewer: Principal, limit = 20): M3Entry[] {
   return out;
 }
 
-export function assistantMode(provider: ModelProvider | null = configuredProvider()) {
-  return provider ? { kind: "model" as const, model: provider.model } : { kind: "passages" as const };
+/** As in M2.2: with a workspace, also whether this workspace may use the model now, and if not why. */
+export function assistantMode(provider: ModelProvider | null = configuredProvider(), workspaceId?: string): { kind: "model"; model: string } | { kind: "passages"; notice?: string } {
+  if (!provider) return { kind: "passages" };
+  if (workspaceId) {
+    const g = aiGate("m3", workspaceId, provider, M3_TYPICAL_USD);
+    if (!g.provider) return { kind: "passages", notice: g.notice };
+  }
+  return { kind: "model", model: provider.model };
 }

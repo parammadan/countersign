@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Card, CardHeader, Field, Notice, Select, inputCls, cx } from "@/components/ui";
 import { createDraftAction, suggestAction } from "@/app/studio-actions";
-import type { KindSpec, Suggestion } from "@/lib/drafts/service";
+import type { KindSpec, SuggestFailure, Suggestion } from "@/lib/drafts/service";
 
 const TERM_LABEL: Record<string, string> = {
   fee: "Fee (with currency, e.g. $5,000)", paymentDays: "Payment due (days after invoice)", startDate: "Start date", endDate: "End date",
@@ -13,6 +13,14 @@ const TERM_LABEL: Record<string, string> = {
   propertyAddress: "Property address", licensedMaterial: "Licensed material (its name)", territory: "Territory (one or more, separated by ;)",
   exclusivity: "Exclusivity", ipOwner: "Who owns the work product", licensedUse: "What the licence allows", licenceTransfer: "Sublicensing or transfer",
   feePeriod: "Retainer fee is charged per", rentSchedule: "Rent schedule", premisesUse: "Use of the premises", subletting: "Subletting",
+};
+const SUGGEST_FAILED: Record<SuggestFailure, string> = {
+  ai_off: "AI isn't configured on this server, so fill in the form below.",
+  unverified: "Confirm your email address to use the AI assistant. Until then, fill in the form below.",
+  spend_cap: "AI isn't available right now (daily limit); fill in the form below.",
+  limit: "Too many suggestions this hour; fill in the form below.",
+  invalid: "Describe the agreement in up to 4,000 characters.",
+  failed: "The suggestion service didn't answer. Fill in the form below.",
 };
 const label = (k: string) => TERM_LABEL[k] ?? k;
 const inputType = (t: string) => (t === "date" ? "date" : t === "int" || t === "percent" ? "number" : "text");
@@ -36,7 +44,7 @@ export function NewAgreement({ kinds, ai }: { kinds: KindSpec[]; ai: boolean }) 
     start(async () => {
       const r = await suggestAction(description);
       if (!r.ok) {
-        setErrors([r.code === "ai_off" ? "AI isn't configured on this server, so fill in the form below." : r.code === "limit" ? "Too many suggestions this hour; fill in the form below." : r.code === "invalid" ? "Describe the agreement in up to 4,000 characters." : "The suggestion service didn't answer. Fill in the form below."]);
+        setErrors([SUGGEST_FAILED[r.code] ?? SUGGEST_FAILED.failed]);
         return;
       }
       const sg = r.suggestion;
@@ -71,7 +79,7 @@ export function NewAgreement({ kinds, ai }: { kinds: KindSpec[]; ai: boolean }) 
         setErrors(r.issues.length ? r.issues : ["The draft couldn't be generated."]);
         return;
       }
-      router.push(`/app/studio/${r.draftId}?new=${r.source}`);
+      router.push(`/app/studio/${r.draftId}?new=${r.landing}${r.fallback ? `&why=${r.fallback}` : ""}`);
     });
   }
 

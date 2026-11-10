@@ -50,7 +50,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ e
   const q = await searchParams;
   const status = indexStatus(s.workspaceId);
   const history = recentQuestions(s);
-  const mode = assistantMode();
+  const mode = assistantMode(undefined, s.workspaceId);
   const ran = q.indexed !== undefined;
 
   return (
@@ -117,7 +117,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ e
         <textarea id="question" name="question" required minLength={3} maxLength={500} rows={2} defaultValue={q.q?.slice(0, 500) ?? ""} placeholder="e.g. Which agreements allow early termination?" className={inputCls + " h-auto py-2"} />
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs text-muted">
-            {mode.kind === "model" ? `Answered by an AI assistant (${mode.model}) from the quoted passages only, then checked against them.` : "AI answers are off on this server: you'll see the passages that answer your question, quoted as written."}
+            {mode.kind === "model" ? `Answered by an AI assistant (${mode.model}) from the quoted passages only, then checked against them.` : (mode.notice ?? "AI answers are off on this server: you'll see the passages that answer your question, quoted as written.")}
           </p>
           <Button icon="spark">Ask</Button>
         </div>

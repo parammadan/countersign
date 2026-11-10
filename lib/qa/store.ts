@@ -13,6 +13,7 @@ import { id, now, sha256 } from "../util";
 import { pageLines } from "../understand/text";
 import { latestAnalysis, MAX_PAGES } from "../understand/store";
 import { AnalysisError, type ModelProvider, type Usage } from "../understand/model";
+import { meteredSpentUsd } from "../ai/budget";
 import { configuredProvider, configuredVerifier, TEST_KEY } from "../ai/anthropic";
 import { costMicroUsd, worstCaseMicroUsd } from "../ai/pricing";
 import { answerFromPassages, answerWithModel, cleanQuestion, modelContext, QA_LIMITS, QaModelError, requestTokens, tokensAtMost, type QaResult, type Turn } from "./answer";
@@ -115,7 +116,8 @@ export async function askQuestion(
       );
     }
     if (model) {
-      const all = one<{ n: number | null }>("SELECT SUM(cost_microusd) n FROM qa_answers WHERE created_at > ?", since)?.n ?? 0;
+      // one total across every AI feature: Q&A plus Studio and the Knowledge Hub (lib/ai/budget)
+      const all = (one<{ n: number | null }>("SELECT SUM(cost_microusd) n FROM qa_answers WHERE created_at > ?", since)?.n ?? 0) + Math.ceil(meteredSpentUsd() * 1e6);
       const mine = one<{ n: number | null }>("SELECT SUM(cost_microusd) n FROM qa_answers WHERE workspace_id = ? AND created_at > ?", wsId, since)?.n ?? 0;
       if (all + reserve > aiDailyBudgetUsd() * 1e6) {
         model = false;
