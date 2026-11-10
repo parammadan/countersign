@@ -60,3 +60,12 @@ export const DRAFTS_DDL = `
   );
   CREATE INDEX draft_approvals_ws ON draft_approvals(workspace_id, draft_id, created_at);
 `;
+
+/**
+ * The same DDL, idempotent, for creating the tables at first use until migration 8 lands in lib/db.ts (owner-reserved).
+ * It never reads or writes PRAGMA user_version, so lib/db.ts's migration bookkeeping is untouched.
+ */
+export const DRAFTS_DDL_IF_NOT_EXISTS = DRAFTS_DDL
+  .replace(/CREATE TABLE /g, "CREATE TABLE IF NOT EXISTS ")
+  .replace(/CREATE UNIQUE INDEX /g, "CREATE UNIQUE INDEX IF NOT EXISTS ")
+  .replace(/CREATE INDEX /g, "CREATE INDEX IF NOT EXISTS ");
