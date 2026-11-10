@@ -1,0 +1,53 @@
+diff --git a/app/studio-actions.ts b/app/studio-actions.ts
+index 3d5029c..db37663 100644
+--- a/app/studio-actions.ts
++++ b/app/studio-actions.ts
+@@ -6,6 +6,16 @@ import { revalidatePath } from "next/cache";
+ import { requireSession } from "@/lib/auth";
+ import * as svc from "@/lib/drafts/service";
+ import type { GenerateInput } from "@/lib/m23/m23-generate";
++import { syncStudioEvents } from "@/lib/workflow/app";
++
++// record the workflow event as it happens (idempotent: one event per approval-log row; never delivered)
++const recordStudioEvents = (workspaceId: string) => {
++  try {
++    syncStudioEvents(workspaceId);
++  } catch {
++    /* the Workflow events page records it on its next view */
++  }
++};
+ 
+ const id = (v: unknown) => (typeof v === "string" ? v.slice(0, 100) : "");
+ const int = (v: unknown) => (typeof v === "number" && Number.isSafeInteger(v) ? v : -1);
+@@ -54,6 +64,7 @@ export async function rollbackAction(draftId: string, expected: number, to: numb
+ export async function submitAction(draftId: string, version: number) {
+   const s = await requireSession();
+   const r = svc.submitDraft(s, id(draftId), int(version));
++  if (r.ok) recordStudioEvents(s.workspaceId);
+   revalidatePath(path(id(draftId)));
+   return r;
+ }
+@@ -61,6 +72,7 @@ export async function submitAction(draftId: string, version: number) {
+ export async function approveAction(draftId: string, version: number) {
+   const s = await requireSession();
+   const r = await svc.approveDraft(s, id(draftId), int(version));
++  if (r.ok) recordStudioEvents(s.workspaceId);
+   revalidatePath(path(id(draftId)));
+   return r;
+ }
+@@ -68,6 +80,7 @@ export async function approveAction(draftId: string, version: number) {
+ export async function requestChangesAction(draftId: string) {
+   const s = await requireSession();
+   const r = svc.requestChanges(s, id(draftId));
++  if (r.ok) recordStudioEvents(s.workspaceId);
+   revalidatePath(path(id(draftId)));
+   return r;
+ }
+@@ -75,6 +88,7 @@ export async function requestChangesAction(draftId: string) {
+ export async function publishAction(draftId: string, version: number) {
+   const s = await requireSession();
+   const r = await svc.publishDraft(s, id(draftId), int(version));
++  if (r.ok) recordStudioEvents(s.workspaceId);
+   revalidatePath(path(id(draftId)));
+   revalidatePath("/app/agreements");
+   return r;

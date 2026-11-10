@@ -38,12 +38,13 @@ export const NAV: NavItem[] = [
   // Approved roadmap (M2+). Not rendered until built.
   { id: "studio", label: "Agreement Studio", href: "/app/studio", icon: "spark", section: "intelligence", status: "live" },
   { id: "knowledge", label: "Knowledge Hub", href: "/app/knowledge", icon: "agreement", section: "intelligence", status: "live" },
-  { id: "documents", label: "Document Intelligence", href: "/app/documents", icon: "files", section: "intelligence", status: "planned" },
+  { id: "documents", label: "Document Intelligence", href: "/app/documents", icon: "files", section: "intelligence", status: "live" },
   { id: "inbox", label: "Smart Inbox", href: "/app/inbox", icon: "mail", section: "intelligence", status: "planned" },
   { id: "voice", label: "Voice", href: "/app/voice", icon: "send", section: "intelligence", status: "planned" },
   { id: "automations", label: "Automations", href: "/app/automations", icon: "spark", section: "intelligence", status: "planned" },
 
   { id: "emails", label: "Email log", href: "/app/outbox", icon: "mail", section: "records", status: "live" },
+  { id: "workflow", label: "Workflow events", href: "/app/workflow", icon: "spark", section: "records", status: "live", adminOnly: true },
   { id: "developers", label: "Integrations & API", href: "/app/developers", icon: "code", section: "connect", status: "live", adminOnly: true },
   { id: "settings", label: "Settings", href: "/app/settings", icon: "settings", section: "admin", status: "live", adminOnly: true },
 ];
