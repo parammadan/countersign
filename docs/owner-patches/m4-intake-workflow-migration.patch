@@ -1,8 +1,8 @@
 diff --git a/lib/db.ts b/lib/db.ts
-index fe7446b..363ace2 100644
+index fe7446b..9c27b43 100644
 --- a/lib/db.ts
 +++ b/lib/db.ts
-@@ -256,6 +256,88 @@ const MIGRATIONS: string[] = [
+@@ -256,6 +256,91 @@ const MIGRATIONS: string[] = [
    CREATE INDEX qa_answers_version ON qa_answers(workspace_id, template_version_id, created_at);
    CREATE INDEX qa_answers_day ON qa_answers(workspace_id, created_at);
    `,
@@ -19,7 +19,10 @@ index fe7446b..363ace2 100644
 +    doc_type     TEXT NOT NULL,
 +    decision     TEXT NOT NULL CHECK (decision IN ('needs_review', 'ready_to_prepare', 'unsupported')),
 +    text_sha256  TEXT NOT NULL,
-+    record_json  TEXT NOT NULL
++    record_json  TEXT NOT NULL,
++    confirmed_by TEXT REFERENCES users(id),
++    confirmed_at TEXT,
++    draft_id     TEXT
 +  );
 +  CREATE INDEX IF NOT EXISTS intake_results_ws ON intake_results (workspace_id, created_at);
 +  CREATE TABLE IF NOT EXISTS wf_events (

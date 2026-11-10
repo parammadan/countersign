@@ -17,7 +17,10 @@ CREATE TABLE IF NOT EXISTS intake_results (
   doc_type     TEXT NOT NULL,
   decision     TEXT NOT NULL CHECK (decision IN ('needs_review', 'ready_to_prepare', 'unsupported')),
   text_sha256  TEXT NOT NULL,
-  record_json  TEXT NOT NULL
+  record_json  TEXT NOT NULL,
+  confirmed_by TEXT REFERENCES users(id),
+  confirmed_at TEXT,
+  draft_id     TEXT
 );
 CREATE INDEX IF NOT EXISTS intake_results_ws ON intake_results (workspace_id, created_at);
 `;
@@ -31,7 +34,7 @@ export function ensureIntakeSchema(conn: DatabaseSync = db()): void {
   g.__intakeDb = conn;
 }
 
-export type IntakeRow = { id: string; created_by: string; created_at: string; source: "upload" | "paste"; filename: string | null; doc_type: string; decision: RoutingDecision };
+export type IntakeRow = { id: string; created_by: string; created_at: string; source: "upload" | "paste"; filename: string | null; doc_type: string; decision: RoutingDecision; confirmed_by: string | null; confirmed_at: string | null; draft_id: string | null };
 export type IntakeResult = IntakeRow & { record: IntakeRecord };
 
 export function insertResult(wsId: string, r: { id: string; createdBy: string; createdAt: string; source: "upload" | "paste"; filename: string | null; textSha256: string; record: IntakeRecord }): void {
@@ -45,7 +48,7 @@ export function insertResult(wsId: string, r: { id: string; createdBy: string; c
 export function listResults(wsId: string, limit = 50): IntakeRow[] {
   ensureIntakeSchema();
   return all<IntakeRow>(
-    "SELECT id, created_by, created_at, source, filename, doc_type, decision FROM intake_results WHERE workspace_id = ? ORDER BY created_at DESC, id DESC LIMIT ?",
+    "SELECT id, created_by, created_at, source, filename, doc_type, decision, confirmed_by, confirmed_at, draft_id FROM intake_results WHERE workspace_id = ? ORDER BY created_at DESC, id DESC LIMIT ?",
     wsId, Math.min(Math.max(1, Math.floor(limit)), 200),
   );
 }
@@ -53,12 +56,18 @@ export function listResults(wsId: string, limit = 50): IntakeRow[] {
 export function getResult(wsId: string, id: string): IntakeResult | null {
   ensureIntakeSchema();
   const r = one<IntakeRow & { record_json: string }>(
-    "SELECT id, created_by, created_at, source, filename, doc_type, decision, record_json FROM intake_results WHERE id = ? AND workspace_id = ?",
+    "SELECT id, created_by, created_at, source, filename, doc_type, decision, confirmed_by, confirmed_at, draft_id, record_json FROM intake_results WHERE id = ? AND workspace_id = ?",
     id, wsId,
   );
   if (!r) return null;
   const { record_json, ...row } = r;
   return { ...row, record: JSON.parse(record_json) as IntakeRecord };
+}
+
+/** Provenance: who confirmed the pre-filled values, when, and the Studio draft that was started (latest wins). */
+export function markDraftStarted(wsId: string, id: string, userId: string, draftId: string): void {
+  ensureIntakeSchema();
+  run("UPDATE intake_results SET confirmed_by = ?, confirmed_at = ?, draft_id = ? WHERE id = ? AND workspace_id = ?", userId, new Date().toISOString(), draftId, id, wsId);
 }
 
 /** Intake runs in this workspace since `sinceIso` (the per-workspace rate limit). */

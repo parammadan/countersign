@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Card, CardHeader, Field, Notice, Select, inputCls } from "@/components/ui";
-import { createDraftAction } from "@/app/studio-actions";
+import { startDraftAction } from "@/app/intake-actions";
 import type { KindSpec } from "@/lib/drafts/service";
 import { TERM_LABEL } from "./labels";
 
@@ -13,7 +13,7 @@ const inputType = (t: string) => (t === "date" ? "date" : t === "int" || t === "
  * The Agreement Studio form, opened from a read document: only values the document states are filled in (and
  * marked), everything else is empty. Nothing is generated until the user checks the values and presses Generate.
  */
-export function DraftFromIntake({ kinds, initial }: { kinds: KindSpec[]; initial: { kind: string | null; names: Record<string, string>; terms: Record<string, string>; notes: string[] } }) {
+export function DraftFromIntake({ intakeId, kinds, initial }: { intakeId: string; kinds: KindSpec[]; initial: { kind: string | null; names: Record<string, string>; terms: Record<string, string>; notes: string[] } }) {
   const router = useRouter();
   const [kind, setKind] = useState(initial.kind ?? kinds[0]?.kind ?? "services");
   const spec = useMemo(() => kinds.find((k) => k.kind === kind)!, [kinds, kind]);
@@ -22,7 +22,8 @@ export function DraftFromIntake({ kinds, initial }: { kinds: KindSpec[]; initial
   const [confirmed, setConfirmed] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [pending, start] = useTransition();
-  const fromDoc = (field: string, value: string | undefined) => initial.kind === kind && !!value && value === (field.startsWith("role:") ? initial.names[field.slice(5)] : initial.terms[field]);
+  // marked while the value is still the one read from the document, whichever agreement type is chosen
+  const fromDoc = (field: string, value: string | undefined) => !!value && value === (field.startsWith("role:") ? initial.names[field.slice(5)] : initial.terms[field]);
 
   function generate() {
     setErrors([]);
@@ -34,8 +35,8 @@ export function DraftFromIntake({ kinds, initial }: { kinds: KindSpec[]; initial
       t[term.key] = term.type === "int" || term.type === "percent" ? Number(v) : v;
     }
     start(async () => {
-      const r = await createDraftAction({ kind: spec.kind, parties, terms: t });
-      if (!r.ok) return setErrors(r.issues.length ? r.issues : ["The draft couldn't be generated."]);
+      const r = await startDraftAction(intakeId, { kind: spec.kind, parties, terms: t }, confirmed);
+      if (!r.ok) return setErrors("issues" in r && r.issues.length ? r.issues : ["message" in r ? r.message : "The draft couldn't be generated."]);
       router.push(`/app/studio/${r.draftId}?new=${r.source}`);
     });
   }

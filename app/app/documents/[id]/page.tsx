@@ -9,12 +9,15 @@ import { DECISION_LABEL, DECISION_TONE, TYPE_LABEL } from "@/components/intake/l
 export const metadata = { title: "Document" };
 
 const src = (s: Source) => `p. ${s.page}`;
+const MAX_ROWS = 60;
 
 function Rows({ rows }: { rows: { label: string; value: string; source?: Source }[] }) {
   if (!rows.length) return <p className="px-5 py-4 text-[13px] text-muted">None found.</p>;
+  const shown = rows.slice(0, MAX_ROWS);
   return (
     <ul className="divide-y divide-line">
-      {rows.map((r, i) => (
+      {rows.length > MAX_ROWS && <li className="px-5 py-2 text-[12px] text-muted">Showing {MAX_ROWS} of {rows.length}.</li>}
+      {shown.map((r, i) => (
         <li key={i} className="px-5 py-3">
           <div className="flex items-baseline justify-between gap-3">
             <span className="text-[13px] text-muted">{r.label}</span>
@@ -53,6 +56,11 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
           </Notice>
         )}
         {decision === "unsupported" && <Notice tone="info">{r.routing.reasons.join("; ")}. Nothing can be prepared from it.</Notice>}
+        {result.draft_id && (
+          <Notice tone="info">
+            A draft was started from this document {timeAgo(result.confirmed_at)} after the values were confirmed: <Link className="underline" href={`/app/studio/${result.draft_id}`}>open the draft</Link>.
+          </Notice>
+        )}
         {decision !== "unsupported" && (
           <div>
             <LinkButton href={`/app/documents/${result.id}/draft`} icon="agreement" variant={decision === "ready_to_prepare" ? "primary" : "secondary"}>
@@ -67,7 +75,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
         <Card className="mb-5 border-amber-300">
           <CardHeader title={`Quarantined text (${r.injection.length})`} description="These lines look like instructions aimed at an AI, or use disguised letters. They were not read for any value and are never sent to a model." />
           <ul className="divide-y divide-line">
-            {r.injection.map((q, i) => (
+            {r.injection.slice(0, MAX_ROWS).map((q, i) => (
               <li key={i} className="px-5 py-3 text-[13px]">
                 <Badge tone="warn" icon="shield">Quarantined</Badge> <span className="text-muted">{src(q)}:</span> <span className="font-mono text-ink">{q.quote}</span>
               </li>
