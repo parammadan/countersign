@@ -9,28 +9,57 @@ const DANGEROUS = "script|style|iframe|object|embed|svg|img|link|meta|form|input
 // names (a, b, i, p, q, s, u) are left to the rules above so "if a<b and c>d" stays plain text.
 const BOOLEAN_ATTRS = "hidden|open|inert|contenteditable|autofocus|popover|draggable|defer|async|nomodule|controls|autoplay|muted|loop|disabled|readonly|required|selected|checked|multiple|novalidate|formnovalidate|allowfullscreen|ismap|itemscope|reversed|default";
 const ELEMENTS = "abbr|address|area|article|aside|audio|bdi|bdo|blockquote|body|br|button|canvas|caption|center|cite|code|col|colgroup|data|datalist|dd|del|details|dfn|dialog|div|dl|dt|em|fieldset|figcaption|figure|font|footer|frame|frameset|h[1-6]|head|header|hgroup|hr|html|ins|kbd|label|legend|li|main|map|mark|marquee|math|menu|meter|nav|noembed|noscript|ol|optgroup|option|output|picture|plaintext|pre|progress|rp|rt|ruby|samp|search|section|select|slot|small|source|span|strong|sub|summary|sup|table|tbody|td|template|textarea|tfoot|th|thead|time|title|tr|track|ul|var|video|wbr|xmp";
-const ATTR = "[^\\s\"'<>\\/=]+(?:=[^\\s<>]*)?";
-const HTML = new RegExp(
-  [
-    `<\\s*\\/?\\s*${NAME}\\s*\\/?>`, // bare tag
-    `<\\/?${NAME}[\\s\\/][^<>]*=[^<>]*>`, // tag with a valued attribute
-    `<\\s*\\/?\\s*(?:${DANGEROUS})\\b`, // script-capable names, even unclosed or without attributes
-    "<[!?]", // comment, doctype, processing instruction
-    `<\\/${NAME}`, // closing tag
-    // Boolean attributes. Parsers treat "/" like a space between attributes, and names may hold any of [^\s"'>/=].
-    `<${NAME}[\\s\\/]+(?:${BOOLEAN_ATTRS})(?![^\\s\\/>=])`, // right after the name, closed or not: <p hidden, <b/hidden
-    `<${NAME}(?:[\\s\\/]+${ATTR})*[\\s\\/]+(?:${BOOLEAN_ATTRS})(?:[\\s\\/]+${ATTR})*[\\s\\/]*>`, // among other attributes: <p x1 hidden>
-    `<(?:${ELEMENTS})[\\s\\/](?:[^<>]*>|[^<>]*$)`, // a known multi-letter element with attributes, closed or running to the end
-  ].join("|"),
-  "i",
-);
+const BOOLEAN_RE = new RegExp(`^(?:${BOOLEAN_ATTRS})$`, "i");
+// Anchored, quantifier-light checks run on ONE tag candidate at a time (see htmlMarkup).
+const BARE_TAG = new RegExp(`^< ?\\/? ?${NAME} ?\\/?>$`, "i");
+const VALUED_START = new RegExp(`^<\\/?${NAME}[ \\/]`, "i");
+const DANGEROUS_START = new RegExp(`^< ?\\/? ?(?:${DANGEROUS})\\b`, "i");
+const CLOSING_START = new RegExp(`^<\\/${NAME}`, "i");
+const BOOLEAN_FIRST = new RegExp(`^<${NAME}[ \\/]+(?:${BOOLEAN_ATTRS})(?![^ \\/>=])`, "i");
+const NAME_START = new RegExp(`^<${NAME}[ \\/]`, "i");
+const ELEMENT_START = new RegExp(`^<(?:${ELEMENTS})[ \\/]`, "i");
+
+/**
+ * Tag-like markup, in linear time. The text is cut at every "<" into candidates that run to the next "<" or ">"
+ * (disjoint, so the total work is O(n)); whitespace runs are folded to one space; each candidate is tested with
+ * anchored patterns without nested quantifiers, and attribute lists are split rather than backtracked over.
+ * Same rules as before:
+ * - a bare tag (<b>, </b>, <br/>);
+ * - a tag with a valued attribute (<img src=x>, <svg/onload=y>);
+ * - a script-capable element name, even unclosed;
+ * - a comment, doctype or processing instruction;
+ * - a closing tag;
+ * - a boolean attribute right after the name (<p hidden, <b/hidden);
+ * - a boolean attribute among other attributes in a closed tag (<p x1 hidden>);
+ * - a known multi-letter element with attributes, closed or running to the end.
+ */
+function htmlMarkup(text: string): boolean {
+  let i = text.indexOf("<");
+  while (i !== -1) {
+    let j = i + 1;
+    while (j < text.length && text[j] !== "<" && text[j] !== ">") j++;
+    const closed = j < text.length && text[j] === ">";
+    const atEnd = j >= text.length;
+    const seg = (text.slice(i, closed ? j + 1 : j)).replace(/\s+/g, " ");
+    if (/^<[!?]/.test(seg) || DANGEROUS_START.test(seg) || CLOSING_START.test(seg) || BOOLEAN_FIRST.test(seg)) return true;
+    if (closed && (BARE_TAG.test(seg) || (VALUED_START.test(seg) && seg.includes("=")))) return true;
+    if (closed && NAME_START.test(seg)) {
+      // attributes: split on spaces and "/" (parsers treat "/" between attributes like a space)
+      const tokens = seg.slice(1, -1).split(/[ /]+/).slice(1);
+      if (tokens.some((t) => BOOLEAN_RE.test(t.split("=")[0]))) return true;
+    }
+    if ((closed || atEnd) && ELEMENT_START.test(seg)) return true;
+    i = text.indexOf("<", i + 1);
+  }
+  return false;
+}
 
 // Markdown links and images: inline `[x](url)` / `![x](url)`, a link definition `[x]: url`, an autolink `<scheme:...>`.
 // "[Client Name] (the Client)" is not a link: CommonMark allows no space between `]` and `(`.
 // A definition counts inside block quotes and list items too ("> [x]: url", "- [x]: url", "1. [x]: url").
 // The label may hold escaped brackets and line breaks, and the destination may sit on the next line, so any
 // "[label]:" at the start of a line is refused, even "[Drafting note]: ..." (fail closed).
-const MARKDOWN = /!\[|\]\(|^[ \t]*(?:(?:>|[-*+]|\d{1,9}[.)])[ \t]*)*\[(?:[^\]\\]|\\[\s\S])+\]:|<[a-z][a-z0-9+.-]{1,31}:[^\s<>]*>/im;
+const MARKDOWN = /!\[|\]\(|^[ \t]*(?:(?:>|[-*+]|\d{1,9}[.)])[ \t]*)*\[(?:[^[\]\\]|\\[\s\S])+\]:|<[a-z][a-z0-9+.-]{1,31}:[^\s<>]*>/im;
 
 // Encodings that a renderer may decode into markup, a break or a brace: any numeric character reference (with or
 // without its semicolon), the markup-relevant named references even without a semicolon (browsers decode
@@ -70,8 +99,8 @@ function mixedScriptWord(text: string): boolean {
   return false;
 }
 
-const MARKERS: Array<[string, RegExp, string]> = [
-  ["unsafe_html", HTML, "markup or HTML tag"],
+const MARKERS: Array<[string, { test(t: string): boolean }, string]> = [
+  ["unsafe_html", { test: htmlMarkup }, "markup or HTML tag"],
   ["unsafe_markdown", MARKDOWN, "a markdown link or image"],
   // data: only with a real media type or a bare ;/, (data:,x  data:;base64), so "personal data: name/address" is plain text.
   ["unsafe_script_url", /\b(?:javascript|vbscript)\s*:|\bdata\s*:\s*(?:(?:text|image|application|audio|video|font|model|multipart|message)\/[a-z0-9.+-]+\s*[;,]|;|,)/i, "script or data URL"],
