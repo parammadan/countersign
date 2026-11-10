@@ -35,7 +35,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   }
   const { template, version } = tv;
   const history = recentAnswers(s.workspaceId, version.id);
-  const mode = assistantMode(undefined, s.workspaceId);
+  const mode = assistantMode();
 
   return (
     <>
@@ -56,7 +56,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         <textarea id="question" name="question" required minLength={3} maxLength={500} rows={2} defaultValue={q.q?.slice(0, 500) ?? ""} placeholder="e.g. Can the client end the agreement early?" className={inputCls + " h-auto py-2"} />
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs text-muted">
-            {mode.kind === "model" ? `Answered by an AI assistant (${mode.model}) from the agreement's text, then checked against it.` : (mode.notice ?? "AI answers are off on this server: you'll see the most relevant passages and what AgreementOS found, quoted as written.")}
+            {mode.kind === "model" ? `Answered by an AI assistant (${mode.model}) from the agreement's text, then checked against it.` : "AI answers are off on this server: you'll see the most relevant passages and what AgreementOS found, quoted as written."}
           </p>
           <Button icon="spark">Ask</Button>
         </div>

@@ -13,15 +13,11 @@ import { pageLines } from "../understand/text";
 import { latestAnalysis, MAX_PAGES } from "../understand/store";
 import { AnalysisError, type ModelProvider } from "../understand/model";
 import { configuredProvider } from "../ai/anthropic";
-import { aiGate, estimateUsd, MESSAGES, type AiGate } from "../ai/budget";
-import { answerFromPassages, answerWithModel, cleanQuestion, QA_LIMITS, QaModelError, type QaResult } from "./answer";
+import { answerFromPassages, answerWithModel, cleanQuestion, QaModelError, type QaResult } from "./answer";
 
 export const QA_PER_USER_PER_MINUTE = 6;
 /** Questions per workspace per 24 hours: tight when a paid model answers, generous for passages only. */
 export const QA_DAILY = { model: 50, passages: 300 };
-
-/** A rough cost of one answer (retrieved passages in, the output cap out), for deciding up front. */
-export const QA_TYPICAL_USD = estimateUsd(QA_LIMITS.maxContextChars + 2_000, QA_LIMITS.maxOutputTokens);
 
 export type QaEntry = { id: string; question: string; result: QaResult; askedBy: string; createdAt: string };
 
@@ -37,9 +33,6 @@ export async function askQuestion(
   if (!question) throw new AppError("Ask a question of up to 500 characters.", 422);
   if (limited(`qa-user:${user.id}`, QA_PER_USER_PER_MINUTE, 60_000)) throw new AppError("You're asking quickly. Wait a minute and try again.", 429);
   if ((JSON.parse(version.pages_json) as unknown[]).length > MAX_PAGES) throw new AppError(`This agreement has more than ${MAX_PAGES} pages, more than we read.`, 422);
-  // the model only for a confirmed workspace and within the server's daily spending limit; otherwise as with AI off
-  const gate = aiGate("qa", wsId, provider, QA_TYPICAL_USD);
-  provider = gate.provider;
   // the daily allowance is taken atomically before any work, so concurrent askers can't overshoot it; a failed
   // attempt still counts (it may have cost a model call)
   const cap = provider ? QA_DAILY.model : QA_DAILY.passages;
@@ -51,7 +44,7 @@ export async function askQuestion(
     run("INSERT INTO qa_answers (id, workspace_id, template_version_id, question, result_json, mode, asked_by, created_at) VALUES (?,?,?,?,?,?,?,?)", qid, wsId, version.id, question, "{}", "pending", user.email, now());
   });
   try {
-    return await answerAndStore(qid, wsId, template.name, version, user, question, gate);
+    return await answerAndStore(qid, wsId, template.name, version, user, question, provider);
   } catch (e) {
     run("UPDATE qa_answers SET mode = 'failed' WHERE id = ?", qid);
     throw e;
@@ -65,9 +58,8 @@ async function answerAndStore(
   version: ReturnType<typeof getTemplateVersion>["version"],
   user: { id: string; email: string },
   question: string,
-  gate: AiGate,
+  provider: ModelProvider | null,
 ): Promise<string> {
-  const provider = gate.provider;
   const pdf = await getBlob(version.pdf_path);
   if (sha256(pdf) !== version.sha256) throw new AppError("The stored agreement doesn't match its fingerprint, so it wasn't read.", 409);
   let ex: Awaited<ReturnType<typeof extractPdf>>;
@@ -92,22 +84,14 @@ async function answerAndStore(
       billed = result.usage;
     } catch (e) {
       if (!(e instanceof AnalysisError)) throw e;
+      // the assistant failed (timeout, refusal, bad output): show the relevant passages instead, and keep what
+      // the failed call cost
+      billed = e instanceof QaModelError ? e.usage : undefined;
+      mode = "model_failed";
       result = answerFromPassages(question, pages, { findings });
-      if (gate.capped()) {
-        // the spending limit was reached as this call was about to start: nothing was sent, as with AI off
-        result.warnings.unshift(MESSAGES.spendCap);
-      } else {
-        // the assistant failed (timeout, refusal, bad output): show the relevant passages instead, and keep what
-        // the failed call cost
-        billed = e instanceof QaModelError ? e.usage : undefined;
-        mode = "model_failed";
-        result.warnings.unshift("The AI assistant couldn't answer just now, so these are the most relevant passages instead.");
-      }
+      result.warnings.unshift("The AI assistant couldn't answer just now, so these are the most relevant passages instead.");
     }
-  } else {
-    result = answerFromPassages(question, pages, { findings });
-    if (gate.notice) result.warnings.unshift(gate.notice);
-  }
+  } else result = answerFromPassages(question, pages, { findings });
 
   run(
     "UPDATE qa_answers SET result_json = ?, mode = ?, input_tokens = ?, output_tokens = ? WHERE id = ? AND workspace_id = ?",
@@ -118,7 +102,7 @@ async function answerAndStore(
     qid,
     wsId,
   );
-  audit(wsId, null, "agreement.question_asked", user.email, {}, { template: templateName, version: version.version, mode, status: result.status, input_tokens: billed?.inputTokens ?? 0, output_tokens: billed?.outputTokens ?? 0, ...(gate.reason && { ai_withheld: gate.reason }) });
+  audit(wsId, null, "agreement.question_asked", user.email, {}, { template: templateName, version: version.version, mode, status: result.status, input_tokens: billed?.inputTokens ?? 0, output_tokens: billed?.outputTokens ?? 0 });
   return qid;
 }
 
@@ -132,15 +116,7 @@ export function recentAnswers(wsId: string, versionId: string, limit = 20): QaEn
   ).map((r) => ({ id: r.id, question: r.question, result: JSON.parse(r.result_json) as QaResult, askedBy: r.asked_by, createdAt: r.created_at }));
 }
 
-/**
- * Whether answers come from a model on this server (shown on the page; never the key). With a workspace, also
- * whether this workspace may use it now, and if not why.
- */
-export function assistantMode(provider: ModelProvider | null = configuredProvider(), workspaceId?: string): { kind: "model"; model: string } | { kind: "passages"; notice?: string } {
-  if (!provider) return { kind: "passages" };
-  if (workspaceId) {
-    const g = aiGate("qa", workspaceId, provider, QA_TYPICAL_USD);
-    if (!g.provider) return { kind: "passages", notice: g.notice };
-  }
-  return { kind: "model", model: provider.model };
+/** Whether answers come from a model on this server (shown on the page; never the key). */
+export function assistantMode(provider: ModelProvider | null = configuredProvider()) {
+  return provider ? { kind: "model" as const, model: provider.model } : { kind: "passages" as const };
 }
