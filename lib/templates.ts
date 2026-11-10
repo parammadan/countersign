@@ -4,6 +4,7 @@ import { ConvertError, toPdf } from "./convert";
 import { extractPdf } from "./pdf/extract";
 import { detectFields, type Detection, type Party } from "./detect";
 import { appendSignaturePage } from "./pdf/stamp";
+import { printForPdf, printProblem } from "./pdf/printable";
 import { putBlob } from "./storage";
 import { id, now, sha256 } from "./util";
 import { AppError } from "./files";
@@ -26,6 +27,9 @@ export async function ingestAgreement(
   if (recent >= 30) throw new AppError("This workspace has uploaded 30 agreement versions in the last 24 hours, the current limit. Try again tomorrow.", 429);
   const total = one<{ n: number }>("SELECT COUNT(*) n FROM template_versions WHERE workspace_id = ?", ws.id)?.n ?? 0;
   if (total >= 200) throw new AppError("This workspace has reached 200 agreement versions. Archive old ones or contact support.", 429);
+  // the agreement name is printed on the certificate of completion, so it must print exactly
+  const badName = printProblem(opts.name, "The agreement name", "name");
+  if (badName) throw new AppError(badName, 422);
   await ensureDiskSpace(upload.data.length * 3);
   let pdf: Buffer;
   try {
@@ -77,8 +81,9 @@ export async function ingestAgreement(
         .replace(/^\s*\d+\s+/, "")
         .replace(/\s+/g, " ")
         .trim();
+      // a name taken from the document or file name that the certificate can't print exactly is skipped
       const nm =
-        (opts.name || documentTitle(ex) || fromFile.charAt(0).toUpperCase() + fromFile.slice(1))
+        ([opts.name, documentTitle(ex), fromFile.charAt(0).toUpperCase() + fromFile.slice(1)].find((x) => x && !printForPdf(x).bad.length) ?? "")
           .replace(/[_-]+/g, " ")
           .replace(/^\s*\d+\s+/, "")
           .replace(/\s+/g, " ")

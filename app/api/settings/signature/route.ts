@@ -4,6 +4,7 @@ import { AppError } from "@/lib/files";
 import { putBlob } from "@/lib/storage";
 import { run } from "@/lib/db";
 import { audit } from "@/lib/audit";
+import { printProblem } from "@/lib/pdf/printable";
 
 export const POST = handle(async (req: Request) => {
   const { s, ws } = await sessionOr401(req);
@@ -18,10 +19,16 @@ export const POST = handle(async (req: Request) => {
   const email = (body.email ?? "").trim().toLowerCase().slice(0, 320);
   if (!name) throw new AppError("Enter the countersigner's name.");
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new AppError("Enter a valid email.");
+  const title = (body.title ?? "").trim().slice(0, 120);
+  // the name, title and email are printed on the signed PDF, so they must print exactly
+  for (const [v, subject, noun] of [[name, "This name", "name"], [title, "The title", "title"], [email, "The email", "email"]] as const) {
+    const problem = printProblem(v, subject, noun);
+    if (problem) throw new AppError(problem, 422);
+  }
   const p = await putBlob(`ws/${ws.id}/countersign-${Date.now()}.png`, buf);
   run(
     "UPDATE workspaces SET countersign_image = ?, countersigner_name = ?, countersigner_title = ?, countersigner_email = COALESCE(NULLIF(?, ''), countersigner_email) WHERE id = ?",
-    p, name, (body.title ?? "").trim().slice(0, 120) || null, email, ws.id,
+    p, name, title || null, email, ws.id,
   );
   audit(ws.id, null, "workspace.countersignature_adopted", s.userEmail, {}, { name });
   return NextResponse.json({ ok: true });
