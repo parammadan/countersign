@@ -192,12 +192,16 @@ function prepare(input: IntakeInput): Prepared {
     }
   }
   const injection: Source[] = [];
+  let moreQuarantined = 0;
   const lines: Line[] = [];
   let longLines = 0;
   const clean = raw.map((ls, pi) =>
     ls.map((l, li) => {
       if (bad[pi][li]) {
-        if (l.trim()) injection.push({ page: pi + 1, quote: quoteOf(l) });
+        if (l.trim()) {
+          if (injection.length < MAX_ITEMS) injection.push({ page: pi + 1, quote: quoteOf(l) });
+          else moreQuarantined++;
+        }
         return " ".repeat(l.length); // keep offsets; the line can never match anything
       }
       if (l.trim()) {
@@ -209,6 +213,7 @@ function prepare(input: IntakeInput): Prepared {
   );
   if (longLines) warnings.push(`${longLines} line(s) longer than ${MAX_LINE} characters were truncated`);
   if (disguisedLines) warnings.push(`${disguisedLines} line(s) spell words with look-alike letters from other alphabets (possible disguised text) and were quarantined`);
+  if (moreQuarantined) warnings.push(`${moreQuarantined} more quarantined line(s) than the ${MAX_ITEMS} listed`);
   if (scanIncomplete) warnings.push("the document is too large or repetitive to scan fully for split instructions aimed at an AI; please check");
   return { pages, clean, lines, injection, warnings, scanIncomplete };
 }
@@ -464,13 +469,13 @@ function findAmounts(p: Prepared): Sourced<AmountValue>[] {
   for (const l of p.lines) {
     let prevEnd = 0, m: RegExpExecArray | null, skipped = false;
     const text = l.text.normalize("NFKC");
-    let rest = text; // the line with every amount span blanked out
+    const spans: [number, number][] = []; // every amount span, blanked out of `rest` below
     AMOUNT_RE.lastIndex = 0;
     while ((m = AMOUNT_RE.exec(text))) {
       const prefix = text.slice(prevEnd, m.index);
       prevEnd = m.index + m[0].length;
       const after = text.slice(prevEnd, prevEnd + 30);
-      rest = rest.slice(0, m.index) + " ".repeat(m[0].length) + rest.slice(prevEnd);
+      spans.push([m.index, prevEnd]);
       // "CA$100" (a currency we do not model), "$5 million" (scaled) and "$1.000.000" (not read whole) are never
       // guessed; each one is counted so the document goes to review instead of being skipped silently
       if ((m.index > 0 && /[A-Za-z]/.test(text[m.index - 1])) || SCALE_AFTER.test(after) || SCALE_NEAR.test(after) || UNREAD_AFTER.test(after)) {
@@ -488,6 +493,9 @@ function findAmounts(p: Prepared): Sourced<AmountValue>[] {
       }
       out.push({ value: { label, currency, amount, raw: m[0] }, source: { page: l.page, quote: quoteOf(l.text) } });
     }
+    let rest = "", at = 0; // the line with every amount span blanked out (built once: linear in the line)
+    for (const [a, b] of spans) { rest += text.slice(at, a) + " ".repeat(b - a); at = b; }
+    rest += text.slice(at);
     if (skipped || UNMODELLED_MONEY.some((re) => re.test(text)) || unreadLabelledNumber(rest) || (rest !== text && LEFTOVER_FIGURE.test(rest)) || (BARE_GROUPED.test(rest) && MONEY_WORD.test(text))) unread++;
   }
   if (unread) p.warnings.push(`${unread} line(s) hold an amount that was not read (scaled like "$5 million", unusual digit grouping, another currency, currency after the number, or in words); please confirm`);
@@ -546,19 +554,29 @@ function verified(src: Source, pages: string[]): boolean {
   return typeof t === "string" && src.quote.length > 0 && t.includes(src.quote);
 }
 const keep = <T>(xs: Sourced<T>[], pages: string[]) => xs.filter((x) => verified(x.source, pages));
+/**
+ * At most MAX_ITEMS values per field are kept (and verified); more is a warning, so the document goes to review.
+ * This bounds the work and the stored record: a page of "$1", "$2", ... "$40000" cannot cost quadratic time.
+ */
+export const MAX_ITEMS = 50;
+function capped<T>(xs: Sourced<T>[], field: string, warnings: string[]): Sourced<T>[] {
+  if (xs.length <= MAX_ITEMS) return xs;
+  warnings.push(`${xs.length - MAX_ITEMS} more ${field} found than the ${MAX_ITEMS} kept; please check the document`);
+  return xs.slice(0, MAX_ITEMS);
+}
 
 // ---------- conflicts ----------
 function conflictsOf<T>(items: Sourced<T>[], field: (x: T) => string | null, val: (x: T) => string): Conflict[] {
-  const groups = new Map<string, Sourced<string>[]>();
+  const groups = new Map<string, Map<string, Sourced<string>>>();
   for (const it of items) {
     const f = field(it.value);
     if (!f) continue;
     const v = val(it.value);
-    const g = groups.get(f) ?? [];
-    if (!g.some((x) => x.value === v)) g.push({ value: v, source: it.source });
+    const g = groups.get(f) ?? new Map<string, Sourced<string>>();
+    if (!g.has(v)) g.set(v, { value: v, source: it.source });
     groups.set(f, g);
   }
-  return [...groups].filter(([, g]) => g.length > 1).map(([field, values]) => ({ field, values }));
+  return [...groups].filter(([, g]) => g.size > 1).map(([field, values]) => ({ field, values: [...values.values()] }));
 }
 
 // ---------- notices, amendments and letters about an agreement (not a new agreement) ----------
@@ -698,11 +716,11 @@ function analyzeWith(input: IntakeInput): { rec: IntakeRecord; p: Prepared } {
   const ambiguous = confident && !!second && second.score >= MIN_SCORE && top.score - second.score < MIN_MARGIN;
   const type: DocType = confident ? top.type : "other";
   const rawParties = findParties(p);
-  const parties = keep(rawParties, p.pages);
-  const dates = keep(findDates(p), p.pages);
-  const amounts = keep(findAmounts(p), p.pages);
-  const governingLaw = keep(findLaw(p), p.pages);
-  const signatureBlocks = keep(findSignatures(p), p.pages);
+  const parties = keep(capped(rawParties, "parties", p.warnings), p.pages);
+  const dates = keep(capped(findDates(p), "dates", p.warnings), p.pages);
+  const amounts = keep(capped(findAmounts(p), "amounts", p.warnings), p.pages);
+  const governingLaw = keep(capped(findLaw(p), "governing-law clauses", p.warnings), p.pages);
+  const signatureBlocks = keep(capped(findSignatures(p), "signature blocks", p.warnings), p.pages);
   const notice = noticeSignals(p);
   if (notice) p.warnings.push(notice);
   const conflicts: Conflict[] = [
