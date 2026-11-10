@@ -96,6 +96,23 @@ describe("stamping", () => {
     }
   });
 
+  it("drops a soft hyphen (U+00AD), which the font would print as a visible hyphen", async () => {
+    const { printForPdf } = await import("../lib/pdf/printable");
+    expect(printForPdf("Wil\u00ADliams")).toEqual({ text: "Williams", bad: [] });
+    const { stampFields } = await import("../lib/pdf/stamp");
+    const text = await textOf(await stampFields(blank, [field("f", 100)], new Map([["f", { kind: "text" as const, text: "Wil\u00ADliams" }]])));
+    expect(text).toContain("Williams");
+    expect(text).not.toMatch(/Wil.liams/);
+  });
+
+  it("the refusal asks for what its reader can do", async () => {
+    const { stampFields, appendSignaturePage } = await import("../lib/pdf/stamp");
+    const one = new Map([["f", { kind: "text" as const, text: "Dvořák" }]]);
+    await expect(stampFields(blank, [field("f", 100)], one, "client")).rejects.toThrow(/^This document can't be signed yet: .*\(ř\)\. Nothing was signed\. Ask the sender to correct it\.$/);
+    await expect(stampFields(blank, [field("f", 100)], one)).rejects.toThrow(/^This can't be signed: .*\(ř\).*letters from Western European alphabets first\.$/);
+    await expect(appendSignaturePage(blank, "Łowicz Legal")).rejects.toThrow(/^This agreement can't be prepared for signing: your firm's legal name .*\(Ł\)\. Nothing was saved\. Correct it in Settings/);
+  });
+
   it("the certificate prints names exactly, and refuses one it can't", async () => {
     const { appendCertificate, StampTextError } = await import("../lib/pdf/stamp");
     const info = (name: string) => ({
@@ -230,20 +247,89 @@ describe("refused where it is entered", () => {
     expect(k?.error).toMatch(/^The key name .*\(😀\)/);
   });
 
-  it("stamping refuses older data that predates these checks: a safe error, and nothing is signed or saved", async () => {
-    const f = await newFile();
-    db.run("UPDATE files SET client_name = ? WHERE id = ?", "Antonín Dvořák", f.id); // as if saved before the check
-    db.run("UPDATE template_versions SET fields_json = ? WHERE template_id = ?", JSON.stringify([...fields, { id: "pre", type: "name", role: "prefill", prefillKey: "client.name", page: 0, x: 72, y: 560, w: 220, h: 20, label: "Client", required: false }]), templateId);
+  const prefillField = (id: string, type: Field["type"], prefillKey: string): Field => ({ id, type, role: "prefill", prefillKey, page: 0, x: 72, y: 560, w: 220, h: 20, label: id, required: false });
+  const withFields = async (extra: Field[], fn: () => Promise<void>) => {
+    db.run("UPDATE template_versions SET fields_json = ? WHERE template_id = ?", JSON.stringify([...fields, ...extra]), templateId);
     try {
-      const p = files.completeClientSigning(tokenOf(f), { consent: true, values: { nm: "Zoë Ångström" }, signature: PNG, method: "typed" }, {});
-      await expect(p).rejects.toThrow(/Nothing was signed or saved.*\(ř\)|\(ř\).*Nothing was signed or saved/);
-      await expect(p).rejects.toMatchObject({ status: 422 });
-      expect(files.getFile(ws().id, f.id).status).not.toBe("signed");
-      expect(db.one<{ n: number }>("SELECT COUNT(*) n FROM documents WHERE file_id = ?", f.id)!.n).toBe(0);
-      // and the signing lock was released: a retry gets the same answer, not "Already signing"
-      await expect(files.completeClientSigning(tokenOf(f), { consent: true, values: { nm: "Zoë Ångström" }, signature: PNG, method: "typed" }, {})).rejects.toThrow(/\(ř\)/);
+      await fn();
     } finally {
       db.run("UPDATE template_versions SET fields_json = ? WHERE template_id = ?", JSON.stringify(fields), templateId);
     }
+  };
+  const sign = (f: import("../lib/types").FileRow) => files.completeClientSigning(tokenOf(f), { consent: true, values: { nm: "Zoë Ångström" }, signature: PNG, method: "typed" }, {});
+  const written = (fileId: string) => ({
+    status: files.getFile(ws().id, fileId).status,
+    consent: db.one<{ c: string | null }>("SELECT consent_at c FROM files WHERE id = ?", fileId)!.c,
+    documents: db.one<{ n: number }>("SELECT COUNT(*) n FROM documents WHERE file_id = ?", fileId)!.n,
+    events: db.one<{ n: number }>("SELECT COUNT(*) n FROM audit_events WHERE file_id = ?", fileId)!.n,
+  });
+
+  it("older data the certificate can't print (a pre-v19 client name, no name field) is refused before the client signs: nothing written, lock released", async () => {
+    const f = await newFile();
+    db.run("UPDATE files SET client_name = ? WHERE id = ?", "Antonín Dvořák", f.id); // as if saved before the check
+    const before = written(f.id);
+    const msg = "This document can't be signed yet: the sender needs to correct the client name (it has ř, which the signed PDF can't print exactly). Nothing was signed.";
+    await expect(sign(f)).rejects.toThrow(msg);
+    await expect(sign(f)).rejects.toMatchObject({ status: 422 });
+    expect(written(f.id), "no consent, document, status change or event").toEqual(before);
+    expect(before.consent).toBeNull();
+    // a retry gets the same answer, not "Already signing"
+    await expect(sign(f)).rejects.toThrow(msg);
+  });
+
+  it("stamping refuses older data the inputs now refuse, with a message for the client; nothing is signed", async () => {
+    await withFields([prefillField("matter", "text", "custom.matter")], async () => {
+      const f = await newFile({ prefill: { matter: "Matter 7" } });
+      db.run("UPDATE files SET prefill_json = ? WHERE id = ?", JSON.stringify({ matter: "Łowicz" }), f.id); // as if saved before the check
+      const p = sign(f);
+      await expect(p).rejects.toThrow("This document can't be signed yet: a name or value on it has a character the signed PDF can't print exactly (Ł). Nothing was signed. Ask the sender to correct it.");
+      await expect(p).rejects.toMatchObject({ status: 422 });
+      expect(written(f.id).status).not.toBe("signed");
+      expect(written(f.id).documents).toBe(0);
+      await expect(sign(f)).rejects.toThrow(/\(Ł\)/);
+    });
+  });
+
+  it("countersigning refuses a name changed since the client signed, for the firm; the file stays signed", async () => {
+    const f = await newFile();
+    db.run("UPDATE workspaces SET auto_countersign = 0 WHERE id = ?", admin.workspaceId);
+    const signed = await sign(f);
+    expect(signed.status).toBe("signed");
+    db.run("UPDATE workspaces SET legal_name = ? WHERE id = ?", "Dvořák & Partners", admin.workspaceId); // as if saved before the check
+    try {
+      await expect(files.countersign(signed, ws(), { kind: "user", label: admin.userEmail }, {})).rejects.toThrow(
+        "This file can't be countersigned: the firm's legal name has a character the signed PDF can't print exactly (ř), and it is never printed altered. Nothing was changed.",
+      );
+      expect(written(f.id).status).toBe("signed");
+      expect(db.one<{ n: number }>("SELECT COUNT(*) n FROM documents WHERE file_id = ? AND kind = 'final'", f.id)!.n).toBe(0);
+    } finally {
+      db.run("UPDATE workspaces SET legal_name = ? WHERE id = ?", "Müller & Søn Advokater", admin.workspaceId);
+    }
+  });
+
+  it("an API key whose name the certificate can't print is refused before it creates a file", async () => {
+    const { sha256 } = await import("../lib/util");
+    const key = "cs_live_unprintable_name_key_1";
+    db.run("INSERT INTO api_keys (id, workspace_id, name, prefix, key_hash, created_at) VALUES (?,?,?,?,?,?)", "key_bad", admin.workspaceId, "CRM Łowicz", key.slice(0, 12), sha256(key), new Date().toISOString());
+    const { POST } = await import("../app/api/v1/files/route");
+    const before = db.one<{ n: number }>("SELECT COUNT(*) n FROM files")!.n;
+    const r = await POST(
+      new Request("http://localhost:3000/api/v1/files", {
+        method: "POST",
+        headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+        body: JSON.stringify({ agreement_id: templateId, client_name: "Zoë Ångström", client_email: "zoe@example.com", send: false }),
+      }),
+    );
+    expect(r.status).toBe(422);
+    expect((await r.json()).error).toBe(
+      "This API key's name has a character signed PDFs can't print (Ł). Create a new key with a name in letters from Western European alphabets, and revoke this one.",
+    );
+    expect(db.one<{ n: number }>("SELECT COUNT(*) n FROM files")!.n).toBe(before);
+  });
+
+  it("a checkbox prefill value is never printed as text, so it isn't checked", async () => {
+    await withFields([prefillField("agree", "checkbox", "custom.agree")], async () => {
+      await expect(newFile({ prefill: { agree: "✓" } })).resolves.toMatchObject({ client_name: "Zoë Ångström" });
+    });
   });
 });
