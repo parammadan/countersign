@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { DatabaseSync } from "node:sqlite";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { DRAFTS_DDL } from "@/lib/drafts/schema";
 import { draftStore, type ContentCheck } from "@/lib/drafts/store";
 import type { Principal } from "@/lib/drafts/roles";
@@ -8,10 +11,10 @@ import type { Principal } from "@/lib/drafts/roles";
 const PARENTS = `
   CREATE TABLE workspaces (id TEXT PRIMARY KEY);
   CREATE TABLE users (id TEXT PRIMARY KEY);
-  CREATE TABLE template_versions (id TEXT PRIMARY KEY);
+  CREATE TABLE template_versions (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL);
   INSERT INTO workspaces VALUES ('ws-a'), ('ws-b');
   INSERT INTO users VALUES ('owner-a'), ('admin-a'), ('staff-a'), ('staff2-a'), ('owner-b');
-  INSERT INTO template_versions VALUES ('tv1');
+  INSERT INTO template_versions VALUES ('tv1', 'ws-a'), ('tv-b', 'ws-b');
 `;
 const P = {
   ownerA: { userId: "owner-a", workspaceId: "ws-a", role: "owner" },
@@ -189,5 +192,59 @@ describe("input validation", () => {
     const id = created();
     for (const expected of [0, -1, 1.5, "1", null]) expect(code(s.commit(P.staffA, id, { expected, doc: doc() }))).not.toBe("ok");
     expect(code(s.publish(P.ownerA, id, 1, pass, ""))).toBe("invalid");
+  });
+});
+
+describe("review of 5a8d9dc", () => {
+  it("publish refuses another workspace's agreement version and a missing one, as a Result", () => {
+    const id = pending();
+    s.approve(P.adminA, id, 2, pass);
+    expect(code(s.publish(P.ownerA, id, 2, pass, "tv-b"))).toBe("not_found");
+    expect(code(s.publish(P.ownerA, id, 2, pass, "tv-missing"))).toBe("not_found");
+    const g = s.get(P.ownerA, id);
+    expect(g.ok && [g.draft.status, g.draft.published_version_id]).toEqual(["approved", null]);
+    expect(code(s.publish(P.ownerA, id, 2, pass, "tv1"))).toBe("ok");
+  });
+  it("rollback needs an earlier version number and restores that version's stored content, not the request's", () => {
+    const id = created();
+    s.commit(P.staffA, id, { expected: 1, doc: doc("USD 6,000") });
+    for (const restoredFrom of [undefined, 0, -1, 1.5, 3, 99, "1", [1], {}] as unknown[])
+      expect(code(s.commit(P.staffA, id, { expected: 2, doc: doc(), origin: "rollback", restoredFrom: restoredFrom as number }))).toBe("invalid");
+    expect(code(s.commit(P.staffA, id, { expected: 2, doc: doc("USD 1 (forged)"), origin: "rollback", restoredFrom: 1 }))).toBe("ok");
+    const g = s.get(P.staffA, id);
+    expect(g.ok && g.version.doc).toEqual(doc());
+    expect(g.ok && g.version.origin).toBe("rollback");
+  });
+  it("the content check gets the first version as its baseline", () => {
+    const id = pending();
+    let ctx: unknown;
+    s.approve(P.adminA, id, 2, (_d, c) => { ctx = c; return { ok: true }; });
+    expect(ctx).toEqual({ first: doc(), versionNumber: 2 });
+  });
+  it("an owner who last edited can send their own submitted draft back, but not approve it", () => {
+    const id = created(P.ownerA);
+    s.submit(P.ownerA, id, 1);
+    expect(code(s.approve(P.ownerA, id, 1, pass))).toBe("same_person");
+    expect(code(s.requestChanges(P.ownerA, id))).toBe("ok");
+    expect(code(s.requestChanges(P.staffA, id))).toBe("forbidden");
+  });
+  it("a principal whose user row is missing gets a Result, not a throw", () => {
+    expect(code(s.create({ userId: "ghost", workspaceId: "ws-a", role: "owner" }, { kind: "k", title: "t", doc: doc(), origin: "generated" }))).toBe("invalid");
+  });
+  it("a second connection holding the write lock gives stale, not a throw", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "drafts-busy-"));
+    const file = path.join(dir, "t.db");
+    const a = new DatabaseSync(file), b = new DatabaseSync(file);
+    a.exec(PARENTS); a.exec(DRAFTS_DDL);
+    b.exec("PRAGMA busy_timeout = 0");
+    const sa = draftStore(a), sb = draftStore(b);
+    const r = sa.create(P.staffA, { kind: "k", title: "t", doc: doc(), origin: "generated" });
+    if (!r.ok) throw new Error(r.message);
+    a.exec("BEGIN IMMEDIATE");
+    expect(code(sb.commit(P.staff2A, r.draftId, { expected: 1, doc: doc("B") }))).toBe("stale");
+    expect(code(sb.submit(P.staff2A, r.draftId, 1))).toBe("stale");
+    a.exec("ROLLBACK");
+    a.close(); b.close();
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 });

@@ -5,6 +5,9 @@
 // someone other than the last editor. Every read and write is scoped by the principal's workspace, and a draft in
 // another workspace is `not_found`, the same as a missing one.
 //
+// The schema's CHECK (approved_by != last_editor) makes distinct approvers a database rule too, so the store always
+// requires them (requireDistinctApprover cannot be turned off here; that is deliberate, fail closed).
+//
 // State machine (each transition is one conditional UPDATE inside a transaction, so a race loses cleanly):
 //   commit:          draft | pending_approval | approved -> draft      (a new version clears any approval)
 //   submit:          draft -> pending_approval                         (the latest version only)
@@ -29,8 +32,12 @@ export type StoreError =
   | "unauthenticated" | "not_found" | "forbidden" | "same_person" | "stale" | "invalid_state" | "invalid" | "check_failed";
 export type Result<T> = ({ ok: true } & T) | { ok: false; code: StoreError; message: string };
 
-/** The content gate approve and publish run on the exact version. Must return { ok: true } to allow. */
-export type ContentCheck = (doc: unknown) => { ok: true } | { ok: false; reason: string };
+/**
+ * The content gate approve and publish run on the exact version. Must return { ok: true } to allow. It gets the
+ * version's document and the draft's FIRST version (the generated or uploaded baseline), so a party-drift check can
+ * compare the two rather than look at the document alone.
+ */
+export type ContentCheck = (doc: unknown, ctx: { first: unknown; versionNumber: number }) => { ok: true } | { ok: false; reason: string };
 
 export const DRAFT_LIMITS = Object.freeze({ maxKind: 40, maxTitle: 300, maxDocBytes: 2_000_000 });
 
@@ -77,19 +84,21 @@ export function draftStore(db: DatabaseSync) {
       .run(newId("dap_"), draftId, p.workspaceId, version, action, p.userId, at);
 
   /** Authorize `action` on the draft; the draft's workspace and last editor come from the row, never from input. */
-  function authorized(principal: unknown, draftId: unknown, action: DraftAction): Result<{ p: Principal; row: DraftRow }> {
+  function authorized(principal: unknown, draftId: unknown, action: DraftAction, opts?: { requireDistinctApprover?: boolean }): Result<{ p: Principal; row: DraftRow }> {
     const p = principalFrom(principal);
     if (!p) return fail("unauthenticated", "Sign in to continue.");
     const row = rowFor(p, draftId);
-    const a = authorizeDraft(p, row ? { workspaceId: row.workspace_id, lastEditor: row.last_editor } : null, action);
+    const a = authorizeDraft(p, row ? { workspaceId: row.workspace_id, lastEditor: row.last_editor } : null, action, opts);
     if (!a.ok) return fail(a.code, a.message);
     return { ok: true, p, row: row! };
   }
 
-  function runCheck(check: unknown, docJson: string): string | null {
+  function runCheck(check: unknown, p: Principal, draftId: string, v: { number: number; doc_json: string }): string | null {
     if (typeof check !== "function") return "no content check was supplied";
+    const first = get1<{ doc_json: string }>("SELECT doc_json FROM draft_versions WHERE draft_id = ? AND workspace_id = ? AND number = 1", draftId, p.workspaceId);
+    if (!first) return "the draft has no baseline version";
     try {
-      const r = (check as ContentCheck)(JSON.parse(docJson));
+      const r = (check as ContentCheck)(JSON.parse(v.doc_json), { first: JSON.parse(first.doc_json), versionNumber: v.number });
       return r && r.ok === true ? null : (r && typeof r.reason === "string" ? r.reason : "the content check refused this version");
     } catch {
       return "the content check failed";
@@ -100,6 +109,20 @@ export function draftStore(db: DatabaseSync) {
   const move = (p: Principal, draftId: string, from: DraftStatus[], set: string, ...params: (string | null)[]) =>
     db.prepare(`UPDATE drafts SET ${set}, updated_at = ? WHERE id = ? AND workspace_id = ? AND status IN (${from.map(() => "?").join(", ")})`)
       .run(...params, now(), draftId, p.workspaceId, ...from).changes === 1;
+
+  /** SQLITE_BUSY / locked (another connection holds the write lock): report it as stale, never throw. */
+  const busy = (e: unknown) => /database is locked|SQLITE_BUSY/i.test((e as Error)?.message ?? "");
+  /** A foreign key the session should have satisfied (user or workspace row missing). */
+  const fk = (e: unknown) => /FOREIGN KEY/i.test((e as Error)?.message ?? "");
+  const guarded = <T>(fn: () => Result<T>): Result<T> => {
+    try {
+      return fn();
+    } catch (e) {
+      if (busy(e)) return fail("stale", "Someone else is saving this draft; try again.");
+      if (fk(e)) return fail("invalid", "The request refers to something that does not exist.");
+      throw e;
+    }
+  };
 
   return {
     create(principal: unknown, input: { kind: unknown; title: unknown; doc: unknown; origin: "generated" | "upload" }): Result<{ draftId: string; number: 1 }> {
@@ -113,13 +136,14 @@ export function draftStore(db: DatabaseSync) {
       if (!docJson) return fail("invalid", "The draft content is missing or too large.");
       const draftId = newId("drf_");
       const at = now();
-      tx(() => {
+      const r = guarded(() => tx(() => {
         db.prepare("INSERT INTO drafts (id, workspace_id, kind, title, status, last_editor, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, ?)")
           .run(draftId, p.workspaceId, input.kind as string, input.title as string, p.userId, p.userId, at, at);
         db.prepare("INSERT INTO draft_versions (id, draft_id, workspace_id, number, doc_json, origin, author, created_at) VALUES (?, ?, ?, 1, ?, ?, ?, ?)")
           .run(newId("drv_"), draftId, p.workspaceId, docJson, input.origin, p.userId, at);
-      });
-      return { ok: true, draftId, number: 1 };
+        return { ok: true as const };
+      }));
+      return r.ok ? { ok: true, draftId, number: 1 } : r;
     },
 
     get(principal: unknown, draftId: unknown): Result<{ draft: DraftRow; version: VersionRow }> {
@@ -147,22 +171,31 @@ export function draftStore(db: DatabaseSync) {
       if (!Number.isSafeInteger(input?.expected) || (input.expected as number) < 1) return fail("invalid", "The version being edited is missing.");
       const origin = input.origin ?? "edit";
       if (origin !== "edit" && origin !== "rollback") return fail("invalid", "Unknown version origin.");
-      const docJson = encodeDoc(input.doc);
-      if (!docJson) return fail("invalid", "The draft content is missing or too large.");
+      const restoredFrom = input.restoredFrom;
+      if (origin === "rollback" && (!Number.isSafeInteger(restoredFrom) || (restoredFrom as number) < 1 || (restoredFrom as number) > (input.expected as number)))
+        return fail("invalid", "Choose an earlier version to restore.");
+      // a rollback restores the stored content of that version; the request's document is ignored
+      let docJson = origin === "edit" ? encodeDoc(input.doc) : null;
+      if (origin === "edit" && !docJson) return fail("invalid", "The draft content is missing or too large.");
       const number = (input.expected as number) + 1;
       try {
         return tx(() => {
           const cur = latest(p, row.id)!;
           if (cur.number !== input.expected) return fail("stale", "Someone saved a newer version; reload and reapply your edits.");
+          if (origin === "rollback") {
+            const old = get1<{ doc_json: string }>("SELECT doc_json FROM draft_versions WHERE draft_id = ? AND workspace_id = ? AND number = ?", row.id, p.workspaceId, restoredFrom as number);
+            if (!old) return fail("invalid", "Choose an earlier version to restore.");
+            docJson = old.doc_json;
+          }
           const at = now();
           db.prepare("INSERT INTO draft_versions (id, draft_id, workspace_id, number, doc_json, origin, restored_from, author, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-            .run(newId("drv_"), row.id, p.workspaceId, number, docJson, origin, origin === "rollback" ? (input.restoredFrom ?? null) : null, p.userId, at);
+            .run(newId("drv_"), row.id, p.workspaceId, number, docJson!, origin, origin === "rollback" ? (restoredFrom as number) : null, p.userId, at);
           if (!move(p, row.id, ["draft", "pending_approval", "approved"], "status = 'draft', last_editor = ?, approved_by = NULL", p.userId))
             throw new Error("state changed");
           return { ok: true as const, number };
         });
       } catch (e) {
-        if (/UNIQUE|state changed/.test((e as Error).message)) return fail("stale", "Someone saved a newer version; reload and reapply your edits.");
+        if (/UNIQUE|state changed/.test((e as Error).message) || busy(e)) return fail("stale", "Someone saved a newer version; reload and reapply your edits.");
         throw e;
       }
     },
@@ -170,37 +203,38 @@ export function draftStore(db: DatabaseSync) {
     submit(principal: unknown, draftId: unknown, version: unknown): Result<object> {
       const a = authorized(principal, draftId, "edit");
       if (!a.ok) return a;
-      return tx(() => {
+      return guarded(() => tx(() => {
         if (latest(a.p, a.row.id)!.number !== version) return fail("stale", "Submit the latest version.");
         if (!move(a.p, a.row.id, ["draft"], "status = 'pending_approval'")) return fail("invalid_state", "Only a draft can be submitted.");
         log(a.p, a.row.id, version as number, "submit", now());
         return { ok: true as const };
-      });
+      }));
     },
 
     approve(principal: unknown, draftId: unknown, version: unknown, check: ContentCheck): Result<object> {
       const a = authorized(principal, draftId, "approve");
       if (!a.ok) return a;
-      return tx(() => {
+      return guarded(() => tx(() => {
         const v = latest(a.p, a.row.id)!;
         if (v.number !== version) return fail("stale", "The draft changed after it was submitted.");
-        const refused = runCheck(check, v.doc_json);
+        const refused = runCheck(check, a.p, a.row.id, v);
         if (refused) return fail("check_failed", refused);
         if (!move(a.p, a.row.id, ["pending_approval"], "status = 'approved', approved_by = ?", a.p.userId))
           return fail("invalid_state", "Only a submitted draft can be approved.");
         log(a.p, a.row.id, v.number, "approve", now());
         return { ok: true as const };
-      });
+      }));
     },
 
+    /** Approver roles only; the distinct-person rule does not apply (sending a draft back approves nothing). */
     requestChanges(principal: unknown, draftId: unknown): Result<object> {
-      const a = authorized(principal, draftId, "approve");
+      const a = authorized(principal, draftId, "approve", { requireDistinctApprover: false });
       if (!a.ok) return a;
-      return tx(() => {
+      return guarded(() => tx(() => {
         if (!move(a.p, a.row.id, ["pending_approval"], "status = 'draft', approved_by = NULL")) return fail("invalid_state", "Only a submitted draft can be sent back.");
         log(a.p, a.row.id, latest(a.p, a.row.id)!.number, "request_changes", now());
         return { ok: true as const };
-      });
+      }));
     },
 
     /** Mark the approved version published, after the caller ingested it as agreement version `publishedVersionId`. */
@@ -208,16 +242,19 @@ export function draftStore(db: DatabaseSync) {
       const a = authorized(principal, draftId, "publish");
       if (!a.ok) return a;
       if (!text(publishedVersionId, 200)) return fail("invalid", "The published agreement version is missing.");
-      return tx(() => {
+      return guarded(() => tx(() => {
+        // the agreement version must exist in THIS workspace (never trust the id from the request)
+        if (!get1("SELECT 1 AS x FROM template_versions WHERE id = ? AND workspace_id = ?", publishedVersionId as string, a.p.workspaceId))
+          return fail("not_found", "The published agreement version was not found.");
         const v = latest(a.p, a.row.id)!;
         if (v.number !== version) return fail("stale", "The approval applies to a different version.");
-        const refused = runCheck(check, v.doc_json);
+        const refused = runCheck(check, a.p, a.row.id, v);
         if (refused) return fail("check_failed", refused);
         if (!move(a.p, a.row.id, ["approved"], "status = 'published', published_version_id = ?", publishedVersionId as string))
           return fail("invalid_state", "Only an approved draft can be published.");
         log(a.p, a.row.id, v.number, "publish", now());
         return { ok: true as const };
-      });
+      }));
     },
   };
 }
