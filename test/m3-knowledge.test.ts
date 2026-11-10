@@ -151,6 +151,30 @@ describe("M3 Knowledge Hub", () => {
     }
   });
 
+  it("history also withholds an answer whose model context included an agreement the viewer can't read, even if it cites only readable ones", async () => {
+    try {
+      S.setDocumentRestrictions((ws, doc) => (doc === lease.templateId ? { minRole: "admin" } : undefined));
+      let seen = "";
+      const p: ModelProvider = {
+        name: "x",
+        model: "x-1",
+        complete: async (r) => {
+          seen = r.document;
+          const id = /<passage id="(c\d+)" agreement="Consulting"[^>]*>[^<]*monthly retainer/.exec(r.document)![1];
+          return { status: "answered", answer: "The Client pays a monthly retainer of $4,500.", citations: [{ passage: id, quote: "The Client pays a monthly retainer of $4,500." }] };
+        },
+      };
+      const h = await ask(owner, "What does the client pay each month?", p);
+      expect(seen).toMatch(/agreement="Lease"/); // the restricted lease was in the model's context
+      expect(h.result.citations.map((c) => c.documentId)).toEqual([consulting.templateId]);
+      expect(h.result.sources).toContain(lease.templateId);
+      expect(S.recentQuestions(staff).map((e) => e.id)).not.toContain(h.id);
+      expect(S.recentQuestions(owner).map((e) => e.id)).toContain(h.id);
+    } finally {
+      S.setDocumentRestrictions(null);
+    }
+  });
+
   it("with a scripted provider: a checked answer from the cited passages only, usage booked", async () => {
     let seen = "";
     const p: ModelProvider = {

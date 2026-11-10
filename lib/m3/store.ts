@@ -107,7 +107,9 @@ export function indexStatus(wsId: string): IndexStatus {
 }
 
 /** Index (backfill) the session's workspace; `templateId` re-indexes one agreement. Any member may (reading only). */
-const running = new Set<string>();
+// workspaces with an indexing run in progress; on globalThis like the db and index handles
+const gr = globalThis as unknown as { __m3IndexRunning?: Set<string> };
+const running = (gr.__m3IndexRunning ??= new Set<string>());
 
 /**
  * Index (backfill) the session's workspace. Any member may index agreements that aren't indexed yet; forcing a full
@@ -179,8 +181,9 @@ export async function askAcrossAgreements(s: Principal, rawQuestion: string, pro
 }
 
 /**
- * The workspace's recent questions as `viewer` may see them. Stored answers quote passages, so every agreement an
- * entry cites, shows as flagged or names as ignored is re-checked against the viewer's access now; an entry that
+ * The workspace's recent questions as `viewer` may see them. An answer is built from passages of several agreements
+ * (`sources`: everything retrieved as evidence, including what went to the model but wasn't cited), so every one of
+ * them, and every agreement it names as ignored, is re-checked against the viewer's access now; an entry that
  * touches any agreement the viewer can't read is left out entirely (question included).
  */
 export function recentQuestions(viewer: Principal, limit = 20): M3Entry[] {
@@ -197,7 +200,9 @@ export function recentQuestions(viewer: Principal, limit = 20): M3Entry[] {
     limit * 5,
   )) {
     const result = JSON.parse(r.result_json) as M3Result;
-    const docs = [...(result.citations ?? []), ...(result.flagged ?? [])].map((c) => c.documentId).concat((result.ignored ?? []).map((x) => x.documentId));
+    // every agreement the answer was built from (all retrieved evidence, whatever went to the model), not only the
+    // ones it cites; entries stored before `sources` existed fall back to what they show
+    const docs = [...(result.sources ?? []), ...(result.citations ?? []).map((c) => c.documentId), ...(result.flagged ?? []).map((c) => c.documentId), ...(result.ignored ?? []).map((x) => x.documentId)];
     if (docs.some((d) => typeof d !== "string" || !can(d))) continue;
     out.push({ id: r.id, question: r.question, result, askedBy: r.asked_by, createdAt: r.created_at });
     if (out.length >= limit) break;

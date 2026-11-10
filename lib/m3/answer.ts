@@ -45,6 +45,8 @@ export type M3Result = {
   flagged: M3Citation[];
   /** hard-flagged passages that matched the question: where they are, never their text */
   ignored: { documentId: string; agreement: string; page: number }[];
+  /** every agreement whose passages this answer was built from (retrieved evidence, model context), cited or not */
+  sources: string[];
   mode: "passages" | "model";
   model?: string;
   warnings: string[];
@@ -133,7 +135,8 @@ export async function answerAcrossAgreements(ctx: AnswerContext, question: strin
   const warnings = ignored.map((x) => `Text on page ${x.page} of ${x.agreement} reads like an instruction to software. It was ignored and isn't used as evidence.`);
   const d = r.decision;
   const decision = { reason: d.reason, coverage: d.best?.coverage, missingAnchors: d.best?.missingAnchors };
-  const base = { ignored, decision, mode: "passages" as const };
+  const sources = [...new Set(r.passages.map((p) => p.documentId))];
+  const base = { ignored, decision, sources, mode: "passages" as const };
   if (r.abstained || r.hits.length === 0) {
     const why = REASON[d.reason];
     return { ...base, status: "not_found", answer: why ? `${NOT_FOUND} ${why}` : NOT_FOUND, citations: [], flagged: [], warnings };
