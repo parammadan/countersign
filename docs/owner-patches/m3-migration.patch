@@ -1,0 +1,55 @@
+diff --git a/lib/db.ts b/lib/db.ts
+index fe7446b..fdd1868 100644
+--- a/lib/db.ts
++++ b/lib/db.ts
+@@ -256,6 +256,50 @@ const MIGRATIONS: string[] = [
+   CREATE INDEX qa_answers_version ON qa_answers(workspace_id, template_version_id, created_at);
+   CREATE INDEX qa_answers_day ON qa_answers(workspace_id, created_at);
+   `,
++  // M3 Knowledge Hub: the document index (lib/m3/index/schema.ts M3_INDEX_DDL, verbatim: the index refuses a definition
++  // that differs) and questions asked across a workspace's agreements (lib/m3/db.ts M3_QUESTIONS_DDL). IF NOT EXISTS
++  // because lib/m3/db.ts ensureSchema has already created them on databases that ran the Knowledge Hub before this.
++  `
++  CREATE TABLE IF NOT EXISTS m3_versions (
++    workspace_id TEXT NOT NULL,
++    document_id  TEXT NOT NULL,
++    version_id   TEXT NOT NULL,
++    status       TEXT NOT NULL CHECK (status IN ('active','superseded')),
++    binding      INTEGER NOT NULL CHECK (binding IN (0,1)),
++    created_at   TEXT NOT NULL,
++    PRIMARY KEY (workspace_id, document_id, version_id)
++  ) STRICT;
++
++  CREATE UNIQUE INDEX IF NOT EXISTS m3_one_active
++    ON m3_versions (workspace_id, document_id) WHERE status = 'active';
++
++  CREATE TABLE IF NOT EXISTS m3_passages (
++    workspace_id TEXT NOT NULL,
++    document_id  TEXT NOT NULL,
++    version_id   TEXT NOT NULL,
++    passage_id   TEXT NOT NULL,
++    ord          INTEGER NOT NULL,
++    page         INTEGER NOT NULL CHECK (page >= 1),
++    text         TEXT NOT NULL,
++    binding      INTEGER NOT NULL CHECK (binding IN (0,1)),
++    flags        TEXT NOT NULL,
++    PRIMARY KEY (workspace_id, document_id, version_id, passage_id),
++    FOREIGN KEY (workspace_id, document_id, version_id)
++      REFERENCES m3_versions (workspace_id, document_id, version_id) ON DELETE CASCADE
++  ) STRICT;
++  CREATE TABLE IF NOT EXISTS m3_questions (
++    id            TEXT PRIMARY KEY,
++    workspace_id  TEXT NOT NULL,
++    question      TEXT NOT NULL,
++    result_json   TEXT NOT NULL,
++    mode          TEXT NOT NULL,
++    input_tokens  INTEGER NOT NULL DEFAULT 0,
++    output_tokens INTEGER NOT NULL DEFAULT 0,
++    asked_by      TEXT NOT NULL,
++    created_at    TEXT NOT NULL
++  );
++  CREATE INDEX IF NOT EXISTS m3_questions_day ON m3_questions (workspace_id, created_at);
++  `,
+ ];
+ 
+ function open(): DatabaseSync {

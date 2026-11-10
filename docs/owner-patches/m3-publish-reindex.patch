@@ -1,0 +1,14 @@
+diff --git a/lib/templates.ts b/lib/templates.ts
+index 08b5fa8..62672d4 100644
+--- a/lib/templates.ts
++++ b/lib/templates.ts
+@@ -145,6 +145,9 @@ export function publishVersion(wsId: string, versionId: string, actor: string) {
+     run("UPDATE templates SET active_version_id = ? WHERE id = ?", versionId, template.id);
+   });
+   audit(wsId, null, "template.published", actor, {}, { template: template.name, version: version.version });
++  // M3 Knowledge Hub: re-index the agreement at its newly published version (best effort, after the response path;
++  // until it finishes the Hub serves nothing for this agreement rather than the old version)
++  void import("./m3/ingest").then((m) => m.indexWorkspace(wsId, { templateId: template.id, force: true })).catch(() => {});
+ }
+ 
+ // Copy a published version's fields into a fresh draft on the same PDF (edit without re-uploading).
