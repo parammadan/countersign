@@ -14,7 +14,10 @@ export const DRAFTS_DDL = `
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     published_version_id TEXT REFERENCES template_versions(id),
+    publish_claim TEXT,
+    publish_claimed_at TEXT,
     CHECK (status != 'published' OR published_version_id IS NOT NULL),
+    CHECK ((status = 'publishing') = (publish_claim IS NOT NULL)),
     CHECK (approved_by IS NULL OR approved_by != last_editor)
   );
   CREATE INDEX drafts_ws ON drafts(workspace_id, updated_at);

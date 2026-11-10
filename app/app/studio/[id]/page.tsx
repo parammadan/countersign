@@ -4,6 +4,7 @@ import { requireSession } from "@/lib/auth";
 import { all } from "@/lib/db";
 import { getDraft, versions } from "@/lib/drafts/service";
 import { authorizeDraft } from "@/lib/drafts/roles";
+import { claimIsStale } from "@/lib/drafts/store";
 import { Notice } from "@/components/ui";
 import { DraftEditor, type EditorProps } from "@/components/studio/DraftEditor";
 
@@ -28,6 +29,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     version: g.version.number,
     doc: g.version.doc as EditorProps["doc"],
     publishedVersionId: g.draft.published_version_id,
+    staleClaim: g.draft.status === "publishing" && claimIsStale(g.draft.publish_claimed_at),
     can: {
       edit: authorizeDraft(s, scope, "edit").ok,
       approve: authorizeDraft(s, scope, "request_changes").ok, // role only; the author rule is shown separately

@@ -137,3 +137,24 @@ describe("export refuses unprintable PDF text with a message", () => {
     expect(docx.ok).toBe(true);
   });
 });
+
+describe("review R1: cancelling a running publish can't orphan an agreement", () => {
+  it("a second admin can't cancel a fresh claim, so the second publish never ingests", async () => {
+    const d = await approvedDraft();
+    const before = agreements();
+    const first = svc.publishDraft(S.admin, d.id, d.version);
+    // let the first publish take its claim
+    for (let i = 0; i < 50; i++) {
+      const g = svc.getDraft(S.owner, d.id);
+      if (g.ok && g.draft.status !== "approved") break;
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    const cancel = svc.abortPublish(S.owner, d.id);
+    const second = await svc.publishDraft(S.owner, d.id, d.version);
+    const r = await first;
+    expect(r.ok).toBe(true);
+    expect(cancel.ok === false || !second.ok).toBe(true);
+    expect(agreements() - before).toBe(1);
+  });
+});
+

@@ -286,19 +286,20 @@ export async function publishDraft(s: SessionLike, id: string, version: number) 
   if (!g.ok) return { ok: false as const, code: "check_failed", message: g.message };
   const claim = store().claimPublish(principal(s), id, version, g.check);
   if (!claim.ok) return claim;
+  const token = claim.claim;
   let agreementVersionId: string;
   try {
     const pdf = await renderDocument(draft.version.doc as DraftDocument, "pdf");
     const ingested = await ingestAgreement(getWorkspace(s.workspaceId), { data: Buffer.from(pdf.bytes), filename: pdf.filename }, { name: draft.draft.title, actor: s.userEmail });
     agreementVersionId = ingested.version.id;
   } catch (e) {
-    store().abortPublish(principal(s), id);
+    store().abortPublish(principal(s), id, token);
     return { ok: false as const, code: "failed", message: e instanceof AppError ? e.message : "The agreement couldn't be added to Agreements. Try again." };
   }
-  const p = store().publish(principal(s), id, version, g.check, agreementVersionId);
+  const p = store().publish(principal(s), id, version, g.check, agreementVersionId, token);
   if (!p.ok) {
-    // cannot happen while the claim holds; keep the draft retryable and say so
-    store().abortPublish(principal(s), id);
+    // cannot happen while this publish holds the claim; back out so the draft stays retryable
+    store().abortPublish(principal(s), id, token);
     return p;
   }
   return { ok: true as const, agreementVersionId };

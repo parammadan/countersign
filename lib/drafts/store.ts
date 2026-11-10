@@ -25,6 +25,7 @@ export type DraftStatus = "draft" | "pending_approval" | "approved" | "publishin
 export type DraftRow = {
   id: string; workspace_id: string; kind: string; title: string; status: DraftStatus; last_editor: string;
   approved_by: string | null; created_by: string; created_at: string; updated_at: string; published_version_id: string | null;
+  publish_claim: string | null; publish_claimed_at: string | null;
 };
 export type VersionRow = { id: string; draft_id: string; number: number; doc: unknown; origin: string; author: string; created_at: string };
 
@@ -40,6 +41,9 @@ export type Result<T> = ({ ok: true } & T) | { ok: false; code: StoreError; mess
 export type ContentCheck = (doc: unknown, ctx: { first: unknown; versionNumber: number }) => { ok: true } | { ok: false; reason: string };
 
 export const DRAFT_LIMITS = Object.freeze({ maxKind: 40, maxTitle: 300, maxDocBytes: 2_000_000 });
+/** A publish claim older than this may be cancelled by hand (the publish that took it crashed or was cut off). */
+export const STALE_CLAIM_MS = 10 * 60_000;
+export const claimIsStale = (claimedAt: string | null | undefined, at = Date.now()) => !claimedAt || at - Date.parse(claimedAt) > STALE_CLAIM_MS;
 
 const fail = (code: StoreError, message: string): { ok: false; code: StoreError; message: string } => ({ ok: false, code, message });
 const text = (v: unknown, max: number) => typeof v === "string" && v.trim() !== "" && v.length <= max;
@@ -171,6 +175,7 @@ export function draftStore(db: DatabaseSync) {
       if (!a.ok) return a;
       const { p, row } = a;
       if (row.status === "published") return fail("invalid_state", "A published draft is final.");
+      if (row.status === "publishing") return fail("invalid_state", "This draft is being published; edits are paused.");
       if (!Number.isSafeInteger(input?.expected) || (input.expected as number) < 1) return fail("invalid", "The version being edited is missing.");
       const origin = input.origin ?? "edit";
       if (origin !== "edit" && origin !== "rollback") return fail("invalid", "Unknown version origin.");
@@ -243,7 +248,7 @@ export function draftStore(db: DatabaseSync) {
     },
 
     /** Mark the approved version published, after the caller ingested it as agreement version `publishedVersionId`. */
-    publish(principal: unknown, draftId: unknown, version: unknown, check: ContentCheck, publishedVersionId: unknown): Result<object> {
+    publish(principal: unknown, draftId: unknown, version: unknown, check: ContentCheck, publishedVersionId: unknown, claim: unknown): Result<object> {
       const a = authorized(principal, draftId, "publish");
       if (!a.ok) return a;
       if (!text(publishedVersionId, 200)) return fail("invalid", "The published agreement version is missing.");
@@ -257,8 +262,10 @@ export function draftStore(db: DatabaseSync) {
         if (v.number !== version) return fail("stale", "The approval applies to a different version.");
         const refused = runCheck(check, a.p, a.row.id, v);
         if (refused) return fail("check_failed", refused);
-        if (!move(a.p, a.row.id, ["approved", "publishing"], "status = 'published', published_version_id = ?", publishedVersionId as string))
-          return fail("invalid_state", "Only an approved draft can be published.");
+        // only the publish that holds this claim may finish it
+        if (typeof claim !== "string" || !claim || a.row.publish_claim !== claim) return fail("invalid_state", "This publish no longer holds the draft; reload it.");
+        if (!move(a.p, a.row.id, ["publishing"], "status = 'published', published_version_id = ?, publish_claim = NULL, publish_claimed_at = NULL", publishedVersionId as string))
+          return fail("invalid_state", "Only a draft being published can be published.");
         log(a.p, a.row.id, v.number, "publish", now());
         return { ok: true as const };
       }));
@@ -269,7 +276,7 @@ export function draftStore(db: DatabaseSync) {
      * irreversible happens. While claimed, no commit can land (commit only moves draft/pending/approved) and a second
      * claim fails, so a double click or two admins publish once. Finish with publish(), or undo with abortPublish().
      */
-    claimPublish(principal: unknown, draftId: unknown, version: unknown, check: ContentCheck): Result<object> {
+    claimPublish(principal: unknown, draftId: unknown, version: unknown, check: ContentCheck): Result<{ claim: string }> {
       const a = authorized(principal, draftId, "publish");
       if (!a.ok) return a;
       return guarded(() => tx(() => {
@@ -277,17 +284,30 @@ export function draftStore(db: DatabaseSync) {
         if (v.number !== version) return fail("stale", "The approval applies to a different version.");
         const refused = runCheck(check, a.p, a.row.id, v);
         if (refused) return fail("check_failed", refused);
-        if (!move(a.p, a.row.id, ["approved"], "status = 'publishing'"))
+        const claim = newId("pcl_");
+        if (!move(a.p, a.row.id, ["approved"], "status = 'publishing', publish_claim = ?, publish_claimed_at = ?", claim, now()))
           return fail("invalid_state", "This draft is not approved, or is already being published.");
-        return { ok: true as const };
+        return { ok: true as const, claim };
       }));
     },
 
-    /** Undo a claim (publishing -> approved), e.g. when adding the agreement to the library failed. */
-    abortPublish(principal: unknown, draftId: unknown): Result<object> {
+    /**
+     * Undo a claim (publishing -> approved). With the claim token: the publish that took it backs out after a failure.
+     * Without it (a person pressing Cancel): only when the claim is older than STALE_CLAIM_MS, so a publish still in
+     * progress elsewhere can't be cancelled underneath itself.
+     */
+    abortPublish(principal: unknown, draftId: unknown, claim?: string): Result<object> {
       const a = authorized(principal, draftId, "publish");
       if (!a.ok) return a;
-      return guarded(() => tx(() => (move(a.p, a.row.id, ["publishing"], "status = 'approved'") ? { ok: true as const } : fail("invalid_state", "This draft is not being published."))));
+      return guarded(() => tx(() => {
+        const row = rowFor(a.p, a.row.id);
+        if (!row || row.status !== "publishing" || !row.publish_claim) return fail("invalid_state", "This draft is not being published.");
+        if (claim !== undefined ? claim !== row.publish_claim : !claimIsStale(row.publish_claimed_at))
+          return fail("invalid_state", "A publish is still in progress; try again in a few minutes.");
+        const ok = db.prepare("UPDATE drafts SET status = 'approved', publish_claim = NULL, publish_claimed_at = NULL, updated_at = ? WHERE id = ? AND workspace_id = ? AND status = 'publishing' AND publish_claim = ?")
+          .run(now(), a.row.id, a.p.workspaceId, row.publish_claim).changes === 1;
+        return ok ? { ok: true as const } : fail("invalid_state", "This draft is not being published.");
+      }));
     },
   };
 }

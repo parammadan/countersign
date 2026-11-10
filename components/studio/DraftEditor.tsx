@@ -14,6 +14,8 @@ export type EditorProps = {
   version: number;
   doc: Doc;
   publishedVersionId: string | null;
+  /** a publish claim old enough to be cancelled by hand */
+  staleClaim: boolean;
   can: { edit: boolean; approve: boolean; publish: boolean; isLastEditor: boolean };
   versions: { number: number; origin: string; author: string; created_at: string; restored_from: number | null }[];
   log: { action: string; actor: string; version_number: number; created_at: string }[];
@@ -134,9 +136,10 @@ export function DraftEditor(p: EditorProps) {
                 return r;
               })}>Publish to Agreements</Button>
             )}
-            {p.status === "publishing" && p.can.publish && (
+            {p.status === "publishing" && !p.staleClaim && <Notice tone="info">Being published. This takes a few seconds; reload to see the result.</Notice>}
+            {p.status === "publishing" && p.staleClaim && p.can.publish && (
               <>
-                <Notice tone="warn">Publishing was started but didn&apos;t finish. Check Agreements, then cancel it here to publish again.</Notice>
+                <Notice tone="warn">Publishing started over 10 minutes ago and didn&apos;t finish. Check Agreements, then cancel it here to publish again.</Notice>
                 <Button className="w-full" variant="secondary" loading={pending} onClick={() => run(() => abortPublishAction(p.draftId), "Publishing cancelled; the draft is approved again.")}>Cancel publishing</Button>
               </>
             )}

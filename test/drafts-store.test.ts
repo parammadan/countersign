@@ -36,6 +36,14 @@ beforeEach(() => {
   db.exec(DRAFTS_DDL);
   s = draftStore(db);
 });
+/** claim, then publish with the claim; undo the claim if publishing fails (as lib/drafts/service does) */
+function pub(by: Principal, id: string, version: number, check: ContentCheck, tv: string) {
+  const c = s.claimPublish(by, id, version, check);
+  if (!c.ok) return c;
+  const r = s.publish(by, id, version, check, tv, c.claim);
+  if (!r.ok) s.abortPublish(by, id, c.claim);
+  return r;
+}
 function created(by: Principal = P.staffA) {
   const r = s.create(by, { kind: "services", title: "Acme services", doc: doc(), origin: "generated" });
   if (!r.ok) throw new Error(r.message);
@@ -53,7 +61,7 @@ describe("happy path", () => {
   it("create → commit → submit → approve → publish, with an approval log", () => {
     const id = pending();
     expect(code(s.approve(P.adminA, id, 2, pass))).toBe("ok");
-    expect(code(s.publish(P.ownerA, id, 2, pass, "tv1"))).toBe("ok");
+    expect(code(pub(P.ownerA, id, 2, pass, "tv1"))).toBe("ok");
     const g = s.get(P.staffA, id);
     expect(g.ok && g.draft.status).toBe("published");
     expect(g.ok && g.draft.approved_by).toBe("admin-a");
@@ -73,7 +81,7 @@ describe("roles (editing never implies approval)", () => {
     expect(code(s.approve(P.staff2A, id, 2, pass))).toBe("forbidden");
     expect(code(s.requestChanges(P.staff2A, id))).toBe("forbidden");
     expect(code(s.approve(P.adminA, id, 2, pass))).toBe("ok");
-    expect(code(s.publish(P.staffA, id, 2, pass, "tv1"))).toBe("forbidden");
+    expect(code(pub(P.staffA, id, 2, pass, "tv1"))).toBe("forbidden");
   });
   it("the last editor cannot approve, even as owner", () => {
     const id = created(P.ownerA);
@@ -98,7 +106,7 @@ describe("cross-tenant", () => {
     expect(code(s.submit(P.ownerB, id, 2))).toBe("not_found");
     expect(code(s.approve(P.ownerB, id, 2, pass))).toBe("not_found");
     expect(code(s.requestChanges(P.ownerB, id))).toBe("not_found");
-    expect(code(s.publish(P.ownerB, id, 2, pass, "tv1"))).toBe("not_found");
+    expect(code(pub(P.ownerB, id, 2, pass, "tv1"))).toBe("not_found");
     expect(JSON.stringify(db.prepare("SELECT * FROM drafts").all())).toBe(before);
     expect(s.get(P.ownerB, id)).toEqual(s.get(P.ownerB, "drf_missing"));
   });
@@ -124,7 +132,7 @@ describe("content check is mandatory and runs on the exact version", () => {
     expect(code(s.approve(P.adminA, id, 2, () => { throw new Error("boom"); }))).toBe("check_failed");
     expect(code(s.approve(P.adminA, id, 2, () => ({ ok: "yes" }) as never))).toBe("check_failed");
     expect(code(s.approve(P.adminA, id, 2, pass))).toBe("ok");
-    expect(code(s.publish(P.ownerA, id, 2, () => ({ ok: false, reason: "not renderable" }), "tv1"))).toBe("check_failed");
+    expect(code(pub(P.ownerA, id, 2, () => ({ ok: false, reason: "not renderable" }), "tv1"))).toBe("check_failed");
     expect(s.get(P.ownerA, id).ok && (s.get(P.ownerA, id) as { draft: { status: string } }).draft.status).toBe("approved");
   });
   it("the check sees the latest committed document", () => {
@@ -149,13 +157,13 @@ describe("state machine and concurrency", () => {
     expect(code(s.commit(P.staff2A, id, { expected: 2, doc: doc("USD 9,999") }))).toBe("ok");
     const g = s.get(P.ownerA, id);
     expect(g.ok && [g.draft.status, g.draft.approved_by, g.draft.last_editor]).toEqual(["draft", null, "staff2-a"]);
-    expect(code(s.publish(P.ownerA, id, 2, pass, "tv1"))).toBe("stale");
-    expect(code(s.publish(P.ownerA, id, 3, pass, "tv1"))).toBe("invalid_state");
+    expect(code(pub(P.ownerA, id, 2, pass, "tv1"))).toBe("stale");
+    expect(code(pub(P.ownerA, id, 3, pass, "tv1"))).toBe("invalid_state");
   });
   it("illegal jumps are refused", () => {
     const id = created();
     expect(code(s.approve(P.adminA, id, 1, pass))).toBe("invalid_state");
-    expect(code(s.publish(P.ownerA, id, 1, pass, "tv1"))).toBe("invalid_state");
+    expect(code(pub(P.ownerA, id, 1, pass, "tv1"))).toBe("invalid_state");
     expect(code(s.requestChanges(P.adminA, id))).toBe("invalid_state");
     expect(code(s.submit(P.staffA, id, 1))).toBe("ok");
     expect(code(s.submit(P.staffA, id, 1))).toBe("invalid_state");
@@ -163,9 +171,9 @@ describe("state machine and concurrency", () => {
   it("a published draft is final", () => {
     const id = pending();
     s.approve(P.adminA, id, 2, pass);
-    s.publish(P.ownerA, id, 2, pass, "tv1");
+    pub(P.ownerA, id, 2, pass, "tv1");
     expect(code(s.commit(P.ownerA, id, { expected: 2, doc: doc("x") }))).toBe("invalid_state");
-    expect(code(s.publish(P.ownerA, id, 2, pass, "tv1"))).toBe("invalid_state");
+    expect(code(pub(P.ownerA, id, 2, pass, "tv1"))).toBe("invalid_state");
   });
   it("request changes sends a submitted draft back and clears nothing it shouldn't", () => {
     const id = pending();
@@ -191,7 +199,7 @@ describe("input validation", () => {
     expect(code(s.create(P.staffA, { kind: "k", title: "t", doc: cyc, origin: "generated" }))).toBe("invalid");
     const id = created();
     for (const expected of [0, -1, 1.5, "1", null]) expect(code(s.commit(P.staffA, id, { expected, doc: doc() }))).not.toBe("ok");
-    expect(code(s.publish(P.ownerA, id, 1, pass, ""))).toBe("invalid");
+    expect(code(s.publish(P.ownerA, id, 1, pass, "", "pcl_x"))).toBe("invalid");
   });
 });
 
@@ -199,11 +207,11 @@ describe("review of 5a8d9dc", () => {
   it("publish refuses another workspace's agreement version and a missing one, as a Result", () => {
     const id = pending();
     s.approve(P.adminA, id, 2, pass);
-    expect(code(s.publish(P.ownerA, id, 2, pass, "tv-b"))).toBe("not_found");
-    expect(code(s.publish(P.ownerA, id, 2, pass, "tv-missing"))).toBe("not_found");
+    expect(code(pub(P.ownerA, id, 2, pass, "tv-b"))).toBe("not_found");
+    expect(code(pub(P.ownerA, id, 2, pass, "tv-missing"))).toBe("not_found");
     const g = s.get(P.ownerA, id);
     expect(g.ok && [g.draft.status, g.draft.published_version_id]).toEqual(["approved", null]);
-    expect(code(s.publish(P.ownerA, id, 2, pass, "tv1"))).toBe("ok");
+    expect(code(pub(P.ownerA, id, 2, pass, "tv1"))).toBe("ok");
   });
   it("rollback needs an earlier version number and restores that version's stored content, not the request's", () => {
     const id = created();
@@ -250,14 +258,36 @@ describe("review of 5a8d9dc", () => {
   it("one agreement version is the published form of at most one draft", () => {
     const one = pending();
     s.approve(P.adminA, one, 2, pass);
-    expect(code(s.publish(P.ownerA, one, 2, pass, "tv1"))).toBe("ok");
+    expect(code(pub(P.ownerA, one, 2, pass, "tv1"))).toBe("ok");
     const two = pending();
     s.approve(P.adminA, two, 2, pass);
-    expect(code(s.publish(P.ownerA, two, 2, pass, "tv1"))).toBe("invalid");
+    expect(code(pub(P.ownerA, two, 2, pass, "tv1"))).toBe("invalid");
     expect(() => db.prepare("UPDATE drafts SET status = 'published', published_version_id = 'tv1' WHERE id = ?").run(two)).toThrow(/UNIQUE/);
   });
   it("commit by a principal whose user row is missing is a Result", () => {
     const id = created();
     expect(code(s.commit({ userId: "ghost", workspaceId: "ws-a", role: "staff" }, id, { expected: 1, doc: doc("x") }))).toBe("invalid");
   });
+  it("only the holder of a publish claim can finish or undo it; a fresh claim can't be cancelled by hand", () => {
+    const id = pending();
+    s.approve(P.adminA, id, 2, pass);
+    const c = s.claimPublish(P.adminA, id, 2, pass);
+    if (!c.ok) throw new Error(c.message);
+    expect(code(s.claimPublish(P.ownerA, id, 2, pass))).toBe("invalid_state"); // second claim
+    expect(code(s.abortPublish(P.ownerA, id))).toBe("invalid_state"); // manual cancel of a fresh claim
+    expect(code(s.abortPublish(P.ownerA, id, "pcl_other"))).toBe("invalid_state"); // wrong token
+    expect(code(s.publish(P.ownerA, id, 2, pass, "tv1", "pcl_other"))).toBe("invalid_state");
+    expect(code(s.commit(P.staffA, id, { expected: 2, doc: doc("x") }))).toBe("invalid_state");
+    expect(code(s.publish(P.adminA, id, 2, pass, "tv1", c.claim))).toBe("ok");
+  });
+  it("a stale claim can be cancelled by hand", () => {
+    const id = pending();
+    s.approve(P.adminA, id, 2, pass);
+    const c = s.claimPublish(P.adminA, id, 2, pass);
+    if (!c.ok) throw new Error(c.message);
+    db.prepare("UPDATE drafts SET publish_claimed_at = ? WHERE id = ?").run(new Date(Date.now() - 11 * 60_000).toISOString(), id);
+    expect(code(s.abortPublish(P.ownerA, id))).toBe("ok");
+    expect(code(s.publish(P.adminA, id, 2, pass, "tv1", c.claim))).toBe("invalid_state"); // the old claim is gone
+  });
 });
+
