@@ -71,12 +71,22 @@ const INTRODUCERS = new Set([
   "then", "read", "between", "including", "excluding", "except", "notwithstanding", "following", "nor", "but", "also",
   "follow", "follows", "as", "if", "unless", "after", "before", "during", "breach", "breaches", "amend", "amends",
 ]);
-function introducesReference(before: string): boolean {
-  if (/(?:^|[.;:,([\n])\s*$/.test(before)) return true;
-  if (/(?:^|\s)\((?:[a-z]|[ivx]+|\d+)\)\s+$/i.test(before)) return true; // list marker: "(a) clause 3 applies"
-  const w = /(?:^|[^\p{L}\p{N}-])(\p{L}+) +$/u.exec(before);
-  return w !== null && INTRODUCERS.has(w[1].toLowerCase());
+/**
+ * `before` is a bounded window of the text just before "clause" (see REF_WINDOW); `atTextStart` says whether that
+ * window begins at the start of the text. A window that may start mid-word or mid-marker is read fail-closed.
+ */
+function introducesReference(before: string, atTextStart: boolean): boolean {
+  if (/[.;:,([\n]\s*$/.test(before)) return true;
+  if (atTextStart && /^\s*$/.test(before)) return true;
+  const marker = /(^|\s)\((?:[a-z]|[ivx]+|\d+)\)\s+$/i.exec(before); // list marker: "(a) clause 3 applies"
+  if (marker && (marker[1] !== "" || atTextStart)) return true;
+  const w = /(^|[^\p{L}\p{N}-])(\p{L}+) +$/u.exec(before);
+  if (!w || (w[1] === "" && !atTextStart)) return false; // the word may be cut off at the window's start
+  return INTRODUCERS.has(w[2].toLowerCase());
 }
+
+/** How much text around each reference is read. Bounded, so renumbering is linear in the text length. */
+const REF_WINDOW = 240;
 
 const partyNames = (d: DraftDocument): string[] => (Array.isArray(d.parties) ? d.parties.map((x) => (typeof x?.name === "string" ? x.name : "")) : []);
 const partyRoles = (d: DraftDocument): string[] => (Array.isArray(d.parties) ? d.parties.map((x) => (typeof x?.role === "string" ? x.role : "")) : []);
@@ -201,13 +211,15 @@ function mapRefs(text: string, r: Renumbering, where: string): Mapped {
     // When renumbering would change such a number, refuse instead of guessing: a last number not followed by end or
     // closing punctuation (see endsReference), or a later number below the one before it.
     const nums = parts.filter((m) => m[1] !== undefined);
-    const rest = list + string.slice(offset + all.length);
+    const after = string.slice(offset + all.length, offset + all.length + REF_WINDOW);
+    const rest = list + after;
     const changes = (m: RegExpMatchArray) => (r.map.get(m[1]) ?? m[1]) !== m[1];
-    const before = string.slice(0, offset);
-    if (!introducesReference(before) && nums.some(changes))
+    const from = Math.max(0, offset - REF_WINDOW);
+    const before = string.slice(from, offset);
+    if (!introducesReference(before, from === 0) && nums.some(changes))
       failure ??= `${where} has "${(/\S*\s*$/.exec(before)?.[0] ?? "").trim()} ${all.trim()}", where the number may not be a clause number (a quantity, a sub-clause or another document's clause); write the reference as "under clause N" or "see clause N"`;
     const bracketOpen = insideBrackets(before);
-    if (!tail && nums.some(changes) && otherDocument(string.slice(offset + all.length), r.roles))
+    if (!tail && nums.some(changes) && otherDocument(after, r.roles))
       failure ??= `${where} has "${all.trim()}" followed by another document's name, so it may not be a clause of this agreement; check it and renumber it by hand`;
     for (let i = 1; i < nums.length; i++) {
       const m = nums[i];

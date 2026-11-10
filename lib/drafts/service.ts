@@ -19,7 +19,7 @@ import { generateAgreement, TEMPLATES, KINDS, type GenerateInput, type Kind, typ
 import { CHOICES, TERM_TYPES } from "../m23/m23-generate/terms";
 import { applyProposal } from "../m23/m23-editor/proposals";
 import { partyDriftBetween, describeDrift } from "../m23/m23-editor/parties";
-import { validateDraft } from "../m23/doc-output/validate";
+import { LIMITS, validateDraft } from "../m23/doc-output/validate";
 import { renderDocument, pdfTextProblem } from "../m23/doc-output";
 import type { DraftDocument, EditProposal } from "../m23/shared/agreement-model";
 
@@ -122,8 +122,17 @@ function datesIn(description: string): Set<string> {
 function wholeName(description: string, name: string): boolean {
   const esc = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
   for (const m of description.matchAll(new RegExp(`(?<![\\p{L}\\p{N}])${esc}(?![\\p{L}\\p{N}])`, "giu"))) {
-    const before = description.slice(0, m.index).match(/(\p{Lu}[\p{L}&.'-]*)\s*$/u);
-    const after = description.slice(m.index! + m[0].length).match(/^\s*(\p{Lu}[\p{L}&.'-]*)/u);
+    // a capitalised word right before (whitespace allowed between): walk back once, no regex over the prefix
+    let i = m.index! - 1;
+    while (i >= 0 && /\s/u.test(description[i])) i--;
+    let before = false;
+    for (let steps = 0; i >= 0 && /[\p{L}&.'-]/u.test(description[i]); i--, steps++) {
+      // a capital in the adjacent word, or a run too long to be a word: not a complete name (fail closed)
+      if (/\p{Lu}/u.test(description[i]) || steps >= 120) { before = true; break; }
+    }
+    const AFTER = /\s*\p{Lu}/uy;
+    AFTER.lastIndex = m.index! + m[0].length;
+    const after = AFTER.test(description);
     if (!before && !after) return true;
   }
   return false;
@@ -218,8 +227,11 @@ export function editDraft(s: SessionLike, id: string, expected: number, edit: Cl
     if (!c) return { ok: false as const, code: "not_found", message: "That clause no longer exists." };
     proposal = { id: pid, clauseId: c.id, op: "delete", before: c.text, after: "", rationale: "deleted in Agreement Studio", status: "proposed" };
   }
+  if (doc.clauses.length >= LIMITS.maxClauses && edit.op === "add_clause") return { ok: false as const, code: "invalid", message: `A draft can have at most ${LIMITS.maxClauses} clauses.` };
   const a = applyProposal(doc, proposal);
   if (!a.ok) return { ok: false as const, code: a.status, message: a.reason };
+  const total = a.doc.clauses.reduce((n, c) => n + c.text.length + (c.heading?.length ?? 0), 0);
+  if (total > LIMITS.maxTotalChars) return { ok: false as const, code: "invalid", message: "The draft would be longer than the renderer allows." };
   let next = a.doc;
   if (edit.op === "add_clause" && edit.heading?.trim()) {
     next = { ...next, clauses: next.clauses.map((c) => (c.id === `new:${pid}` ? { ...c, heading: edit.heading!.trim().slice(0, 120) } : c)) };

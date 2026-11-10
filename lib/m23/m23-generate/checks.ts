@@ -8,7 +8,7 @@ const INJECTION: [string, RegExp][] = [
   ["change-the-terms directive", /\b(change|replace|swap|set|make)\b[^.\n]{0,30}\b(the )?(fee|price|amount|party|parties|client|provider|landlord|tenant|governing law|date)\b[^.\n]{0,20}\b(to|as)\b/i],
   ["markup/template injection", /\{\{|<\/?(script|system|assistant|instructions?)\b|```/i],
   ["chat-template token", /<\|[^\n]{0,40}?\|>|\bim_(start|end|sep)\b|\[\/?INST\]|<<\/?SYS>>|<\/?s>|^\s*(system|assistant|developer)\s*[:>\n]/im],
-  ["URL or email", /https?:\/\/|\bwww\.|\b[\w.+-]+@[\w-]+\.\w+/i],
+  ["URL or email", /https?:\/\/|\bwww\.|(?<![\w.+-])[\w.+-]+@[\w-]+\.\w+/i],
   ["tag or header markup", /<\/?[A-Za-z_|][^<>\n]{0,40}>|^\s*#{2,}/m],
   ["role header", /^\s*(human|user|assistant|developer|model|bot)\s*:/im],
   ["override directive", /\b(ignore|disregard|forget|override)\b[\s\S]{0,80}\b(instructions?|guidance|rules?|prompts?|directions?)\b|\b(instructions?|guidance|rules?)\b[\s\S]{0,40}\b(void|cancell?ed|replaced|obsolete|no longer apply)\b|\bnew (task|instructions?|rules?|role)\b|\byou (now )?(work|act|are working) for\b/i],
