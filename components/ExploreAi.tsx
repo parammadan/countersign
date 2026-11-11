@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Badge, Card, CardHeader } from "@/components/ui";
 import { Icon } from "@/components/icons";
 import type { AiState } from "@/lib/ai/budget";
+import { EMAIL_HELP } from "@/lib/email-guidance";
 
 export const EXPLORE_AI = {
   title: "Explore AI features",
@@ -19,7 +20,8 @@ export const EXPLORE_AI = {
 } as const;
 
 /** `askHref`: an agreement's ask page when the workspace has one, else the agreements list (where each agreement has "Ask a question"). */
-export function ExploreAi({ ai, askHref }: { ai: AiState; askHref: string | null }) {
+/** `verifyHelp`: confirmation emails can be sent (the confirm-your-email banner with Resend link is on the page). */
+export function ExploreAi({ ai, askHref, verifyHelp = false }: { ai: AiState; askHref: string | null; verifyHelp?: boolean }) {
   const items = [
     { href: "/app/studio", ...EXPLORE_AI.studio },
     { href: askHref ? `${askHref}?q=${encodeURIComponent(EXPLORE_AI.ask.example)}` : "/app/agreements", ...EXPLORE_AI.ask, ...(askHref ? {} : { hint: "Upload an agreement first, then open it and choose “Ask a question”." }) },
@@ -33,6 +35,7 @@ export function ExploreAi({ ai, askHref }: { ai: AiState; askHref: string | null
         action={ai.available ? <Badge tone="ok" icon="spark">AI on</Badge> : <Badge tone={ai.reason === "off" ? "neutral" : "warn"}>AI {ai.reason === "off" ? "off" : "paused"}</Badge>}
       />
       {!ai.available && <p className="px-5 pt-3 text-sm text-warn">{EXPLORE_AI.state[ai.reason]}</p>}
+      {!ai.available && ai.reason === "unverified" && verifyHelp && <p className="px-5 pt-1 text-sm text-muted">{EMAIL_HELP.verify} {EMAIL_HELP.resendAbove}</p>}
       <ul aria-label="AI features" className="grid gap-3 p-5 sm:grid-cols-3">
         {items.map((it) => (
           <li key={it.title} className="relative rounded-lg border border-line bg-white p-4 transition-colors hover:border-brand/40 hover:bg-subtle">

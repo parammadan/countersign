@@ -67,7 +67,7 @@ test("failed invitation and signed copy are shown honestly, recover from the fil
   await expect.poll(() => sink.count(client, /please review and sign/)).toBe(1);
   await page.reload();
   await expect(nextStep(page).getByRole("heading", { name: "Waiting for Jordan to open the agreement" })).toBeVisible();
-  await expect(page.getByLabel("File details")).toContainText("Delivered to the mail server");
+  await expect(page.getByLabel("File details")).toContainText("Sent (accepted by the mail server)");
 
   // a second Resend within a minute is refused and nothing more is sent
   await page.getByRole("button", { name: "Resend email" }).click();

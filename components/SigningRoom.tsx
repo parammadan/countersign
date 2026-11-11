@@ -7,6 +7,7 @@ import { Button, Notice, cx, inputCls } from "./ui";
 import { CONSENT_FULL, CONSENT_SUMMARY, SIGN_INTENT } from "@/lib/consent";
 import type { Field, PageSize } from "@/lib/fields";
 import { BRAND } from "@/lib/brand";
+import { EMAIL_HELP } from "@/lib/email-guidance";
 import { autoCompleteFor, fieldError, fieldName, mustComplete, progressText, remainingAnnouncement } from "@/lib/sign-fields";
 
 export type SignerField = Field & { value?: string };
@@ -587,6 +588,7 @@ function Otp({ token, email, onOk }: { token: string; email: string; onOk: () =>
         <p className="mt-1 text-sm text-muted">
           Before you see the agreement, we&apos;ll email a 6-digit code to <b className="text-ink">{email}</b>, the address it was sent to.
         </p>
+        <p className="mt-2 text-sm text-muted">{EMAIL_HELP.otp}</p>
         {err && <div className="mt-4"><Notice tone="error">{err}</Notice></div>}
         {!sent ? (
           <Button className="mt-5 w-full" onClick={send} disabled={busy}>{busy ? "Sending…" : "Email me a code"}</Button>

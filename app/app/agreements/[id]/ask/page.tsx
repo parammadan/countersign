@@ -7,6 +7,7 @@ import { assistantMode, conversation, conversations, QA_DAILY, type QaEntry } fr
 import type { Citation } from "@/lib/qa/answer";
 import { askAction } from "@/app/qa-actions";
 import { Badge, Notice, timeAgo } from "@/components/ui";
+import { EMAIL_HELP } from "@/lib/email-guidance";
 import { Icon } from "@/components/icons";
 import { qaPresentation } from "@/components/qaPresentation";
 import { AskComposer } from "./AskComposer";
@@ -225,7 +226,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         {ai ? (
           <>Claude reads <span className="text-ink-2">{version.source_name}</span> and answers in plain English, quoting the passages it relies on. Before you see an answer, it&apos;s checked twice. AgreementOS checks it against the agreement: quotes must be exact, figures, dates and names must be in it, parties must do what the agreement gives them, and arithmetic is re-done. Then a second, independent Claude check judges every claim against the whole agreement, with quoted evidence. Answers with a claim that isn&apos;t supported are withheld, and the passages are shown instead. Still read the sources; this isn&apos;t legal advice.</>
         ) : mode.kind === "locked" ? (
-          <>Answers come only from <span className="text-ink-2">{version.source_name}</span> and quote the passages they rely on, with page numbers. {mode.canConfirm ? "AI answers start once the workspace owner confirms their email address; until then you'll see the most relevant passages, quoted as written." : "AI answers need a confirmed email address, and this server can't send confirmation emails yet, so you'll see the most relevant passages, quoted as written."} Not legal advice.</>
+          <>Answers come only from <span className="text-ink-2">{version.source_name}</span> and quote the passages they rely on, with page numbers. {mode.canConfirm ? `AI answers start once the workspace owner confirms their email address; until then you'll see the most relevant passages, quoted as written. ${EMAIL_HELP.verify} ${EMAIL_HELP.resendAbove}` : "AI answers need a confirmed email address, and this server can't send confirmation emails yet, so you'll see the most relevant passages, quoted as written."} Not legal advice.</>
         ) : (
           <>Answers come only from <span className="text-ink-2">{version.source_name}</span> and quote the passages they rely on, with page numbers. AI answers are off on this server: you&apos;ll see the most relevant passages, quoted as written. Not legal advice.</>
         )}{" "}

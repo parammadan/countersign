@@ -9,6 +9,7 @@ import { Icon, type IconName } from "@/components/icons";
 import { FileTable } from "@/components/FileTable";
 import { ExploreAi } from "@/components/ExploreAi";
 import { aiState } from "@/lib/ai/budget";
+import { verificationRequired } from "@/lib/emailverify";
 import { configuredProvider } from "@/lib/ai/anthropic";
 
 export const metadata = { title: "Overview" };
@@ -91,7 +92,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ e
 
         <NextStep next={next} steps={setupLeft > 0 ? steps : null} admin={admin} />
 
-        <ExploreAi ai={ai} askHref={askable ? `/app/agreements/${askable.liveVersionId}/ask` : null} />
+        <ExploreAi ai={ai} askHref={askable ? `/app/agreements/${askable.liveVersionId}/ask` : null} verifyHelp={verificationRequired()} />
 
         <section aria-label="Key numbers" className="grid grid-cols-2 gap-3 lg:grid-cols-4 [&>*]:min-w-0">
           <Stat label="Needs attention" value={att.total} tone={att.total ? "warn" : undefined} href="#attention" hint={att.total ? reasonSummary : "Nothing waiting on you"} />
