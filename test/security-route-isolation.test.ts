@@ -25,8 +25,8 @@ describe("workspace isolation and roles on routes", () => {
   let fileId = "";
   let versionId = "";
   let ipN = 0;
-  const keyA = "cs_live_isolation_test_key_a_0001";
-  const keyB = "cs_live_isolation_test_key_b_0002";
+  let keyA = "";
+  let keyB = "";
   const R: Record<string, Record<string, (id: string) => Promise<Response>>> = {};
 
   const req = (url: string, init: RequestInit = {}) =>
@@ -41,6 +41,8 @@ describe("workspace isolation and roles on routes", () => {
   beforeAll(async () => {
     db = await import("../lib/db");
     util = await import("../lib/util");
+    keyA = `cs_${util.token(18)}`;
+    keyB = `cs_${util.token(18)}`;
     files = await import("../lib/files");
     const tpl = await import("../lib/templates");
     for (const w of ["ws_a", "ws_b"])
@@ -103,7 +105,7 @@ describe("workspace isolation and roles on routes", () => {
   it("API routes: another workspace's key sees 404 for every file route, and no key is 401", async () => {
     jar.cookie = keyB;
     for (const [name, call] of Object.entries(R.key)) expect((await call(fileId)).status, name).toBe(404);
-    jar.cookie = "cs_live_nope";
+    jar.cookie = "cs_invalid";
     for (const [name, call] of Object.entries(R.key)) expect((await call(fileId)).status, name).toBe(401);
     // the owner workspace's own key still reaches it
     jar.cookie = keyA;
