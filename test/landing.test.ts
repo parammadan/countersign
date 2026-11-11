@@ -3,13 +3,14 @@
 // compliance claims, testimonials or metrics.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+import fs from "node:fs";
 
 const getSession = vi.fn();
 vi.mock("@/lib/auth", () => ({ getSession: () => getSession() }));
 
 const { default: Home } = await import("@/app/page");
 const copy = await import("@/components/landing/copy");
-const { FEATURES, HERO, STEPS, PREVIEW_LABEL, CTA, FOOTER, HOW, NAV, DOC_INTEL, DOC_INTEL_AI, DOC_INTEL_COPY, PHONE_SIGN, PHONE_SCAN, PHONE_SCAN_COPY, VOICE_INPUT, VOICE_INPUT_COPY } = copy;
+const { DEMO, FEATURES, HERO, STEPS, PREVIEW_LABEL, CTA, FOOTER, HOW, NAV, DOC_INTEL, DOC_INTEL_AI, DOC_INTEL_COPY, PHONE_SIGN, PHONE_SCAN, PHONE_SCAN_COPY, VOICE_INPUT, VOICE_INPUT_COPY } = copy;
 
 const render = async () => renderToStaticMarkup(await Home());
 /** The text a visitor reads, tags stripped. */
@@ -103,13 +104,20 @@ describe("landing page", () => {
       const anchors = [...h.matchAll(/href="#([^"]+)"/g)].map((m) => m[1]);
       expect(anchors.length).toBeGreaterThan(10);
       for (const a of anchors) expect(ids, `#${a}`).toContain(a);
-      const pages = new Set([...h.matchAll(/href="(\/[^"#]*)"/g)].map((m) => m[1]));
+      const pages = new Set([...h.matchAll(/<a [^>]*href="(\/[^"#]*)"/g)].map((m) => m[1])); // links, not asset preloads
       expect([...pages].sort()).toEqual(["/", "/login", "/signup", "/verify"]);
     });
 
-    it("has no product demo video, nav item or embed", async () => {
+    it("demo video: click-to-load (no YouTube request or iframe until played), privacy-enhanced player", async () => {
       const h = await render();
-      expect(h).not.toMatch(/youtube|<iframe|id="demo"|#demo|Watch product demo|Product demo/i);
+      const demo = h.match(/<section id="demo"[\s\S]*?<\/section>/)![0];
+      expect(demo).toContain(DEMO.title);
+      expect(demo).toContain('aria-label="' + DEMO.playLabel + '"');
+      expect(demo).toContain('src="/demo-thumbnail.jpg"');
+      expect(demo).not.toMatch(/<iframe/i); // nothing from YouTube is loaded before the visitor presses play
+      expect(links(demo, DEMO.watchOnYouTube)).toEqual([`https://youtu.be/${DEMO.videoId}`]);
+      expect(fs.readFileSync("components/landing/DemoVideo.tsx", "utf8")).toContain("https://www.youtube-nocookie.com/embed/");
+      expect(fs.readFileSync("next.config.ts", "utf8")).toMatch(/frame-src 'self' https:\/\/www\.youtube-nocookie\.com"/);
     });
 
     it("has the five feature sections, each with its heading and text", async () => {
@@ -266,7 +274,7 @@ describe("landing page", () => {
       expect(links(n, "Create workspace")).toEqual([]);
       expect(links(menu(h), "Open app")).toEqual(["/app"]);
       expect(links(menu(h), "Create workspace")).toEqual([]);
-      const pages = new Set([...h.matchAll(/href="(\/[^"#]*)"/g)].map((m) => m[1]));
+      const pages = new Set([...h.matchAll(/<a [^>]*href="(\/[^"#]*)"/g)].map((m) => m[1])); // links, not asset preloads
       expect([...pages].sort()).toEqual(["/", "/app", "/login", "/signup", "/verify"]);
       expect(links(h.replace(footer(h), ""), "Create workspace")).toEqual([]);
       expect(text(h)).toContain(HERO.title);

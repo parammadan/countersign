@@ -145,6 +145,19 @@ export const VOICE_INPUT_COPY = {
   text: "Prefer to talk? Describe the agreement out loud in Agreement Studio, check the words, then let Claude fill in the template.",
 } as const;
 
+/** The demo video on the homepage (unlisted on YouTube, recorded on the live product with fictional data). */
+export const DEMO = {
+  id: "demo",
+  eyebrow: "Live demo",
+  title: "Watch it work, end to end.",
+  text: "A 2½-minute recording of the live product with real Claude: uploading an agreement, Agreement Studio, Document Intelligence, the Knowledge Hub, sending for signature, signing on a phone and verifying the sealed PDF. A fictional firm and synthetic agreements throughout.",
+  videoId: "EdTB5sEdRFU",
+  length: "2:33",
+  playLabel: "Play the AgreementOS demo video, 2:33",
+  iframeTitle: "AgreementOS demo video",
+  watchOnYouTube: "Watch on YouTube",
+} as const;
+
 export const CLAUSES: Feature = {
   id: "clauses",
   icon: "files",

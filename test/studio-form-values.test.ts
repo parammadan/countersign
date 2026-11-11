@@ -32,6 +32,16 @@ describe("percent and money", () => {
     expect(normaliseMoney("$15,000")).toBe("$15,000");
     expect(normaliseMoney("15000")).toBe("15000"); // no currency is never guessed
   });
+  it("merges a currency symbol and the code it stands for ('$5,000 USD', as Claude copies it)", () => {
+    expect(normaliseMoney("$5,000 USD")).toBe("USD 5,000");
+    expect(normaliseMoney("USD $5,000")).toBe("USD 5,000");
+    expect(normaliseMoney("€1,200.50 eur")).toBe("EUR 1,200.50");
+    expect(normaliseMoney("$5,000 CAD")).toBe("CAD 5,000");
+  });
+  it("leaves a symbol and a code that disagree for the generator to refuse", () => {
+    expect(normaliseMoney("$5,000 EUR")).toBe("$5,000 EUR");
+    expect(normaliseMoney("£5,000 USD")).toBe("£5,000 USD");
+  });
 });
 
 describe("termPayload: what Generate sends", () => {

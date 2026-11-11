@@ -28,10 +28,24 @@ export function parsePercent(raw: string): number | null {
   return m ? Number(m[1]) : null;
 }
 
-/** An amount written with its currency code after it ("15,000 USD") in the generator's order ("USD 15,000"). */
+/** The ISO codes each currency symbol can stand for: a symbol and a code are only merged when they agree. */
+const SYMBOL_CODES: Record<string, string[]> = { "$": ["USD", "CAD", "AUD", "NZD", "SGD", "HKD", "MXN"], "€": ["EUR"], "£": ["GBP"], "¥": ["JPY", "CNY"] };
+const AMOUNT = "(\\d[\\d,]*(?:\\.\\d{1,2})?)";
+/**
+ * An amount in the generator's order ("USD 15,000"): "15,000 USD" → "USD 15,000"; a symbol and a matching code
+ * together ("$5,000 USD", "USD $5,000") → "USD 5,000". A symbol and a code that disagree ("$5,000 EUR") are left
+ * as typed for the generator to refuse: which currency was meant is never guessed.
+ */
 export function normaliseMoney(raw: string): string {
-  const m = /^\s*(\d[\d,]*(?:\.\d{1,2})?)\s+([A-Za-z]{3})\s*$/.exec(raw);
-  return m ? `${m[2].toUpperCase()} ${m[1]}` : raw.trim();
+  const v = raw.trim();
+  const after = new RegExp(`^${AMOUNT}\\s+([A-Za-z]{3})$`).exec(v);
+  if (after) return `${after[2].toUpperCase()} ${after[1]}`;
+  const both = new RegExp(`^(?:([$€£¥])\\s?${AMOUNT}\\s+([A-Za-z]{3})|([A-Za-z]{3})\\s?([$€£¥])\\s?${AMOUNT})$`).exec(v);
+  if (both) {
+    const [sym, amount, code] = both[1] ? [both[1], both[2], both[3]] : [both[5], both[6], both[4]];
+    if (SYMBOL_CODES[sym]?.includes(code.toUpperCase())) return `${code.toUpperCase()} ${amount}`;
+  }
+  return v;
 }
 
 /** What to send for the current template's terms, or the fields that can't be read (each against its own key). */
