@@ -21,21 +21,31 @@ export interface RecognitionLike {
 }
 export type RecognitionCtor = new () => RecognitionLike;
 
-/** The browser's speech recognition constructor, or null where there is none (e.g. Firefox). Never assumed. */
+/**
+ * The browser's speech recognition constructor, or null where there is none (e.g. Firefox) or where it can't work: it
+ * needs a secure (https) page, so an insecure context counts as unsupported. Never assumed.
+ */
 export function recognitionCtor(w: unknown = typeof window === "undefined" ? undefined : window): RecognitionCtor | null {
   if (!w || typeof w !== "object") return null;
-  const g = w as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown };
+  const g = w as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown; isSecureContext?: boolean };
+  if (g.isSecureContext === false) return null;
   const c = g.SpeechRecognition ?? g.webkitSpeechRecognition;
   return typeof c === "function" ? (c as RecognitionCtor) : null;
 }
 
-export type VoiceErrorCode = "not-allowed" | "no-speech" | "audio-capture" | "network" | "aborted" | "other";
-/** The browser's error string as one of the cases the panel explains. */
+export type VoiceErrorCode = "not-allowed" | "service-not-allowed" | "language-not-supported" | "no-speech" | "audio-capture" | "network" | "aborted" | "other";
+const KNOWN_ERRORS: readonly string[] = ["not-allowed", "service-not-allowed", "language-not-supported", "no-speech", "audio-capture", "network", "aborted"];
+/**
+ * The browser's error string as one of the cases the panel explains. `service-not-allowed` is Safari with Siri /
+ * Dictation turned off (or speech blocked by policy), not the site permission.
+ */
 export function voiceError(code: string | undefined): VoiceErrorCode {
-  if (code === "not-allowed" || code === "service-not-allowed") return "not-allowed";
-  if (code === "no-speech" || code === "audio-capture" || code === "network" || code === "aborted") return code;
-  return "other";
+  return code && KNOWN_ERRORS.includes(code) ? (code as VoiceErrorCode) : "other";
 }
+
+/** The microphone permission, where the browser can say (navigator.permissions); "unknown" where it can't. */
+export type MicPermission = "granted" | "prompt" | "denied" | "unknown";
+export const micPermission = (state: string | undefined): MicPermission => (state === "granted" || state === "prompt" || state === "denied" ? state : "unknown");
 
 export type VoiceStatus = "idle" | "requesting" | "listening" | "processing" | "done" | "error";
 export type VoiceState = {
@@ -78,8 +88,30 @@ export function voiceReducer(s: VoiceState, a: VoiceAction): VoiceState {
   }
 }
 
-/** Final and interim text in the browser's result list (the whole session's results, so it is safe to re-read). */
-export function readResults(list: RecognitionResultList): { final: string; interim: string } {
+/**
+ * Final chunks as one list: a chunk that repeats or extends the one before replaces it instead of being added again
+ * (Chrome on Android can report each growing phrase as its own final result).
+ */
+export function joinFinals(chunks: string[]): string[] {
+  const out: string[] = [];
+  for (const raw of chunks) {
+    const c = raw.trim();
+    if (!c) continue;
+    const prev = out[out.length - 1];
+    const lc = c.toLowerCase();
+    // an exact repeat is dropped; a longer version of the one before (the same start) replaces it
+    if (prev !== undefined && prev.toLowerCase() === lc) continue;
+    if (prev !== undefined && lc.startsWith(prev.toLowerCase())) out[out.length - 1] = c;
+    else out.push(c);
+  }
+  return out;
+}
+
+/**
+ * Final chunks and interim text in one recognition run's result list. The list holds the whole run (results before
+ * `resultIndex` don't change), so re-reading it on every event can't lose or duplicate text.
+ */
+export function readResults(list: RecognitionResultList): { finals: string[]; final: string; interim: string } {
   const fin: string[] = [];
   const mid: string[] = [];
   for (let i = 0; i < list.length; i++) {
@@ -87,7 +119,23 @@ export function readResults(list: RecognitionResultList): { final: string; inter
     const t = (r && r.length > 0 ? r[0]?.transcript ?? "" : "").trim();
     if (t) (r.isFinal ? fin : mid).push(t);
   }
-  return { final: fin.join(" "), interim: mid.join(" ") };
+  const finals = joinFinals(fin);
+  return { finals, final: finals.join(" "), interim: mid.join(" ") };
+}
+
+/**
+ * Tidies one spoken chunk: Chrome gives lowercase text without punctuation. Capitalises the first letter (only if it
+ * is lowercase) and adds a full stop only when the chunk ends in a letter or digit with no punctuation. Nothing else
+ * changes: digits, amounts, names and the rest of the casing stay exactly as heard.
+ */
+export function tidyChunk(chunk: string, lang = "en-US"): string {
+  const c = chunk.trim();
+  if (!c) return "";
+  const first = String.fromCodePoint(c.codePointAt(0)!);
+  let out = first !== first.toLocaleUpperCase(lang) && first === first.toLocaleLowerCase(lang) ? first.toLocaleUpperCase(lang) + c.slice(first.length) : c;
+  // a full stop only after a letter of an alphabet that uses one (not Chinese / Japanese / Thai…) or a digit
+  if (/[\p{Script=Latin}\p{Script=Cyrillic}\p{Script=Greek}\p{Nd}]$/u.test(out)) out += ".";
+  return out;
 }
 
 /**
@@ -123,106 +171,156 @@ export type VoiceSessionOptions = {
   append: (text: string) => boolean;
   maxMs?: number;
   stopGraceMs?: number;
+  startGraceMs?: number;
+  maxRestarts?: number;
   now?: () => number;
 };
 export type VoiceSession = { stop(): void; abort(): void };
 
+/** how long a permission prompt may stay unanswered before the session quietly goes back to the start */
+export const VOICE_START_GRACE_MS = 15_000;
+/** how many times a session that the browser ended on its own (Safari, after each phrase) is started again */
+export const VOICE_MAX_RESTARTS = 20;
+
 /**
- * One listening session. Shows what is heard as it comes, and at the end adds the final text to the box through
- * `append`, once. Stops on the browser's speech-end event, on `stop()`, or after `maxMs`. `abort()` (unmount, page
- * hide) ends it silently, adding nothing. Nothing else happens: the person reviews the text and submits it themselves.
+ * One listening session, possibly over several recognition runs: Safari (and Chrome after a network hiccup) ends a
+ * run on its own, so a run that heard something is started again until the person stops, 60 seconds pass, or a run
+ * hears nothing (silence). Text heard in earlier runs is kept. At the end, the final text, tidied, is added to the box
+ * through `append`, once. `abort()` (unmount, page hide) ends it silently, adding nothing. Nothing else happens: the
+ * person reviews the text and submits it themselves.
  */
 export function startVoiceSession(Ctor: RecognitionCtor, o: VoiceSessionOptions): VoiceSession {
   const now = o.now ?? Date.now;
-  let rec: RecognitionLike;
-  let final = "";
+  const maxRestarts = o.maxRestarts ?? VOICE_MAX_RESTARTS;
+  let rec: RecognitionLike | null = null;
+  /** final chunks from runs that have ended */
+  const kept: string[] = [];
+  let finals: string[] = [];
   let interim = "";
   let err: VoiceErrorCode | null = null;
   let stopRequested = false;
   let autoStopped = false;
   let live = false;
   let over = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let watchdog: ReturnType<typeof setTimeout> | undefined;
+  let restarts = 0;
+  let startedAt = 0;
+  let maxTimer: ReturnType<typeof setTimeout> | undefined;
+  let stopTimer: ReturnType<typeof setTimeout> | undefined;
   const clearTimers = () => {
-    if (timer !== undefined) clearTimeout(timer);
-    if (watchdog !== undefined) clearTimeout(watchdog);
+    for (const t of [maxTimer, stopTimer, startTimer]) if (t !== undefined) clearTimeout(t);
   };
-  const detach = () => {
-    rec.onstart = rec.onaudiostart = rec.onresult = rec.onspeechend = rec.onerror = rec.onend = null;
+  const detach = (r: RecognitionLike | null) => {
+    if (r) r.onstart = r.onaudiostart = r.onresult = r.onspeechend = r.onerror = r.onend = null;
   };
+  const kill = (r: RecognitionLike | null) => {
+    detach(r);
+    try {
+      r?.abort();
+    } catch {
+      /* already ended */
+    }
+  };
+  const chunks = (withInterim: boolean) => joinFinals([...kept, ...finals, ...(withInterim && interim ? [interim] : [])]);
+  const text = (withInterim: boolean) => chunks(withInterim).map((c) => tidyChunk(c, o.lang)).join(" ");
 
   const finish = () => {
     if (over) return;
     over = true;
     clearTimers();
-    if (err) return o.dispatch({ type: "error", code: err });
-    // a stopped session keeps what was heard even if the browser didn't finalise it
-    const text = stopRequested ? [final, interim].filter(Boolean).join(" ") : final;
-    // cancelled before the microphone opened: back to the start, nothing to report
-    if (!text.trim()) return o.dispatch(stopRequested && !live ? { type: "reset" } : { type: "error", code: "no-speech" });
-    const truncated = o.append(text);
+    detach(rec);
+    // a run the browser ended itself may leave unfinalised words (Safari rarely marks results final): keep them too
+    const t = text(true);
+    // silence or a lost connection after something was heard: keep what was heard
+    if (err && !(t.trim() && (err === "no-speech" || err === "aborted"))) return o.dispatch({ type: "error", code: err });
+    // never opened (a permission prompt dismissed, or cancelled first): back to the start, nothing to report
+    if (!t.trim()) return o.dispatch(!live ? { type: "reset" } : { type: "error", code: "no-speech" });
+    const truncated = o.append(t);
     o.dispatch({ type: "done", truncated, autoStopped });
+  };
+  const goLive = () => {
+    if (live || over) return;
+    live = true;
+    clearTimeout(startTimer);
+    startedAt = now();
+    o.dispatch({ type: "listening", at: startedAt });
+    maxTimer = setTimeout(() => {
+      autoStopped = true;
+      stop();
+    }, o.maxMs ?? VOICE_MAX_MS);
   };
   const stop = () => {
     if (over || stopRequested) return;
     stopRequested = true;
     o.dispatch({ type: "processing" });
-    // if the browser never ends the session, end it here and keep what was heard (as a normal stop does)
-    watchdog = setTimeout(() => {
+    // if the browser never ends the run, end it here and keep what was heard (as a normal stop does)
+    stopTimer = setTimeout(() => {
       if (over) return;
-      detach();
-      try {
-        rec.abort();
-      } catch {
-        /* already ended */
-      }
+      kill(rec);
       finish();
     }, o.stopGraceMs ?? VOICE_STOP_GRACE_MS);
     try {
-      rec.stop();
+      rec?.stop();
     } catch {
       finish();
     }
   };
 
+  const run = (): boolean => {
+    let r: RecognitionLike;
+    try {
+      r = new Ctor();
+      r.lang = o.lang;
+      r.continuous = true;
+      r.interimResults = true;
+      r.maxAlternatives = 1;
+    } catch {
+      return false;
+    }
+    rec = r;
+    finals = [];
+    interim = "";
+    // a run going live is shown by whichever comes first: onaudiostart isn't reliable (Chrome on Android), onstart or a result is
+    r.onstart = () => goLive();
+    r.onaudiostart = () => goLive();
+    r.onresult = (e) => {
+      if (over || r !== rec) return;
+      goLive();
+      ({ finals, interim } = readResults(e.results));
+      o.dispatch({ type: "heard", text: [...chunks(false), interim].filter(Boolean).join(" ") });
+    };
+    r.onerror = (e) => {
+      if (r === rec && !err) err = voiceError(e?.error);
+    };
+    r.onend = () => {
+      if (over || r !== rec) return;
+      const heard = finals.length > 0 || !!interim;
+      const ranOut = now() - startedAt >= (o.maxMs ?? VOICE_MAX_MS);
+      // the browser ended the run itself after hearing something: keep it, and listen on
+      if (live && !stopRequested && !err && heard && !ranOut && restarts < maxRestarts) {
+        kept.push(...joinFinals([...finals, ...(interim ? [interim] : [])]));
+        restarts++;
+        detach(r);
+        if (run()) return;
+      }
+      finish();
+    };
+    try {
+      r.start();
+    } catch {
+      detach(r);
+      return false;
+    }
+    return true;
+  };
+
   o.dispatch({ type: "request" });
-  try {
-    rec = new Ctor();
-    rec.lang = o.lang;
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.maxAlternatives = 1;
-  } catch {
-    over = true;
-    o.dispatch({ type: "error", code: "other" });
-    return { stop() {}, abort() {} };
-  }
-  const listening = () => {
-    if (live || over) return;
-    live = true;
-    o.dispatch({ type: "listening", at: now() });
-    timer = setTimeout(() => {
-      autoStopped = true;
-      stop();
-    }, o.maxMs ?? VOICE_MAX_MS);
-  };
-  rec.onstart = listening;
-  rec.onaudiostart = listening;
-  rec.onresult = (e) => {
-    if (over) return;
-    listening();
-    ({ final, interim } = readResults(e.results));
-    o.dispatch({ type: "heard", text: [final, interim].filter(Boolean).join(" ") });
-  };
-  rec.onspeechend = () => stop();
-  rec.onerror = (e) => {
-    if (!err) err = voiceError(e?.error);
-  };
-  rec.onend = () => finish();
-  try {
-    rec.start();
-  } catch {
+  // a prompt left unanswered or dismissed without an event: quietly back to the start
+  const startTimer = setTimeout(() => {
+    if (over || live) return;
+    kill(rec);
+    finish();
+  }, o.startGraceMs ?? VOICE_START_GRACE_MS);
+  if (!run()) {
     err = "other";
     finish();
   }
@@ -232,12 +330,7 @@ export function startVoiceSession(Ctor: RecognitionCtor, o: VoiceSessionOptions)
       if (over) return;
       over = true;
       clearTimers();
-      detach();
-      try {
-        rec.abort();
-      } catch {
-        /* already ended */
-      }
+      kill(rec);
     },
   };
 }
