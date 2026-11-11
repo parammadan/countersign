@@ -1,5 +1,4 @@
 import fs from "node:fs/promises";
-import zlib from "node:zlib";
 import path from "node:path";
 import { PDFDocument } from "pdf-lib";
 import type { DatabaseSync } from "node:sqlite";
@@ -13,7 +12,7 @@ import { id, sha256, token as randomToken } from "./util";
 
 // "Scan with phone": an admin on a desktop opens a short-lived scan session and shows its link as a QR code. Their
 // phone opens /scan/<token> (no login: the token is the only credential), photographs the pages and sends them here.
-// The server checks each one is a real JPEG or PNG, stores it under the session's own folder, and on "Send" makes a
+// The server checks each one is a real JPEG (the phone page always sends JPEG), stores it under the session's own folder, and on "Send" makes a
 // multipage PDF with pdf-lib and passes it through the same ingestAgreement path as a normal upload: the result is a
 // DRAFT agreement for the desktop user, never published or sent. The phone can only add, replace or delete this
 // session's pages and finish it; it can read nothing else. Nothing here logs the token or any page content.
@@ -52,7 +51,7 @@ export type ScanRow = {
   result_version_id: string | null;
   error: string | null;
 };
-type PageRow = { session_id: string; idx: number; kind: "jpeg" | "png"; bytes: number; width: number; height: number; path: string };
+type PageRow = { session_id: string; idx: number; kind: "jpeg"; bytes: number; width: number; height: number; path: string };
 
 const ready = new WeakSet<DatabaseSync>();
 function schema() {
@@ -122,15 +121,33 @@ async function dropPages(s: Pick<ScanRow, "id" | "workspace_id">) {
   await removeDir(s.workspace_id, s.id);
 }
 
+/** Sessions whose PDF this process is building right now: never "stuck", whatever their age. */
+const activeBuilds = new Set<string>();
+const SWEEP_EVERY_MS = 5_000;
+let lastSweep = 0;
+/** test hook: how many sweeps actually ran */
+export let _sweepRuns = 0;
+
 /**
- * Housekeeping, run on every create, status check and phone request (no background worker needed): open sessions
- * past their expiry become expired, a build that never finished becomes failed, every closed session's pages are
- * deleted, and closed sessions older than a day are removed.
+ * Housekeeping, run (at most every few seconds, process-wide) from create, status checks and phone requests, so no
+ * background worker is needed: open sessions past their expiry become expired, a build that isn't running any more
+ * (the server restarted mid-way) becomes failed, every closed session's pages are deleted, and closed sessions older
+ * than a day are removed. Expiry itself never waits for a sweep: each request checks its own session's time.
  */
+async function maybeSweep(at: number) {
+  const t = Date.now();
+  if (t - lastSweep < SWEEP_EVERY_MS) return;
+  lastSweep = t;
+  await sweep(at);
+}
+
 export async function sweep(at = Date.now()) {
   schema();
+  _sweepRuns++;
   run(`UPDATE scan_sessions SET status = 'expired' WHERE status IN ('waiting','connected') AND expires_at < ?`, iso(at));
-  run(`UPDATE scan_sessions SET status = 'failed', error = ? WHERE status = 'building' AND building_at < ?`, "Making the PDF didn't finish. Start again.", iso(at - BUILD_STUCK_MS));
+  const stuck = all<{ id: string }>(`SELECT id FROM scan_sessions WHERE status = 'building' AND building_at < ?`, iso(at - BUILD_STUCK_MS));
+  for (const b of stuck)
+    if (!activeBuilds.has(b.id)) run(`UPDATE scan_sessions SET status = 'failed', error = ? WHERE id = ? AND status = 'building'`, "Making the PDF didn't finish. Start again.", b.id);
   const closed = all<Pick<ScanRow, "id" | "workspace_id">>(
     `SELECT DISTINCT s.id, s.workspace_id FROM scan_sessions s JOIN scan_pages p ON p.session_id = s.id WHERE s.status NOT IN ('waiting','connected','building')`,
   );
@@ -149,7 +166,7 @@ export type Owner = { workspaceId: string; userId: string };
 /** Start a scan for this user. Any scan they still had open is cancelled: one at a time. The raw token is returned
  *  once, for the QR code, and only its hash is stored. */
 export async function createScan(o: Owner, at = Date.now()): Promise<{ id: string; token: string; expiresAt: string }> {
-  await sweep(at);
+  await maybeSweep(at);
   const prior = all<ScanRow>(`SELECT * FROM scan_sessions WHERE workspace_id = ? AND user_id = ? AND status IN ('waiting','connected')`, o.workspaceId, o.userId);
   for (const p of prior) {
     const r = run(`UPDATE scan_sessions SET status = 'cancelled' WHERE id = ? AND status IN ('waiting','connected')`, p.id);
@@ -181,9 +198,10 @@ export type DesktopStatus = { status: ScanStatus; pages: number; expiresAt: stri
 
 /** What the desktop dialog shows. null: not this user's session (the route answers 404). */
 export async function scanStatus(o: Owner, sid: string, at = Date.now()): Promise<DesktopStatus | null> {
-  await sweep(at);
-  const s = ownSession(o, sid);
+  await maybeSweep(at);
+  let s = ownSession(o, sid);
   if (!s) return null;
+  if (await expireIfDue(s, at)) s = ownSession(o, sid)!;
   return {
     status: s.status,
     pages: s.page_count,
@@ -205,14 +223,29 @@ export async function cancelScan(o: Owner, sid: string): Promise<DesktopStatus |
 
 // ---- the phone side (the token is the only credential) ----
 
+/** An open session past its time becomes expired now (its pages deleted), without waiting for a sweep. */
+async function expireIfDue(s: ScanRow, at: number): Promise<boolean> {
+  if (!OPEN.includes(s.status) || s.expires_at >= iso(at)) return false;
+  const r = run(`UPDATE scan_sessions SET status = 'expired' WHERE id = ? AND status IN ('waiting','connected')`, s.id);
+  if (Number(r.changes) === 1) await dropPages(s);
+  return true;
+}
+
 /** The open session this token belongs to. Unknown token: 404. Closed or past its time: 410. */
 async function openByToken(tok: string, at = Date.now()): Promise<ScanRow> {
-  await sweep(at);
   if (typeof tok !== "string" || !/^[A-Za-z0-9_-]{20,100}$/.test(tok)) throw new AppError("Not found.", 404);
+  await maybeSweep(at);
+  schema();
   const s = one<ScanRow>("SELECT * FROM scan_sessions WHERE token_hash = ?", tokenHash(tok));
   if (!s) throw new AppError("Not found.", 404);
+  if (await expireIfDue(s, at)) throw new ScanGone("expired");
   if (!OPEN.includes(s.status)) throw new ScanGone(s.status);
   return s;
+}
+
+/** Cheap check that a token belongs to an open session (before a route reads any request body). */
+export async function phoneCheck(tok: string, at = Date.now()): Promise<void> {
+  await openByToken(tok, at);
 }
 
 /** For the phone page: is this link usable, and until when? Reads only. */
@@ -243,100 +276,32 @@ export async function phoneConnect(tok: string, at = Date.now()): Promise<PhoneL
  */
 const exact = (d: Uint8Array) => new Uint8Array(d);
 
-export type Inspected = { kind: "jpeg" | "png"; width: number; height: number };
+export type Inspected = { kind: "jpeg"; width: number; height: number };
 
 /**
- * Is this really a JPEG or PNG we can put in a PDF? Judged by the bytes, never the name or declared type: the magic
- * number, the size limits, a full structural check (pngDims / jpegDims), then pdf-lib must embed it and agree on its
- * size. A PNG's pixel data is inflated with a hard cap at the size its header promises, so a small file that would
- * decode to a huge bitmap is refused without decoding it.
+ * Is this really a JPEG we can put in a PDF? Judged by the bytes, never the name or declared type: the magic number,
+ * the size limits, a full structural check (jpegDims), then pdf-lib must embed it and agree on its size. pdf-lib
+ * embeds a JPEG as is (it never decodes it). Only JPEG is accepted: the phone page always sends JPEG (it redraws every
+ * photo, PNG or HEIC included, and saves it as JPEG), and pdf-lib's PNG decoder isn't safe on hostile input (a
+ * truncated file loops forever; an animated PNG with a large canvas copies the canvas once per frame).
  */
 export async function inspectImage(data: Uint8Array): Promise<Inspected> {
   if (data.byteLength === 0) throw new AppError("That photo is empty.", 422);
   if (data.byteLength > MAX_PAGE_BYTES) throw new AppError(`Each page can be up to ${MAX_PAGE_BYTES / 1024 / 1024} MB.`, 413);
   const b = Buffer.from(exact(data));
   const isJpeg = b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff;
-  const isPng = b.length > 8 && b.subarray(0, 8).equals(PNG_SIG);
-  if (!isJpeg && !isPng) throw new AppError("Only JPEG or PNG photos can be used.", 415);
-  // our own structural check first: pdf-lib's PNG decoder never returns on some malformed files (a truncated one
-  // loops forever), so nothing reaches it that isn't a complete, consistent image of an allowed size
-  const dims = isJpeg ? jpegDims(b) : pngDims(b);
+  if (!isJpeg) throw new AppError("Only JPEG photos can be sent.", 415);
+  const dims = jpegDims(b);
   if (!dims) throw new AppError("That photo couldn't be read.", 422);
   if (!(dims.width <= MAX_SIDE && dims.height <= MAX_SIDE)) throw new AppError(`Photos can be up to ${MAX_SIDE} pixels on each side.`, 422);
   let img: { width: number; height: number };
   try {
-    const doc = await PDFDocument.create();
-    img = isJpeg ? await doc.embedJpg(exact(b)) : await doc.embedPng(exact(b));
+    img = await (await PDFDocument.create()).embedJpg(exact(b));
   } catch {
     throw new AppError("That photo couldn't be read.", 422);
   }
   if (img.width !== dims.width || img.height !== dims.height) throw new AppError("That photo couldn't be read.", 422);
-  return { kind: isJpeg ? "jpeg" : "png", width: img.width, height: img.height };
-}
-
-const PNG_SIG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-const CRC_TABLE = Int32Array.from({ length: 256 }, (_, n) => {
-  let c = n;
-  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-  return c;
-});
-function crc32(b: Buffer) {
-  let c = -1;
-  for (let i = 0; i < b.length; i++) c = CRC_TABLE[(c ^ b[i]) & 255] ^ (c >>> 8);
-  return (c ^ -1) >>> 0;
-}
-// colour type → channels, and the bit depths PNG allows for it
-const PNG_TYPES: Record<number, { ch: number; depths: number[] }> = {
-  0: { ch: 1, depths: [1, 2, 4, 8, 16] },
-  2: { ch: 3, depths: [8, 16] },
-  3: { ch: 1, depths: [1, 2, 4, 8] },
-  4: { ch: 2, depths: [8, 16] },
-  6: { ch: 4, depths: [8, 16] },
-};
-
-/**
- * A complete, non-interlaced PNG: every chunk whole with a correct CRC, IHDR first, IEND last with nothing after,
- * and the image data inflating (with a hard output cap) to exactly the size its header promises, every row with a
- * valid filter byte. Returns its size, or null.
- */
-export function pngDims(b: Buffer): { width: number; height: number } | null {
-  if (!b.subarray(0, 8).equals(PNG_SIG)) return null;
-  let pos = 8;
-  let ihdr: { w: number; h: number; depth: number; type: number } | null = null;
-  let plte = false;
-  let ended = false;
-  const idat: Buffer[] = [];
-  while (pos < b.length) {
-    if (ended || pos + 12 > b.length) return null;
-    const len = b.readUInt32BE(pos);
-    if (len > b.length - pos - 12) return null;
-    const type = b.subarray(pos + 4, pos + 8).toString("latin1");
-    const body = b.subarray(pos + 8, pos + 8 + len);
-    if (crc32(b.subarray(pos + 4, pos + 8 + len)) !== b.readUInt32BE(pos + 8 + len)) return null;
-    if (!ihdr && type !== "IHDR") return null;
-    if (type === "IHDR") {
-      if (ihdr || len !== 13) return null;
-      const [depth, ctype, comp, filter, interlace] = [body[8], body[9], body[10], body[11], body[12]];
-      if (!PNG_TYPES[ctype]?.depths.includes(depth) || comp !== 0 || filter !== 0 || interlace !== 0) return null;
-      ihdr = { w: body.readUInt32BE(0), h: body.readUInt32BE(4), depth, type: ctype };
-      if (!(ihdr.w > 0 && ihdr.h > 0 && ihdr.w <= MAX_SIDE && ihdr.h <= MAX_SIDE)) return { width: ihdr.w || Infinity, height: ihdr.h || Infinity };
-    } else if (type === "PLTE") plte = true;
-    else if (type === "IDAT") idat.push(body);
-    else if (type === "IEND") ended = true;
-    pos += 12 + len;
-  }
-  if (!ihdr || !ended || !idat.length || (ihdr.type === 3 && !plte)) return null;
-  const stride = Math.ceil((ihdr.w * PNG_TYPES[ihdr.type].ch * ihdr.depth) / 8) + 1;
-  const want = stride * ihdr.h;
-  let raw: Buffer;
-  try {
-    raw = zlib.inflateSync(Buffer.concat(idat), { maxOutputLength: want + 1 });
-  } catch {
-    return null;
-  }
-  if (raw.length !== want) return null;
-  for (let r = 0; r < ihdr.h; r++) if (raw[r * stride] > 4) return null;
-  return { width: ihdr.w, height: ihdr.h };
+  return { kind: "jpeg", width: img.width, height: img.height };
 }
 
 /**
@@ -381,7 +346,7 @@ export async function phonePutPage(tok: string, idx: number, data: Uint8Array, a
   if (!Number.isInteger(idx) || idx < 0 || idx >= MAX_PAGES) throw new AppError(`Up to ${MAX_PAGES} pages.`, 422);
   const info = await inspectImage(data);
   // a fresh file name for every upload, so a replacement never overwrites a file a finishing build is reading
-  const rel = `${pageDir(s.workspace_id, s.id)}/p${idx}-${randomToken(6)}.${info.kind === "jpeg" ? "jpg" : "png"}`;
+  const rel = `${pageDir(s.workspace_id, s.id)}/p${idx}-${randomToken(6)}.jpg`;
   await putBlob(rel, data);
   let replaced: string | undefined;
   try {
@@ -436,11 +401,11 @@ export async function phoneDeletePage(tok: string, idx: number, at = Date.now())
   return { pages };
 }
 
-/** One PDF page per image, in order, each page with its image's proportions (long edge PAGE_LONG_EDGE_PT). */
-export async function buildScanPdf(images: { kind: "jpeg" | "png"; data: Uint8Array }[]): Promise<Buffer> {
+/** One PDF page per JPEG (checked with inspectImage first), in order, each page with its image's proportions (long edge PAGE_LONG_EDGE_PT). */
+export async function buildScanPdf(images: Uint8Array[]): Promise<Buffer> {
   const doc = await PDFDocument.create();
-  for (const im of images) {
-    const img = im.kind === "jpeg" ? await doc.embedJpg(exact(im.data)) : await doc.embedPng(exact(im.data));
+  for (const data of images) {
+    const img = await doc.embedJpg(exact(data));
     const scale = PAGE_LONG_EDGE_PT / Math.max(img.width, img.height);
     const w = Math.round(img.width * scale * 100) / 100;
     const h = Math.round(img.height * scale * 100) / 100;
@@ -451,6 +416,7 @@ export async function buildScanPdf(images: { kind: "jpeg" | "png"; data: Uint8Ar
 }
 
 let building = 0;
+export const PHONE_BUILD_FAILED = "Couldn't make the PDF. Start again on your computer.";
 
 /**
  * "Send to computer": pages 0..count-1 (exactly those, all present) become a PDF, which goes through the normal
@@ -473,6 +439,7 @@ export async function phoneFinalize(tok: string, count: number, at = Date.now())
     throw new ScanGone(cur && cur.status !== "waiting" && cur.status !== "connected" ? cur.status : "expired");
   }
   building++;
+  activeBuilds.add(s0.id);
   try {
     // pages as they were at the moment of claiming (nothing can change them after it)
     const pages = all<PageRow>("SELECT * FROM scan_pages WHERE session_id = ? AND idx < ? ORDER BY idx", s0.id, count);
@@ -483,21 +450,25 @@ export async function phoneFinalize(tok: string, count: number, at = Date.now())
     const images = [];
     for (const p of pages) {
       const data = await getBlob(p.path);
-      const info = await inspectImage(data); // stored by us, but checked again: what goes in the PDF is what we validated
-      images.push({ kind: info.kind, data });
+      await inspectImage(data); // stored by us, but checked again: what goes in the PDF is what we validated
+      images.push(data);
     }
     const pdf = await buildScanPdf(images);
     if (pdf.length > MAX_UPLOAD) throw new AppError("These pages make a PDF over 20 MB. Send fewer pages.", 413);
     const { version } = await ingestAgreement(getWorkspace(s0.workspace_id), { data: pdf, filename: "Scanned agreement.pdf" }, { actor: who.email });
-    run(`UPDATE scan_sessions SET status = 'done', result_version_id = ?, page_count = ? WHERE id = ?`, version.id, count, s0.id);
+    // only a build still marked as building can finish (never one already closed as failed)
+    const done = run(`UPDATE scan_sessions SET status = 'done', result_version_id = ?, page_count = ? WHERE id = ? AND status = 'building'`, version.id, count, s0.id);
+    if (Number(done.changes) !== 1) throw new AppError("This scan was closed while the PDF was being made.", 409);
     return { status: "done" };
   } catch (e) {
-    // only our own fixed messages reach the desktop; anything unexpected becomes a generic one
+    // the desktop gets our own fixed message (anything unexpected becomes a generic one); the phone only ever a
+    // generic one, so it learns nothing about the workspace, its limits or the agreement
     const msg = e instanceof AppError ? e.message.slice(0, 300) : "Making the PDF failed. Start again.";
-    run(`UPDATE scan_sessions SET status = 'failed', error = ? WHERE id = ?`, msg, s0.id);
-    throw e instanceof AppError ? e : new AppError("Making the PDF failed. Start again.", 500);
+    run(`UPDATE scan_sessions SET status = 'failed', error = ? WHERE id = ? AND status = 'building'`, msg, s0.id);
+    throw new AppError(PHONE_BUILD_FAILED, e instanceof AppError && e.status < 500 ? 422 : 500);
   } finally {
     building--;
+    activeBuilds.delete(s0.id);
     await dropPages(s0);
   }
 }
