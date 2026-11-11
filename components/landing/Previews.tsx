@@ -14,7 +14,7 @@ export function Preview({ describe, caption = PREVIEW_LABEL, children, className
     <figure className={cx("relative min-w-0", className)}>
       {glow && <div aria-hidden className="lp-glow pointer-events-none absolute -inset-6 -z-10 rounded-[2.5rem] opacity-80 blur-2xl" />}
       <div aria-hidden className="relative">{children}</div>
-      <figcaption className={cx("mt-3 flex items-center justify-center gap-1.5 text-xs", dark ? "text-slate-300" : "text-muted")}>
+      <figcaption className={cx("mx-auto mt-4 flex w-fit items-center justify-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium", dark ? "border-white/15 bg-white/5 text-slate-200" : "border-line bg-white/90 text-ink-2 shadow-1")}>
         <Icon name="info" size={13} />
         {caption}
         <span className="sr-only">: {describe}</span>

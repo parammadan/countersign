@@ -51,6 +51,13 @@ describe("landing page", () => {
       expect(h).toContain("One connected workflow: Create · Understand · Approve · Sign");
     });
 
+    it("hero: Create workspace and Explore features side by side", async () => {
+      const h = await render();
+      const hero = h.match(/<section aria-labelledby="hero-heading"[\s\S]*?<\/section>/)![0];
+      expect(links(hero, NAV.create)).toEqual(["/signup"]);
+      expect(links(hero, NAV.explore)).toEqual(["#features"]);
+      expect(text(hero)).not.toContain("See how it works");
+    });
     it("Create workspace goes to /signup and Sign in to /login; no Open app", async () => {
       const h = await render();
       expect(links(h, "Create workspace").length).toBeGreaterThanOrEqual(4);
@@ -180,6 +187,13 @@ describe("landing page", () => {
       expect(h).not.toContain("Ignore previous instructions");
     });
 
+    it("tells Document Intelligence (one document) apart from Knowledge Hub (all agreements)", async () => {
+      const t = text(await render());
+      expect(DOC_INTEL.title).toMatch(/^One document/);
+      expect(DOC_INTEL.text).toMatch(/single PDF or Word document/);
+      expect(t).toContain("All your agreements: ask across them");
+      expect(t).toContain("across every agreement indexed in your workspace");
+    });
     it("Sign on your phone: the live QR handoff is described, with its preview", async () => {
       const h = await render();
       const t = text(h);
