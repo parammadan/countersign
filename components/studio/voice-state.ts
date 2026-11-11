@@ -110,6 +110,11 @@ export function mergeTranscript(existing: string, addition: string, max: number)
 }
 
 export const VOICE_MAX_MS = 60_000;
+/** how long to wait for the browser to end the session after Stop (some older WebKit builds never do) */
+export const VOICE_STOP_GRACE_MS = 4_000;
+
+/** Whether a session is under way (the box may still change), so the panel can hold off sending it. */
+export const voiceBusy = (s: VoiceStatus) => s === "requesting" || s === "listening" || s === "processing";
 
 export type VoiceSessionOptions = {
   lang: string;
@@ -117,6 +122,7 @@ export type VoiceSessionOptions = {
   /** adds the final text to the box; returns whether some of it was cut to fit */
   append: (text: string) => boolean;
   maxMs?: number;
+  stopGraceMs?: number;
   now?: () => number;
 };
 export type VoiceSession = { stop(): void; abort(): void };
@@ -137,14 +143,22 @@ export function startVoiceSession(Ctor: RecognitionCtor, o: VoiceSessionOptions)
   let live = false;
   let over = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let watchdog: ReturnType<typeof setTimeout> | undefined;
+  const clearTimers = () => {
+    if (timer !== undefined) clearTimeout(timer);
+    if (watchdog !== undefined) clearTimeout(watchdog);
+  };
+  const detach = () => {
+    rec.onstart = rec.onaudiostart = rec.onresult = rec.onspeechend = rec.onerror = rec.onend = null;
+  };
 
   const finish = () => {
     if (over) return;
     over = true;
-    if (timer !== undefined) clearTimeout(timer);
+    clearTimers();
     if (err) return o.dispatch({ type: "error", code: err });
     // a stopped session keeps what was heard even if the browser didn't finalise it
-    const text = final || (stopRequested ? interim : "");
+    const text = stopRequested ? [final, interim].filter(Boolean).join(" ") : final;
     // cancelled before the microphone opened: back to the start, nothing to report
     if (!text.trim()) return o.dispatch(stopRequested && !live ? { type: "reset" } : { type: "error", code: "no-speech" });
     const truncated = o.append(text);
@@ -154,6 +168,17 @@ export function startVoiceSession(Ctor: RecognitionCtor, o: VoiceSessionOptions)
     if (over || stopRequested) return;
     stopRequested = true;
     o.dispatch({ type: "processing" });
+    // if the browser never ends the session, end it here and keep what was heard (as a normal stop does)
+    watchdog = setTimeout(() => {
+      if (over) return;
+      detach();
+      try {
+        rec.abort();
+      } catch {
+        /* already ended */
+      }
+      finish();
+    }, o.stopGraceMs ?? VOICE_STOP_GRACE_MS);
     try {
       rec.stop();
     } catch {
@@ -206,8 +231,8 @@ export function startVoiceSession(Ctor: RecognitionCtor, o: VoiceSessionOptions)
     abort() {
       if (over) return;
       over = true;
-      if (timer !== undefined) clearTimeout(timer);
-      rec.onstart = rec.onaudiostart = rec.onresult = rec.onspeechend = rec.onerror = rec.onend = null;
+      clearTimers();
+      detach();
       try {
         rec.abort();
       } catch {
