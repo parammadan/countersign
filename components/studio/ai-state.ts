@@ -51,7 +51,7 @@ export const VOICE_COPY = {
   truncated: "Some of what you said didn't fit: the box holds up to 4,000 characters, so the rest was left out.",
   autoStopped: "Stopped after 60 seconds.",
   unsupported: "Voice input isn't supported in this browser — type instead.",
-  privacy: "Your browser's speech service turns speech into text; AgreementOS receives only the text you send.",
+  privacy: "Your browser may send your voice to its maker's speech service (for example Google, in Chrome) to turn it into text. AgreementOS never receives audio, only the text you choose to send.",
   heard: "Heard so far",
   errors: {
     "not-allowed": "Microphone access was blocked. Allow it in your browser's site settings, or type instead.",

@@ -13,7 +13,7 @@ import { NewAgreement } from "@/components/studio/NewAgreement";
 import { VoicePanel } from "@/components/studio/VoiceInput";
 import { AI_COPY, VOICE_COPY } from "@/components/studio/ai-state";
 import {
-  VOICE_IDLE, clock, mergeTranscript, readResults, recognitionCtor, startVoiceSession, voiceError, voiceReducer,
+  VOICE_IDLE, VOICE_STOP_GRACE_MS, clock, mergeTranscript, readResults, recognitionCtor, startVoiceSession, voiceBusy, voiceError, voiceReducer,
   type RecognitionLike, type RecognitionResultList, type VoiceAction, type VoiceState,
 } from "@/components/studio/voice-state";
 import type { KindSpec, StudioAi } from "@/lib/drafts/service";
@@ -236,6 +236,43 @@ describe("startVoiceSession: shows interim text live, adds final text once at th
     expect(t.box()).toBe("mine");
     expect(t.states.length).toBe(before);
   });
+  it("a browser that never ends the session after Stop: ended after the grace period, keeping what was heard", () => {
+    vi.useFakeTimers();
+    class NoEnd extends Fake { stop() { this.stopped++; } abort() { this.aborted++; } }
+    let box = "Typed.";
+    let st = VOICE_IDLE;
+    const s = startVoiceSession(NoEnd, { lang: "en-US", dispatch: (a) => { st = voiceReducer(st, a); }, append: (t) => { const r = mergeTranscript(box, t, 4000); box = r.text; return r.truncated; } });
+    const rec = Fake.last!;
+    rec.onstart?.({});
+    rec.onresult?.({ results: res(["Acme Inc", true], ["and Northwind", false]) });
+    s.stop();
+    expect(st.status).toBe("processing");
+    vi.advanceTimersByTime(VOICE_STOP_GRACE_MS - 1);
+    expect(st.status).toBe("processing");
+    expect(rec.aborted).toBe(0);
+    vi.advanceTimersByTime(1);
+    expect(rec.aborted).toBe(1);
+    expect(rec.onend).toBeNull(); // a late end event can't add it twice
+    expect(st).toMatchObject({ status: "done" });
+    expect(box).toBe("Typed. Acme Inc and Northwind");
+    vi.advanceTimersByTime(120_000); // the 60-second timer was cleared too
+    expect(box).toBe("Typed. Acme Inc and Northwind");
+  });
+  it("the grace timer is cleared when the browser does end the session", () => {
+    vi.useFakeTimers();
+    const t = session();
+    t.rec.onstart?.({});
+    t.rec.onresult?.({ results: res(["fine", true]) });
+    t.s.stop();
+    expect(t.state().status).toBe("done");
+    vi.advanceTimersByTime(VOICE_STOP_GRACE_MS * 2);
+    expect(t.rec.aborted).toBe(0);
+    expect(t.box()).toBe("fine");
+  });
+  it("busy while requesting, listening or processing (the panel holds off sending the box)", () => {
+    expect((["requesting", "listening", "processing"] as const).every(voiceBusy)).toBe(true);
+    expect((["idle", "done", "error"] as const).some(voiceBusy)).toBe(false);
+  });
   it("a recognition that throws on start is an error, not a crash", () => {
     class Throws extends Fake { start(): void { throw new Error("InvalidStateError"); } }
     let st = VOICE_IDLE;
@@ -251,7 +288,7 @@ describe("copy", () => {
     expect(VOICE_COPY.done).toBe("Added to the box above — check it, then press Fill details with AI");
     expect(VOICE_COPY.done).toContain(AI_COPY.button);
     expect(VOICE_COPY.errors["not-allowed"]).toBe("Microphone access was blocked. Allow it in your browser's site settings, or type instead.");
-    expect(VOICE_COPY.privacy).toBe("Your browser's speech service turns speech into text; AgreementOS receives only the text you send.");
+    expect(VOICE_COPY.privacy).toBe("Your browser may send your voice to its maker's speech service (for example Google, in Chrome) to turn it into text. AgreementOS never receives audio, only the text you choose to send.");
     expect(VOICE_COPY.unsupported).toBe("Voice input isn't supported in this browser — type instead.");
     expect(VOICE_COPY.truncated).toMatch(/4,000 characters/);
     for (const t of Object.values(VOICE_COPY.errors)) expect(t).toMatch(/type instead\.$/);

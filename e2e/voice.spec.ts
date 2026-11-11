@@ -91,7 +91,7 @@ test("speech is added to the box for review; nothing is submitted", async ({ pag
   await page.goto("/app/studio");
   await expect(page.getByRole("button", { name: "Fill details with AI", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Try an example" })).toBeVisible(); // the rest of the panel stays
-  await expect(page.getByText("Your browser's speech service turns speech into text; AgreementOS receives only the text you send.")).toBeVisible();
+  await expect(page.getByText("Your browser may send your voice to its maker's speech service (for example Google, in Chrome) to turn it into text. AgreementOS never receives audio, only the text you choose to send.")).toBeVisible();
 
   await box(page).fill("Between Acme Widgets Inc and Northwind Advisory LLC.");
   const mic = page.getByRole("button", { name: "Speak instead" });
@@ -100,6 +100,11 @@ test("speech is added to the box for review; nothing is submitted", async ({ pag
   await expect(status(page)).toContainText("Listening");
   const stop = page.getByRole("button", { name: "Stop" });
   await expect(stop).toHaveAttribute("aria-pressed", "true");
+  // the box may still change while listening, so it can't be sent to Claude (or replaced by the example) meanwhile
+  const fill = page.getByRole("button", { name: "Fill details with AI", exact: true });
+  const example = page.getByRole("button", { name: "Try an example" });
+  await expect(fill).toBeDisabled();
+  await expect(example).toBeDisabled();
   expect(await page.evaluate(() => window.__voice.lang)).toBeTruthy();
 
   // interim words show live, but don't go into the box yet
@@ -112,6 +117,8 @@ test("speech is added to the box for review; nothing is submitted", async ({ pag
   await page.evaluate(() => window.__voice.last!.speechEnd());
   await expect(status(page)).toContainText("Added to the box above — check it, then press Fill details with AI");
   await expect(box(page)).toHaveValue("Between Acme Widgets Inc and Northwind Advisory LLC. A consulting agreement for $12,000 under Delaware law");
+  await expect(fill).toBeEnabled();
+  await expect(example).toBeEnabled();
 
   // the person can still edit it; nothing was suggested or sent
   await box(page).press("End");
