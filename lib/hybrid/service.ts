@@ -90,10 +90,12 @@ export async function runHybrid(s: Session, draftId: string, description: string
     let doc = g.version.doc as DraftDocument;
     let expected = g.version.number;
     let coverage = cleanCoverage(await call(COVERAGE_SYSTEM, { requirements, clauses: asClauses(doc) }, COVERAGE_SCHEMA), requirements, asClauses(doc));
-    const wanted = requirements.filter((r) => coverage.find((c) => c.id === r.id)!.status !== "included");
+    // only what the draft doesn't state, or states in part; a requirement it states differently ("changed") goes to
+    // a person to clarify, never to a second, conflicting clause
+    const wanted = requirements.filter((r) => ["not_included", "partial"].includes(coverage.find((c) => c.id === r.id)!.status));
     let proposed = 0;
     if (wanted.length) {
-      const proposals = cleanProposals(await call(PROPOSE_SYSTEM, { agreement: doc.title, parties: doc.parties, existingClauses: doc.clauses.map((c) => c.heading ?? ""), requirements: wanted }, PROPOSE_SCHEMA), wanted);
+      const proposals = cleanProposals(await call(PROPOSE_SYSTEM, { agreement: doc.title, parties: doc.parties, existingClauses: asClauses(doc).map(({ number, heading, text }) => ({ number, heading, text })), requirements: wanted }, PROPOSE_SCHEMA), wanted);
       ensure();
       for (const pr of proposals) {
         // before the locked signature clause, after everything else
