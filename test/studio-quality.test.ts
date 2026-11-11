@@ -94,3 +94,22 @@ describe("party names at the end of a sentence", () => {
     expect(parties("Work for Bluefin Foods Holdings Group on the app.", [["Client", "Bluefin Foods"]])).toEqual([]);
   });
 });
+
+describe("party names in common description formats", () => {
+  const P: [string, string][] = [["Provider", "Harborline Analytics LLC"], ["Client", "Evergreen Design LLC"]];
+  const kept = (desc: string, list = P) =>
+    cleanSuggestion({ kind: "services", parties: list.map(([role, name]) => ({ role, name })), terms: [], clarifications: [] }, desc).parties.map((p) => p.role);
+  it("keeps both names written one per line, labelled, in any case", () => {
+    expect(kept("Provider: Harborline Analytics LLC\nClient: Evergreen Design LLC\nFee $5,000")).toEqual(["Provider", "Client"]);
+    expect(kept("PROVIDER: Harborline Analytics LLC\nCLIENT: Evergreen Design LLC")).toEqual(["Provider", "Client"]);
+    expect(kept("- **Service provider:** Harborline Analytics LLC\n- **Client:** Evergreen Design LLC")).toEqual(["Provider", "Client"]);
+  });
+  it("keeps a name after a sentence-opening word or a party label", () => {
+    expect(kept("Between Harborline Analytics LLC (Provider) and Evergreen Design LLC (Client).")).toEqual(["Provider", "Client"]);
+    expect(kept("Provider Harborline Analytics LLC will work for Client Evergreen Design LLC.")).toEqual(["Provider", "Client"]);
+  });
+  it("still drops a name that is only part of a longer capitalised name", () => {
+    expect(kept("Work for Evergreen Design LLC Holdings on the dashboards.", [["Client", "Evergreen Design LLC"]])).toEqual([]);
+    expect(kept("Northern Harborline Analytics LLC will provide the services.", [["Provider", "Harborline Analytics LLC"]])).toEqual([]);
+  });
+});
