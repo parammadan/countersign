@@ -145,8 +145,6 @@ export type Prefill = {
   terms: Partial<Record<TermKey, string>>;
   /** Fields left empty on purpose (conflicting values, or no matching form field), for the page to say so. */
   notes: string[];
-  /** Fields left empty on purpose because the document gives conflicting values ("role:<Role>", "term:<key>"). */
-  held?: string[];
   /** Values only Claude's analysis read (each supported by its own quote), shown marked for the person to check. */
   ai?: { names: Record<string, string>; terms: Partial<Record<TermKey, string>>; sources: DraftSource[] };
   /** Studio's structured clarifications from the analysis: needed / optional / what the template can't include. */
@@ -174,10 +172,15 @@ function templateRoleOf(kind: Kind, word: string): string | null {
  * value before anything is generated. `kindOverride`: the template to fill (from the AI analysis), else the rules' type.
  */
 export function draftPrefill(record: IntakeRecord, kindOverride?: Kind): Prefill {
+  return rulesPrefill(record, kindOverride).prefill;
+}
+
+/** draftPrefill, plus the fields left empty on purpose because the document conflicts ("role:<Role>", "term:<key>"). */
+function rulesPrefill(record: IntakeRecord, kindOverride?: Kind): { prefill: Prefill; held: string[] } {
   const notes: string[] = [];
   const held: string[] = [];
   const kind = kindOverride ?? KIND_OF[record.documentType.type] ?? null;
-  if (!kind) return { kind: null, names: {}, terms: {}, notes: ["The document type has no Agreement Studio template, so choose one; no values were copied."] };
+  if (!kind) return { prefill: { kind: null, names: {}, terms: {}, notes: ["The document type has no Agreement Studio template, so choose one; no values were copied."] }, held };
   const accepts = new Set(kindSpecs().find((k) => k.kind === kind)?.terms.map((t) => t.key) ?? []);
   const conflicted = new Set(record.conflicts.map((c) => c.field));
   const names: Record<string, string> = {};
@@ -231,7 +234,7 @@ export function draftPrefill(record: IntakeRecord, kindOverride?: Kind): Prefill
     const deposit = amountOf("security_deposit", "deposit");
     if (deposit) terms.deposit = deposit;
   }
-  return { kind, names, terms, notes, held };
+  return { prefill: { kind, names, terms, notes }, held };
 }
 
 /** Whether two readings of a form value are the same: the same figures when either has one, else the same words (one inside the other). */
@@ -257,10 +260,10 @@ export function mergeAiPrefill(record: IntakeRecord, draft: DocDraft | null): Pr
   const rulesKind = KIND_OF[record.documentType.type] ?? null;
   const kind = sg.kind ?? rulesKind;
   if (!kind) return { ...draftPrefill(record), clarifications: sg.clarifications };
-  const base = draftPrefill(record, kind);
+  const { prefill: base, held: heldList } = rulesPrefill(record, kind);
   const notes = [...base.notes];
   if (sg.kind && rulesKind && sg.kind !== rulesKind) notes.push(`The rules read this as a ${TEMPLATES[rulesKind].title} and Claude as a ${TEMPLATES[sg.kind].title}. Check the type of agreement.`);
-  const held = new Set(base.held ?? []);
+  const held = new Set(heldList);
   const names = { ...base.names };
   const terms: Partial<Record<TermKey, string>> = { ...base.terms };
   const ai: NonNullable<Prefill["ai"]> = { names: {}, terms: {}, sources: draft.sources };
@@ -291,7 +294,7 @@ export function mergeAiPrefill(record: IntakeRecord, draft: DocDraft | null): Pr
     terms[key] = value;
     ai.terms[key] = value;
   }
-  return { kind, names, terms, notes, held: [...held], ai, clarifications: sg.clarifications };
+  return { kind, names, terms, notes, ai, clarifications: sg.clarifications };
 }
 
 /** The latest AI analysis of a read document in this workspace (null when there is none). */

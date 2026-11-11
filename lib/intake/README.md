@@ -33,6 +33,13 @@ intakeDocument(input, { provider?: ModelProvider }): Promise<IntakeRecord>      
 (`lib/intake/store.ts`, tables created at first use) and records an `intake.completed` workflow event. The optional
 model step is not wired in the app: intake is rules only.
 
+With AI (Document Intelligence, `lib/intake/ai.ts` + `ai-service.ts`), Claude reads ONE read document afterwards: the
+text the rules read with every quarantined line blanked (`pagesForModel`; a document whose scan didn't finish is never
+sent), through `aiGate` + `metered` (verified email, the shared daily limits, cost booked). Every finding, summary
+sentence and Studio field must be supported by a verbatim quote (`groundFindings`, `unsupportedFacts`,
+`cleanSuggestion`), or it is dropped or shown as not confirmed. The rules' record is never changed by it, and where the
+two readings differ the page says so. Questions use M2.2's answer, checks and verifier (`lib/qa/store answerPages`).
+
 ## Limits (best effort, by design)
 
 - Injection quarantine is pattern based on a normalised copy (NFKC; zero-width, bidi, tag and other format
