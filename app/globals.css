@@ -143,7 +143,8 @@ body {
 }
 .lp-dark :where(a, button):focus-visible { outline-color: #fff; }
 
-@keyframes lp-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+/* movement only, no fade: text stays at full contrast from the first frame */
+@keyframes lp-rise { from { transform: translateY(16px); } to { transform: none; } }
 @keyframes lp-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
 @keyframes lp-pulse { 0%, 100% { opacity: 0.45; transform: scale(1); } 50% { opacity: 1; transform: scale(1.12); } }
 @keyframes lp-caret { 50% { opacity: 0; } }

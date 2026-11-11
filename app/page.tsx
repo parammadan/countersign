@@ -7,7 +7,6 @@ import { Icon } from "@/components/icons";
 import { BRAND } from "@/lib/brand";
 import { CLAUSES, CTA, DOC_INTEL, FEATURES_INTRO, FOOTER, HERO, HOW, KNOWLEDGE, NAV, SIGN, STEPS, STUDIO, type Feature } from "@/components/landing/copy";
 import {
-  AskPreview,
   ClausePreview,
   DocumentPreview,
   HeroStudioPreview,
@@ -23,7 +22,7 @@ export const metadata: Metadata = {
   description: HERO.subtitle,
 };
 
-const navLink = "rounded-md px-3 py-2 text-[14px] text-ink-2 transition-colors hover:text-ink";
+const navLink = "rounded-md px-2.5 py-2 text-[14px] whitespace-nowrap sm:px-3 text-ink-2 transition-colors hover:text-ink";
 const wrap = "mx-auto w-full max-w-6xl px-4 sm:px-6";
 
 function Eyebrow({ children, icon, dark }: { children: ReactNode; icon?: Feature["icon"]; dark?: boolean }) {
@@ -129,9 +128,9 @@ export default async function Home() {
             <div aria-hidden className="lp-glow pointer-events-none absolute inset-x-0 -top-10 -bottom-10 -z-10 blur-3xl" />
             <HeroStudioPreview />
           </div>
-          <div className={cx(wrap, "pt-6 pb-16 sm:pb-20")}>
-            <p className="mx-auto flex max-w-fit flex-wrap items-center justify-center gap-x-2.5 gap-y-2 rounded-full border border-line bg-white/80 px-5 py-2.5 text-sm text-muted shadow-1">
-              <span className="font-medium text-ink">{HERO.workflowLabel}</span>
+          <div className={cx(wrap, "pt-6 pb-14 sm:pb-16")}>
+            <p className="mx-auto flex max-w-fit flex-wrap items-center justify-center gap-x-2.5 gap-y-1 rounded-2xl border border-line bg-white/80 px-5 py-2.5 text-sm text-muted shadow-1 sm:rounded-full">
+              <span className="basis-full text-center font-medium text-ink sm:basis-auto">{HERO.workflowLabel}</span>
               {HERO.workflow.map((w, i) => (
                 <span key={w} className="inline-flex items-center gap-2.5">
                   {i > 0 && <span aria-hidden className="text-faint">·</span>}
@@ -144,7 +143,7 @@ export default async function Home() {
 
         {/* ---------- features ---------- */}
         <section id="features" aria-labelledby="features-heading" className="scroll-mt-16 border-t border-line bg-white">
-          <div className={cx(wrap, "pt-20 pb-6 text-center sm:pt-28")}>
+          <div className={cx(wrap, "pt-20 pb-4 text-center sm:pt-24")}>
             <Eyebrow>{FEATURES_INTRO.eyebrow}</Eyebrow>
             <h2 id="features-heading" className="mx-auto mt-4 max-w-3xl text-[2rem] leading-[1.1] font-semibold tracking-[-0.03em] text-balance text-ink sm:text-5xl">{FEATURES_INTRO.title}</h2>
             <p className="mx-auto mt-5 max-w-2xl text-[17px] leading-relaxed text-ink-2">{FEATURES_INTRO.text}</p>
@@ -153,11 +152,11 @@ export default async function Home() {
           {/* Agreement Studio: text left, the draft under review right */}
           <section id={STUDIO.id} aria-labelledby={`${STUDIO.id}-heading`} className={cx(wrap, "grid scroll-mt-16 items-center gap-12 py-16 sm:py-24 lg:grid-cols-[0.95fr_1.05fr] lg:gap-16")}>
             <FeatureText f={STUDIO}>
-              <ol aria-label="Agreement Studio steps" className="mt-8 flex flex-wrap items-center gap-2 text-[13px] font-medium text-ink-2">
+              <ol aria-label="Agreement Studio steps" className="mt-8 flex flex-wrap gap-2 text-[13px] font-medium text-ink-2">
                 {["Describe", "Claude extracts terms", "You review", "Second admin approves", "PDF or DOCX"].map((t, i) => (
-                  <li key={t} className="inline-flex items-center gap-2">
-                    {i > 0 && <Icon name="chevronRight" size={14} className="text-faint" />}
-                    <span className="rounded-full border border-line bg-subtle px-3 py-1">{t}</span>
+                  <li key={t} className="inline-flex items-center gap-2 rounded-full border border-line bg-subtle py-1 pr-3 pl-1">
+                    <span className="grid h-5 w-5 place-items-center rounded-full bg-white text-[11px] font-semibold text-brand ring-1 ring-line">{i + 1}</span>
+                    {t}
                   </li>
                 ))}
               </ol>
@@ -183,12 +182,9 @@ export default async function Home() {
 
           {/* Knowledge Hub + Ask: a two-up bento under a centred heading */}
           <section id={KNOWLEDGE.id} aria-labelledby={`${KNOWLEDGE.id}-heading`} className={cx(wrap, "scroll-mt-16 py-20 sm:py-28")}>
-            <div className="grid gap-12 lg:grid-cols-[1.25fr_1fr] lg:gap-14">
+            <div className="grid items-center gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+              <FeatureText f={KNOWLEDGE} />
               <KnowledgePreview />
-              <div className="flex min-w-0 flex-col gap-10">
-                <FeatureText f={KNOWLEDGE} />
-                <AskPreview />
-              </div>
             </div>
           </section>
         </section>
@@ -264,7 +260,7 @@ export default async function Home() {
         </section>
 
         {/* ---------- final call to action ---------- */}
-        <section aria-labelledby="cta-heading" className={cx(wrap, "py-20 sm:py-28")}>
+        <section aria-labelledby="cta-heading" className={cx(wrap, "py-16 sm:py-24")}>
           <div className="lp-dark relative isolate overflow-hidden rounded-[2rem] bg-ink px-6 py-16 text-center sm:px-12 sm:py-20">
             <div aria-hidden className="lp-grid-dark absolute inset-0 -z-10" />
             <div aria-hidden className="absolute -bottom-40 left-1/2 -z-10 h-80 w-[44rem] -translate-x-1/2 rounded-full bg-brand/45 blur-[100px]" />

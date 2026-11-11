@@ -105,6 +105,7 @@ export function HeroStudioPreview() {
                 </div>
                 <p className="mt-3 text-xs leading-relaxed text-muted">{AI_COPY.hint}</p>
               </div>
+              <p className="mt-4 hidden text-xs leading-relaxed text-muted md:block">{AI_COPY.footnote}</p>
             </div>
             <div className="p-4 sm:p-5">
               <div className="flex items-center justify-between gap-2">
@@ -117,8 +118,7 @@ export function HeroStudioPreview() {
                 <MockField label="Client (legal name)" value={SAMPLE.client} />
                 <MockField label="Fee" value="$12,000" />
                 <MockField label="How the fee is charged" value="a one-time fixed fee" className="hidden sm:block" />
-                <MockField label="Governing law" value="Delaware" />
-                <MockField label="Notice period (days)" value="" suggested={false} className="hidden sm:block" />
+                <MockField label="Governing law" value="Delaware" className="sm:col-span-2" />
               </div>
               <div className="mt-4 flex items-center gap-2 border-t border-line pt-3 text-xs text-muted">
                 <Icon name="shield" size={14} className="shrink-0 text-brand" />
@@ -127,11 +127,11 @@ export function HeroStudioPreview() {
             </div>
           </div>
         </Window>
-        <div className="lp-float absolute top-16 -left-10 hidden items-center gap-2 rounded-xl border border-line bg-white/95 px-3 py-2 text-xs font-medium text-ink shadow-3 backdrop-blur xl:flex">
+        <div className="lp-float absolute bottom-16 -left-10 hidden items-center gap-2 rounded-xl border border-line bg-white/95 px-3 py-2 text-xs font-medium text-ink shadow-3 backdrop-blur xl:flex">
           <span className="grid h-6 w-6 place-items-center rounded-full bg-ok-bg text-ok"><Icon name="checkCircle" size={14} /></span>
           Fills a reviewed template
         </div>
-        <div className="lp-float lp-float-late absolute -right-8 bottom-14 hidden items-center gap-2 rounded-xl border border-line bg-white/95 px-3 py-2 text-xs font-medium text-ink shadow-3 backdrop-blur xl:flex">
+        <div className="lp-float lp-float-late absolute -top-5 right-10 hidden items-center gap-2 rounded-xl border border-line bg-white/95 px-3 py-2 text-xs font-medium text-ink shadow-3 backdrop-blur xl:flex">
           <span className="grid h-6 w-6 place-items-center rounded-full bg-brand-soft text-brand"><Icon name="shield" size={14} /></span>
           Second-admin approval
         </div>
@@ -149,7 +149,7 @@ export function StudioDraftPreview() {
   return (
     <Preview describe="a generated consulting agreement draft with the filled-in values highlighted, an approval panel waiting for a second admin, and PDF and DOCX export buttons.">
       <Window title="Agreement Studio · Draft v1">
-        <div className="grid sm:grid-cols-[1.35fr_1fr]">
+        <div className="grid sm:grid-cols-[1.75fr_1fr]">
           <div className="bg-bg p-4 sm:p-5">
             <div className="rounded-lg border border-line bg-white px-4 py-5 font-serif text-[12.5px] leading-relaxed text-ink-2 shadow-1 sm:px-5">
               <div className="text-center text-[13px] font-semibold tracking-[0.12em] text-ink">CONSULTING AGREEMENT</div>
@@ -250,69 +250,65 @@ export function DocumentPreview() {
 }
 
 function Cite({ n }: { n: number }) {
-  return <sup className="ml-0.5 inline-grid h-4 min-w-4 place-items-center rounded bg-brand-soft px-1 align-[2px] text-[10px] font-semibold text-brand">{n}</sup>;
+  return <span className="relative -top-1 ml-0.5 inline-grid h-4 min-w-4 place-items-center rounded bg-brand-soft px-1 text-[10px] leading-none font-semibold text-brand">{n}</span>;
 }
 
-/** Knowledge Hub: one question across all agreements, an answer citing two of them, and an unsupported question. */
+/** Knowledge Hub across all agreements, with Ask about one agreement layered over it. */
 export function KnowledgePreview() {
   return (
-    <Preview describe="the Knowledge Hub: a question asked across all agreements, an answer citing two agreements with their page numbers, and a second question that nothing in the agreements supports.">
-      <Window title="Knowledge Hub · all agreements">
-        <div className="space-y-3 p-4 sm:p-5">
-          <div className="flex items-center gap-2 rounded-xl border border-line-strong bg-white px-3 py-2.5 shadow-1">
-            <Icon name="spark" size={16} className="shrink-0 text-brand" />
-            <span className="min-w-0 flex-1 truncate text-[13px] text-ink">Which agreements are governed by Delaware law?</span>
-            <FakeButton className="h-7 text-xs">Ask</FakeButton>
+    <Preview describe="the Knowledge Hub: a question asked across all agreements, an answer citing two agreements with their page numbers, and a question nothing in the agreements supports; in front of it, a question about one agreement with a verified answer and the quoted passage and page it relies on.">
+      <div className="relative">
+        <Window title="Knowledge Hub · all agreements">
+          <div className="space-y-3 p-4 sm:p-5 sm:pb-16">
+            <div className="flex items-center gap-2 rounded-xl border border-line-strong bg-white px-3 py-2.5 shadow-1">
+              <Icon name="spark" size={16} className="shrink-0 text-brand" />
+              <span className="min-w-0 flex-1 truncate text-[13px] text-ink">Which agreements are governed by Delaware law?</span>
+              <FakeButton className="h-7 text-xs">Ask</FakeButton>
+            </div>
+            <div className="rounded-xl border border-line bg-white p-3.5">
+              <p className="text-[13.5px] leading-relaxed text-ink">
+                Two agreements choose Delaware law: the consulting agreement with Acme Widgets Inc<Cite n={1} /> and the mutual NDA with Fabrikam Inc<Cite n={2} />.
+              </p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {[
+                  [1, "Consulting Agreement: Acme Widgets Inc", "page 4", "governed by the laws of Delaware"],
+                  [2, "Mutual NDA: Fabrikam Inc", "page 3", "the laws of the State of Delaware"],
+                ].map(([n, a, p, q]) => (
+                  <div key={n} className="min-w-0 rounded-lg border-l-2 border-brand/50 bg-subtle px-3 py-2">
+                    <div className="truncate text-[11.5px] font-semibold text-ink"><span className="text-brand">[{n}]</span> {a}</div>
+                    <div className="truncate text-[11.5px] text-muted">{p} · &ldquo;{q}&rdquo;</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-start gap-2.5 rounded-xl border border-dashed border-line-strong bg-subtle px-3.5 py-3 text-[13px]">
+              <Icon name="info" size={16} className="mt-0.5 shrink-0 text-muted" />
+              <div className="min-w-0">
+                <div className="truncate font-medium text-ink">Do any agreements include a non-compete?</div>
+                <div className="text-muted">Nothing in your agreements supports an answer, so nothing is quoted.</div>
+              </div>
+            </div>
           </div>
-          <div className="rounded-xl border border-line bg-white p-3.5">
-            <p className="text-[13.5px] leading-relaxed text-ink">
-              Two agreements choose Delaware law: the consulting agreement with Acme Widgets Inc<Cite n={1} /> and the mutual NDA with Fabrikam Inc<Cite n={2} />.
-            </p>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              {[
-                [1, "Consulting Agreement: Acme Widgets Inc", "page 4", "governed by the laws of Delaware"],
-                [2, "Mutual NDA: Fabrikam Inc", "page 3", "the laws of the State of Delaware"],
-              ].map(([n, a, p, q]) => (
-                <div key={n} className="min-w-0 rounded-lg border-l-2 border-brand/50 bg-subtle px-3 py-2">
-                  <div className="truncate text-[11.5px] font-semibold text-ink"><span className="text-brand">[{n}]</span> {a}</div>
-                  <div className="truncate text-[11.5px] text-muted">{p} · &ldquo;{q}&rdquo;</div>
+        </Window>
+        <div className="relative z-10 mt-5 sm:-mt-10 sm:ml-auto sm:w-[78%] lg:-mr-6">
+          <Window title="Ask about this agreement">
+            <div className="space-y-3 p-4">
+              <div className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-sm bg-brand px-3 py-2 text-[13px] text-white">When are invoices due?</div>
+              <div className="rounded-xl border border-line bg-white p-3">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Badge tone="ok" icon="checkCircle">Verified</Badge>
+                  <span className="text-xs text-muted">checked against the agreement</span>
                 </div>
-              ))}
+                <p className="mt-2 text-[13.5px] text-ink">Invoices are due within 30 days of the invoice date.</p>
+                <blockquote className="mt-2.5 border-l-2 border-brand/50 bg-subtle py-1.5 pr-2 pl-3 text-[12.5px] text-ink-2">
+                  &ldquo;Client shall pay each invoice within thirty (30) days of the invoice date.&rdquo;
+                  <div className="mt-1 text-[11px] text-muted">Section 4.2 · page 2</div>
+                </blockquote>
+              </div>
             </div>
-          </div>
-          <div className="flex items-start gap-2.5 rounded-xl border border-dashed border-line-strong bg-subtle px-3.5 py-3 text-[13px]">
-            <Icon name="info" size={16} className="mt-0.5 shrink-0 text-muted" />
-            <div className="min-w-0">
-              <div className="truncate font-medium text-ink">Do any agreements include a non-compete?</div>
-              <div className="text-muted">Nothing in your agreements supports an answer, so nothing is quoted.</div>
-            </div>
-          </div>
+          </Window>
         </div>
-      </Window>
-    </Preview>
-  );
-}
-
-/** Ask about one agreement: a checked answer with the passage it relies on. */
-export function AskPreview() {
-  return (
-    <Preview describe="a question about one agreement, a verified answer, and the quoted passage it relies on with its page number.">
-      <Window title="Ask about this agreement">
-        <div className="space-y-3 p-4">
-          <div className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-sm bg-brand px-3 py-2 text-[13px] text-white">When are invoices due?</div>
-          <div className="rounded-xl border border-line bg-white p-3">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <Badge tone="ok" icon="checkCircle">Verified</Badge>
-              <span className="text-xs text-muted">checked against the agreement</span>
-            </div>
-            <p className="mt-2 text-[13.5px] text-ink">Invoices are due within 30 days of the invoice date.</p>
-            <blockquote className="mt-2.5 border-l-2 border-brand/50 bg-subtle py-1.5 pr-2 pl-3 text-[12.5px] text-ink-2">
-              &ldquo;Client shall pay each invoice within thirty (30) days of the invoice date.&rdquo;
-              <div className="mt-1 text-[11px] text-muted">Section 4.2 · page 2</div>
-            </blockquote>
-          </div>
-        </div>
-      </Window>
+      </div>
     </Preview>
   );
 }
@@ -366,7 +362,7 @@ export function PhoneSigningPreview() {
               {[["CONSULTANT", "Avery Tester"], ["CLIENT", "Jordan Sample"]].map(([h, n]) => (
                 <div key={h} className="min-w-0">
                   <div className="truncate text-[9px] font-semibold tracking-wide text-muted">{h}</div>
-                  <div className="mt-1 truncate border-b border-gray-400 pb-0.5 font-[cursive] text-[15px] text-brand italic">{n}</div>
+                  <div className="mt-1 truncate border-b border-gray-400 pb-0.5 font-[cursive] text-[13px] text-brand italic">{n}</div>
                 </div>
               ))}
             </div>
