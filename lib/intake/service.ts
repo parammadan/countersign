@@ -20,6 +20,7 @@ import type { GenerateInput, Kind, TermKey } from "../m23/m23-generate/types";
 import { TEMPLATES } from "../m23/m23-generate";
 import { createDraft, kindSpecs, type Clarifications } from "../drafts/service";
 import { termName } from "../drafts/labels";
+import { templateRoleOf } from "./roles";
 import { numbersIn } from "../qa/numbers";
 import { normalize } from "../understand/evidence";
 import type { DocAnalysis, DocDraft, DraftSource } from "./ai";
@@ -152,20 +153,6 @@ export type Prefill = {
 };
 
 const KIND_OF: Partial<Record<IntakeRecord["documentType"]["type"], Kind>> = { services: "services", nda: "nda", lease: "lease" };
-// intake role words (lower case) that name the same party as a Studio role
-const ROLE_ALIAS: Record<string, string> = { provider: "Provider", "service provider": "Provider", consultant: "Provider", contractor: "Provider", client: "Client", customer: "Client", "disclosing party": "Disclosing Party", "receiving party": "Receiving Party", landlord: "Landlord", tenant: "Tenant" };
-/** The template's role for an intake role word: its own role name, or the providing party of a template with a Client. */
-function templateRoleOf(kind: Kind, word: string): string | null {
-  const roles = TEMPLATES[kind].roles;
-  const w = word.trim().toLowerCase();
-  const direct = roles.find((r) => r.toLowerCase() === w);
-  if (direct) return direct;
-  const canon = ROLE_ALIAS[w];
-  if (!canon) return null;
-  if (roles.includes(canon)) return canon;
-  return canon === "Provider" && roles[1] === "Client" ? roles[0] : null;
-}
-
 /**
  * The Studio form values an intake record supports, and nothing else: each value is copied from the record's
  * extracted values (never inferred), and a field with conflicting values is left empty. The user confirms every
@@ -273,13 +260,24 @@ export function mergeAiPrefill(record: IntakeRecord, draft: DocDraft | null): Pr
     if (!unsupported.some((u) => u.key === key)) unsupported.push({ key, label, text: `The document says “${value}”, but the ${TEMPLATES[kind].title} template has no place for it, so it won't be in the agreement.` });
   };
   const accepts = new Set(kindSpecs().find((k) => k.kind === kind)?.terms.map((t) => t.key) ?? []);
+  const twoNames = new Set<string>();
   for (const p of sg.parties) {
     const role = templateRoleOf(kind, p.role);
     if (!role) {
       cannot(`party:${p.role}`, `${p.role.slice(0, 40)} (a party)`, p.name);
       continue;
     }
-    if (held.has(`role:${role}`) || ai.names[role]) continue;
+    if (held.has(`role:${role}`) || twoNames.has(role)) continue;
+    if (ai.names[role]) {
+      // two names for one template role (e.g. "Consultant" and "Provider"): never keep one of them silently
+      if (!sameReading(ai.names[role], p.name)) {
+        notes.push(`${role}: Claude read more than one name (“${ai.names[role]}” and “${p.name}”), so it was left empty.`);
+        delete names[role];
+        delete ai.names[role];
+        twoNames.add(role);
+      }
+      continue;
+    }
     const rules = base.names[role];
     if (rules) {
       if (!sameReading(rules, p.name)) {
