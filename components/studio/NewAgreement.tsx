@@ -9,6 +9,7 @@ import type { Clarification, Clarifications, KindSpec, StudioAi, SuggestFailure,
 import { TERM_LABEL, humanIssue } from "@/lib/drafts/labels";
 import { AI_COPY, AI_UNAVAILABLE } from "./ai-state";
 import { VoiceInput } from "./VoiceInput";
+import { issueKey, termPayload, type FieldError } from "./form-values";
 
 const SUGGEST_FAILED: Record<SuggestFailure, string> = {
   ai_off: "AI isn't configured on this server, so fill in the form below.",
@@ -19,7 +20,9 @@ const SUGGEST_FAILED: Record<SuggestFailure, string> = {
   failed: "Claude didn't answer. Try again, or fill in the form below.",
 };
 const label = (k: string) => TERM_LABEL[k] ?? k;
-const inputType = (t: string) => (t === "date" ? "date" : t === "int" || t === "percent" ? "number" : "text");
+// numbers are typed as text (with a numeric keypad): a number input reports "" for "30 days", which then read as missing
+const inputType = (t: string) => (t === "date" ? "date" : "text");
+const inputMode = (t: string) => (t === "int" ? "numeric" : t === "percent" ? "decimal" : undefined);
 
 /** A form field whose label says when its value is Claude's suggestion (until the person changes it). */
 export function FormField({ label: text, suggested, children }: { label: string; suggested: boolean; children?: ReactNode }) {
@@ -115,7 +118,9 @@ export function NewAgreement({ kinds, ai }: { kinds: KindSpec[]; ai: StudioAi })
   const [terms, setTerms] = useState<Record<string, string>>({});
   const [instructions, setInstructions] = useState("");
   const [suggested, setSuggested] = useState<Suggestion | null>(null);
-  const [errors, setErrors] = useState<string[]>([]);
+  const [errors, setErrors] = useState<FieldError[]>([]);
+  /** a changed field clears what the last attempt said about it */
+  const edited = (key: string) => setErrors((es) => (es.some((e) => e.key === key) ? es.filter((e) => e.key !== key) : es));
   const [info, setInfo] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const [suggesting, startSuggest] = useTransition();
@@ -153,16 +158,15 @@ export function NewAgreement({ kinds, ai }: { kinds: KindSpec[]; ai: StudioAi })
     setErrors([]);
     setInfo(null);
     const parties = spec.roles.map((role) => ({ role, name: (names[role] ?? "").trim() }));
-    const t: Record<string, string | number> = {};
-    for (const term of spec.terms) {
-      const v = (terms[term.key] ?? "").trim();
-      if (!v) continue;
-      t[term.key] = term.type === "int" || term.type === "percent" ? Number(v) : v;
+    const { terms: t, errors: unreadable } = termPayload(spec, terms);
+    if (unreadable.length) {
+      setErrors(unreadable);
+      return;
     }
     start(async () => {
       const r = await createDraftAction({ kind: spec.kind, parties, terms: t, ...(canReword && instructions.trim() && { instructions }) });
       if (!r.ok) {
-        setErrors(r.issues.length ? r.issues.map(humanIssue) : ["The draft couldn't be generated."]);
+        setErrors(r.issues.length ? r.issues.map((i) => ({ key: issueKey(i), text: humanIssue(i) })) : [{ key: "", text: "The draft couldn't be generated." }]);
         return;
       }
       router.push(`/app/studio/${r.draftId}?new=${r.landing}${r.fallback ? `&why=${r.fallback}` : ""}`);
@@ -217,24 +221,24 @@ export function NewAgreement({ kinds, ai }: { kinds: KindSpec[]; ai: StudioAi })
           </p>
           <div className="grid gap-4 sm:grid-cols-2">
             <FormField label="Type of agreement" suggested={fromAi.has("kind")}>
-              <Select value={kind} onChange={(e) => { setKind(e.target.value as typeof kind); setKindChosen(true); confirm("kind"); }}>
+              <Select value={kind} onChange={(e) => { setKind(e.target.value as typeof kind); setKindChosen(true); confirm("kind"); setErrors([]); }}>
                 {kinds.map((k) => <option key={k.kind} value={k.kind}>{k.title}</option>)}
               </Select>
             </FormField>
             {spec.roles.map((role) => (
               <FormField key={role} label={`${role} (legal name)`} suggested={fromAi.has(`role:${role}`)}>
-                <input className={inputCls} value={names[role] ?? ""} maxLength={200} onChange={(e) => { setNames({ ...names, [role]: e.target.value }); confirm(`role:${role}`); }} />
+                <input className={inputCls} value={names[role] ?? ""} maxLength={200} onChange={(e) => { setNames({ ...names, [role]: e.target.value }); confirm(`role:${role}`); edited(`role:${role}`); }} />
               </FormField>
             ))}
             {spec.terms.map((t) => (
               <FormField key={t.key} label={`${label(t.key)}${t.required ? "" : " (optional)"}`} suggested={fromAi.has(`term:${t.key}`)}>
                 {t.choices ? (
-                  <Select value={terms[t.key] ?? ""} onChange={(e) => { setTerms({ ...terms, [t.key]: e.target.value }); confirm(`term:${t.key}`); }}>
+                  <Select value={terms[t.key] ?? ""} onChange={(e) => { setTerms({ ...terms, [t.key]: e.target.value }); confirm(`term:${t.key}`); edited(t.key); }}>
                     <option value="">Choose…</option>
                     {Object.entries(t.choices).map(([k, text]) => <option key={k} value={k}>{text}</option>)}
                   </Select>
                 ) : (
-                  <input className={inputCls} type={inputType(t.type)} value={terms[t.key] ?? ""} maxLength={200} onChange={(e) => { setTerms({ ...terms, [t.key]: e.target.value }); confirm(`term:${t.key}`); }} />
+                  <input className={inputCls} type={inputType(t.type)} inputMode={inputMode(t.type)} value={terms[t.key] ?? ""} maxLength={200} onChange={(e) => { setTerms({ ...terms, [t.key]: e.target.value }); confirm(`term:${t.key}`); edited(t.key); }} />
                 )}
               </FormField>
             ))}
@@ -249,7 +253,7 @@ export function NewAgreement({ kinds, ai }: { kinds: KindSpec[]; ai: StudioAi })
         {fromAi.size > 0 && <Notice tone="warn">{fromAi.size} {fromAi.size === 1 ? "detail is" : "details are"} still Claude&apos;s suggestion. Check {fromAi.size === 1 ? "it" : "them"} before you generate.</Notice>}
         {errors.length > 0 && (
           <Notice tone="error">
-            <ul className="list-disc pl-5">{errors.map((e) => <li key={e}>{e}</li>)}</ul>
+            <ul className="list-disc pl-5">{errors.map((e) => <li key={`${e.key}:${e.text}`}>{e.text}</li>)}</ul>
           </Notice>
         )}
         <Button type="button" icon="agreement" onClick={generate} loading={pending} disabled={suggesting}>Generate draft</Button>
