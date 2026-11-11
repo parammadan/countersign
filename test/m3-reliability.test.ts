@@ -62,4 +62,27 @@ describe("M3 reliability", () => {
     expect(new Set(keys).size).toBe(keys.length);
     expect(h.result.citations.map((c) => c.n)).toEqual(keys.map((_, i) => i + 1));
   });
+
+  it("marks an answer stale once the agreement it cites has a newer version or is archived", async () => {
+    const a = await upload("renewal", ["Renewal Agreement between Quill Example LLC and the Client.", "1. Term. The renewal term is 12 months.", "Client signature: ____________________"]);
+    await S.runIndex(owner);
+    const h = await ask("How long is the renewal term?");
+    expect(h.result.citations[0]?.documentId).toBe(a.templateId);
+    expect(h.stale).toBe(false);
+    await upload("renewal", ["Renewal Agreement between Quill Example LLC and the Client.", "1. Term. The renewal term is 24 months.", "Client signature: ____________________"], a.templateId);
+    expect(S.recentQuestions(owner, 50).find((e) => e.id === h.id)!.stale).toBe(true);
+    db.run("UPDATE templates SET archived = 1 WHERE id = ?", a.templateId);
+    expect(S.recentQuestions(owner, 50).find((e) => e.id === h.id)!.stale).toBe(true);
+  });
+
+  it("pages through many answers without skipping or repeating any", async () => {
+    const before = S.recentQuestions(owner, 500).length;
+    for (let i = 0; i < 7; i++) await ask(`When are invoices due, take ${i}?`);
+    const all = S.recentQuestions(owner, 500);
+    expect(all.length).toBe(before + 7);
+    const p1 = S.recentQuestions(owner, 5, 0);
+    const p2 = S.recentQuestions(owner, 5, 5);
+    expect([...p1, ...p2].map((e) => e.id)).toEqual(all.slice(0, 10).map((e) => e.id));
+    expect(S.recentQuestions(owner, 5, all.length)).toEqual([]);
+  });
 });
