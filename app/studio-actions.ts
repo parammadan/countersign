@@ -33,7 +33,7 @@ export async function createDraftAction(input: GenerateInput) {
   const safe: GenerateInput = {
     kind: input?.kind,
     parties: Array.isArray(input?.parties) ? input.parties.slice(0, 2).map((p) => ({ role: text(p?.role, 40), name: text(p?.name, 200) })) : [],
-    terms: Object.fromEntries(Object.entries(input?.terms ?? {}).slice(0, 30).map(([k, v]) => [text(k, 40), typeof v === "number" ? v : text(v, 200)])),
+    terms: Object.fromEntries(Object.entries(input?.terms ?? {}).slice(0, 30).map(([k, v]) => [text(k, 40), typeof v === "number" ? v : text(v, k === "services" ? 1_200 : 200)])), // a services list is longer
     ...(typeof input?.instructions === "string" && input.instructions.trim() && { instructions: text(input.instructions, 1_000) }),
   };
   const r = await svc.createDraft(s, safe);

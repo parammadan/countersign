@@ -66,6 +66,7 @@ export function termPayload(spec: KindSpec, terms: Record<string, string>): { te
       if (n === null) errors.push({ key: term.key, text: `${name}: enter a number, like 1.5.` });
       else out[term.key] = n;
     } else if (term.type === "money") out[term.key] = normaliseMoney(v);
+    else if (term.type === "list") out[term.key] = v.split(/\s*\n\s*/).filter(Boolean).join("; "); // one item per line → "a; b; c"
     else out[term.key] = v;
   }
   return { terms: out, errors };

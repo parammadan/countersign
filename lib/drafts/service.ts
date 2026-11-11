@@ -21,7 +21,7 @@ import { aiGate, aiState, estimateUsd, type AiState } from "../ai/budget";
 import type { ModelProvider } from "../understand/model";
 import type { Principal } from "./roles";
 import { generateAgreement, TEMPLATES, KINDS, type GenerateInput, type Kind, type TermKey } from "../m23/m23-generate";
-import { CHOICES, TERM_TYPES } from "../m23/m23-generate/terms";
+import { CHOICES, LIST_MAX_ITEMS, listItems, TERM_TYPES } from "../m23/m23-generate/terms";
 import { validateInput } from "../m23/m23-generate/build";
 import { disguisedCharacters, scanInjection } from "../m23/m23-generate/checks";
 import { RAW_TERM_KEYS, termName, withTermNames } from "./labels";
@@ -107,11 +107,12 @@ export const TERM_MEANING: Record<TermKey, string> = {
   rentSchedule: "how often and when rent is paid.",
   premisesUse: "what the premises may be used for.",
   subletting: "whether the Tenant may sublet.",
+  services: "the services or deliverables the description lists, each copied as written, separated by \";\" (at most 12, short items, no legal terms).",
 };
 /** What each choice means, for the model. Every choice key of every choice term is here (asserted in the tests). */
 export const CHOICE_MEANING: Partial<Record<TermKey, Record<string, string>>> = {
   feeBasis: { fixed: "a one-time, fixed, flat or lump-sum fee for the whole work", month: "the fee is charged every month", quarter: "every quarter", year: "every year" },
-  ipOwner: { Client: "the Client owns what the Consultant creates", Consultant: "the Consultant owns what it creates" },
+  ipOwner: { Client: "the Client owns what the Consultant creates", Consultant: "the Consultant owns what it creates", "Client after payment": "the Client owns what the Consultant creates only once all fees are paid in full (until then the Consultant owns it)" },
   exclusivity: { exclusive: "exclusive licence", "non-exclusive": "non-exclusive licence" },
   licensedUse: { use: "use only", "use and modify": "use and modify", "use, modify and distribute": "use, modify and distribute" },
   licenceTransfer: { "not permitted": "never", "with written consent": "only with the Licensor's written consent" },
@@ -355,7 +356,7 @@ const PRE_EXISTING_IP = /\b(?:pre-?existing|prior|background|existing)\b[^.]{0,6
 /** Ownership of the work tied to payment ("owns the deliverables only after full payment", "title passes upon payment in full"). */
 const PAYMENT_CONDITIONED_IP = /\b(?:own|owns|owned|ownership|title|rights?|transfer|transfers|vest|vests|assign|assigns|belong|belongs)\b[^.\n]{0,80}\b(?:after|upon|on|once|until|following|subject to|conditional on|contingent on)\b[^.\n]{0,30}\b(?:payment|paid)\b|\b(?:paid|payment) in full\b[^.\n]{0,80}\b(?:own|owns|ownership|title|rights?|transfer|vest|assign|belong)/i;
 const IP_PAYMENT_NOTE =
-  "The Consulting Agreement gives the work product to the owner you choose with no payment condition, so “only after full payment” won't be in the agreement. Pre-existing intellectual property and tools are covered: each party keeps what it owned before the agreement.";
+  "Your description ties ownership to payment. Choose “Client, once all fees are paid in full” for who owns the work product, or “only after full payment” won't be in the agreement. Pre-existing intellectual property and tools are covered either way.";
 /** What happens instead, for something the description states that the template can't include. */
 function insteadText(kind: Kind | null, key: string, said: string, unmatched: boolean, source: SuggestionSource = "description"): string {
   if (!kind) return "None of the templates can include this, so it won't be in the agreement.";
@@ -411,13 +412,18 @@ export function cleanSuggestion(raw: unknown, description: string, o: { source?:
     const key = t.key as TermKey;
     const choices = own(CHOICES, key) ? CHOICES[key] : undefined;
     const type = TERM_TYPES[key];
-    const ok = choices ? own(choices, t.value) : type === "date" ? dates.has(t.value) : said(t.value) || (type === "percent" && /^\d{1,2}(?:\.\d{1,2})?$/.test(t.value) && said(`${t.value}%`)) || (type === "money" && shorthand.has(moneyKey(t.value)));
+    // a list (services) is checked item by item: each one must be written in the description
+    const items = type === "list" ? listItems(t.value).slice(0, LIST_MAX_ITEMS) : [];
+    const ok = choices ? own(choices, t.value) : type === "list" ? items.length > 0 && items.every((x) => said(x, 2)) : type === "date" ? dates.has(t.value) : said(t.value) || (type === "percent" && /^\d{1,2}(?:\.\d{1,2})?$/.test(t.value) && said(`${t.value}%`)) || (type === "money" && shorthand.has(moneyKey(t.value)));
     // a stated value this kind has no place for, or a choice none of the options means: say so, never coerce it
     if (ok && (key === "feeBasis" || key === "feePeriod") && !(own(BASIS_CUE, t.value) && BASIS_CUE[t.value].test(basisText(description)))) continue;
     if (!accepts(key)) { if (ok) addUnsupported(key, ""); continue; }
     if (!ok) { if (choices && kind) addUnsupported(key, "", t.value); continue; }
-    terms[key] = t.value.slice(0, 200);
+    terms[key] = type === "list" ? items.join("; ").slice(0, 1_200) : t.value.slice(0, 200);
   }
+  // ownership tied to payment, read as Client: the reviewed "Client after payment" wording says exactly that
+  const ipOnPayment = kind === "consulting" && PAYMENT_CONDITIONED_IP.test(description);
+  if (ipOnPayment && terms.ipOwner === "Client") terms.ipOwner = "Client after payment";
   for (const k of Object.keys(terms)) {
     const i = unsupported.findIndex((u) => u.key === k);
     if (i >= 0) unsupported.splice(i, 1); // a valid value came later: it is represented
@@ -447,8 +453,12 @@ export function cleanSuggestion(raw: unknown, description: string, o: { source?:
   // a material IP condition the template can't express, flagged whatever the model said: ownership that passes only
   // once the client has paid ("Client owns the deliverables only after full payment"). The Consulting Agreement's
   // clause gives the work product to the chosen owner outright, so the condition would otherwise vanish unnoticed.
-  if (kind === "consulting" && PAYMENT_CONDITIONED_IP.test(description) && !unsupported.some((u) => /\bpa(id|yment)\b/i.test(u.text) && /\bown/i.test(u.text)))
+  // payment-conditioned ownership the form doesn't yet say: point at the reviewed option rather than drop it
+  if (ipOnPayment && terms.ipOwner !== "Client after payment")
     unsupported.push({ key: "other", label: "Ownership only after payment", text: IP_PAYMENT_NOTE });
+  // the model's own note about it is now represented by the reviewed wording
+  if (terms.ipOwner === "Client after payment")
+    for (let i = unsupported.length - 1; i >= 0; i--) if (/\bpa(id|yment)\b/i.test(unsupported[i].text) && /\bown/i.test(unsupported[i].text)) unsupported.splice(i, 1);
 
   const needed: Clarification[] = [];
   const optional: Clarification[] = [];

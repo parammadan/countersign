@@ -241,6 +241,8 @@ export function NewAgreement({ kinds, ai }: { kinds: KindSpec[]; ai: StudioAi })
                     <option value="">Choose…</option>
                     {Object.entries(t.choices).map(([k, text]) => <option key={k} value={k}>{text}</option>)}
                   </Select>
+                ) : t.type === "list" ? (
+                  <textarea className={cx(inputCls, "min-h-24 py-2")} value={(terms[t.key] ?? "").split(/\s*;\s*/).join("\n")} maxLength={1_200} onChange={(e) => { setTerms({ ...terms, [t.key]: e.target.value }); confirm(`term:${t.key}`); edited(t.key); }} />
                 ) : (
                   <input className={inputCls} type={inputType(t.type)} inputMode={inputMode(t.type)} value={terms[t.key] ?? ""} maxLength={200} onChange={(e) => { setTerms({ ...terms, [t.key]: e.target.value }); confirm(`term:${t.key}`); edited(t.key); }} />
                 )}
