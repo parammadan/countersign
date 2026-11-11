@@ -93,7 +93,7 @@ export function UnverifiedWelcome({ email }: { email: string }) {
   return (
     <section role="status" aria-labelledby="verify-title" className="mb-7 overflow-hidden rounded-[var(--radius-lg)] border border-amber-300 bg-white shadow-2">
       <div className="flex flex-col gap-4 bg-amber-50 px-5 py-5 sm:flex-row sm:items-start sm:px-6">
-        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white text-amber-700 ring-1 ring-amber-300">
+        <span className="hidden h-11 w-11 shrink-0 place-items-center rounded-full bg-white text-amber-700 ring-1 ring-amber-300 sm:grid">
           <Icon name="mail" size={21} />
         </span>
         <div className="min-w-0 flex-1">

@@ -153,7 +153,7 @@ describe("landing page", () => {
       expect(h).toMatch(/agreement and page/);
       expect(h).toMatch(/nothing in your agreements supports an answer/i);
       expect(h).toMatch(/Ask about this agreement/);
-      expect(h).toMatch(/AI features need a confirmed email/);
+      expect(h).toMatch(/AI features and sending to clients need a confirmed email/);
       expect(h).toMatch(/records each signer's consent and an audit trail/i);
       expect(h).toMatch(/automatic countersignature|countersignature is applied automatically/i);
       expect(h).toMatch(/sealed PDF with an audit certificate/);

@@ -12,7 +12,7 @@ export const AUTH_COPY = {
   reset: "reset your password",
   newHere: "New here?",
   create: "Create a workspace",
-  signupConfirm: "Next, we email you a link to confirm your address (check Spam or Junk if it isn't in your inbox). Uploading and signing work right away; AI features and sending to clients start once you confirm.",
+  signupConfirm: "Next, we email you a link to confirm your address (check Spam or Junk if it isn't in your inbox). Uploading and setting up your agreement work right away; AI features and sending to clients start once you confirm.",
 } as const;
 
 export function LoginForm({ next }: { next?: string }) {

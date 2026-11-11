@@ -177,7 +177,7 @@ export const HOW = {
 
 export const CTA = {
   title: "Your next agreement starts here.",
-  text: "Create a workspace and try it with your own agreements. AI features need a confirmed email address; uploading, signing and the verify page work right away.",
+  text: "Create a workspace and try it with your own agreements. AI features and sending to clients need a confirmed email address; uploading your agreement, test sends to your team and the verify page work right away.",
 } as const;
 
 export const FOOTER = {
