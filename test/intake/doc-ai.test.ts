@@ -424,6 +424,23 @@ describe("Document Intelligence with AI", () => {
     expect(ev && JSON.parse(ev.payload_json).changed).toEqual([]);
   });
 
+  it("Studio handoff: values the template has no field for are listed under what it can't include, never dropped", async () => {
+    const id = await read(ownerA, SAMPLE);
+    const out = goodAnalysis();
+    // Claude names no template, so the rules' type (Services Agreement) is used; the services template has no ipOwner
+    out.draft.kind = "unknown";
+    out.draft.parties.push({ role: "Guarantor", name: "Juniper Sample Co", page: 1, quote: "Juniper Sample Co" });
+    await ai.analyzeIntake(fresh(), id, analyst(() => out).provider);
+    const p = svc.intakePrefill(ownerA, id);
+    if (!p.ok) throw new Error("no prefill");
+    expect(p.prefill.kind).toBe("services");
+    expect(p.prefill.terms.ipOwner).toBeUndefined();
+    const listed = p.prefill.clarifications!.unsupported;
+    expect(listed.find((u) => u.key === "ipOwner")).toMatchObject({ label: "Who owns the work product", text: expect.stringMatching(/“Client”.*Services Agreement template has no place for it/) });
+    // a quote that isn't in the document never gets this far
+    expect(listed.find((u) => u.key.startsWith("party:Guarantor"))).toBeUndefined();
+  });
+
   it("without an analysis the Studio pre-fill is the rules' alone, unchanged", async () => {
     const id = await read(ownerA, SAMPLE);
     const p = svc.intakePrefill(ownerA, id);
