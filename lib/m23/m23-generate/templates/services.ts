@@ -1,4 +1,5 @@
 import type { AgreementTemplate } from "../types";
+import { feeBasisVariants } from "./clauses";
 
 export const services: AgreementTemplate = {
   kind: "services",
@@ -10,7 +11,7 @@ export const services: AgreementTemplate = {
     { id: "services", heading: "Scope of Services", required: true, text: "The Provider will perform the services described in the Client's engagement request, with reasonable skill and care." },
     { id: "term", heading: "Term", required: true, text: "This Agreement starts on {{term:startDate}} and continues until the services are complete or it is ended under clause {{ref:termination}}." },
     { id: "term_end", heading: "End Date", required: false, when: "endDate", text: "Unless ended earlier, this Agreement ends on {{term:endDate}}." },
-    { id: "fees", heading: "Fees", required: true, text: "The Client will pay the Provider a fee of {{term:fee}} for the services." },
+    { id: "fees", heading: "Fees", required: true, text: "The Client will pay the Provider a fee of {{term:fee}} for the services.", variants: feeBasisVariants("Client", "Provider", "services") },
     { id: "payment", heading: "Payment", required: true, text: "The Provider will invoice the Client, and the Client will pay each invoice within {{term:paymentDays}} days of receiving it." },
     { id: "late_fee", heading: "Late Payment", required: false, when: "lateFeePercent", text: "Overdue amounts carry a late fee of {{term:lateFeePercent}} {{term:lateFeePeriod}}." },
     { id: "confidentiality", heading: "Confidentiality", required: true, text: "Each party will keep the other party's confidential information private and use it only for this Agreement." },

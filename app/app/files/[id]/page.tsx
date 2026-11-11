@@ -10,6 +10,8 @@ import { Badge, Card, Notice, StatusBadge, cx } from "@/components/ui";
 import { Icon } from "@/components/icons";
 import { CopyButton, FileActions, VoidFile } from "@/components/FileActions";
 import { emailMode } from "@/lib/email";
+import { DELIVERY } from "@/components/outbox/delivery";
+import { DeliveryBadge } from "@/components/outbox/DeliveryBadge";
 import type { FileRow } from "@/lib/types";
 
 export const metadata = { title: "File" };
@@ -26,7 +28,7 @@ type Email = { id: string; kind: string; to_email: string; subject: string; stat
 
 function delivery(m: Email | undefined) {
   if (!m) return { label: "Not sent", tone: "neutral" as const };
-  if (m.status === "sent") return { label: "Delivered to the mail server", tone: "ok" as const };
+  if (m.status === "sent") return { label: DELIVERY.delivered.label, tone: "ok" as const };
   if (m.status === "failed") return { label: `Failed: ${m.error ?? "provider error"}`, tone: "bad" as const };
   return { label: "Recorded in the email log only (no email provider)", tone: "neutral" as const };
 }
@@ -111,7 +113,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
                 <h2 id="next-step" className="text-[17px] font-semibold text-ink">{step.title}</h2>
                 <p className="mt-1 text-sm text-ink-2">{step.body}</p>
                 <div className="mt-4">
-                  <FileActions fileId={f.id} status={f.status} link={link} admin={admin} inviteFailed={inviteFailed} canResendCopy={canResendCopy} copyFailed={copyFailed} countersigner={ws.countersigner_name || ws.legal_name} />
+                  <FileActions fileId={f.id} status={f.status} link={link} admin={admin} inviteFailed={inviteFailed} canResendCopy={canResendCopy} copyFailed={copyFailed} countersigner={ws.countersigner_name || ws.legal_name} outbox={outbox} />
                 </div>
                 {open && link && (
                   <p className="mt-3 text-xs text-muted">
@@ -251,7 +253,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
                       <Link href={`/app/outbox/${m.id}`} className="block truncate font-medium hover:text-brand">{EMAIL_KIND[m.kind] ?? m.kind}: {m.subject}</Link>
                       <div className="text-xs break-words text-muted">to {m.to_email} · {fmt(m.created_at)}{m.error ? ` · ${m.error}` : ""}</div>
                     </div>
-                    {m.status === "sent" ? <Badge tone="ok">Delivered</Badge> : m.status === "failed" ? <Badge tone="bad">Failed</Badge> : <Badge>Logged only</Badge>}
+                    <span className="shrink-0"><DeliveryBadge status={m.status} /></span>
                   </li>
                 ))}
               </ul>

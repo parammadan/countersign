@@ -9,7 +9,7 @@ export const TERM_TYPES: Record<TermKey, TermType> = {
   governingLaw: "text", propertyAddress: "text",
   licensedMaterial: "text", territory: "territory",
   exclusivity: "choice", ipOwner: "choice", licensedUse: "choice", licenceTransfer: "choice", feePeriod: "choice",
-  rentSchedule: "choice", premisesUse: "choice", subletting: "choice", lateFeePeriod: "choice",
+  feeBasis: "choice", rentSchedule: "choice", premisesUse: "choice", subletting: "choice", lateFeePeriod: "choice",
 };
 
 /**
@@ -26,6 +26,9 @@ export const CHOICES: Partial<Record<TermKey, Record<string, string>>> = {
   licenceTransfer: { "not permitted": "in any circumstances", "with written consent": "without the Licensor's written consent" },
   /** Retainer fee period. A one-off retainer is not offered: one fee for open-ended services is not a safe reading. */
   feePeriod: { month: "per month", quarter: "per quarter", year: "per year" },
+  /** Consulting, services and engagement: how the fee is charged. Optional: without it the fee clause keeps its plain
+   *  wording ("a fee of $X for the services") and states no basis. Its wording comes from the clause's `variants`. */
+  feeBasis: { fixed: "a one-time fixed fee", month: "per month", quarter: "per quarter", year: "per year" },
   /** Lease: how often and when rent is paid. */
   rentSchedule: {
     "monthly, in advance, on the first day": "per month, in advance, on the first day of each month",

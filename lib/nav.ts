@@ -24,7 +24,7 @@ export interface NavItem {
 
 export const SECTION_LABEL: Record<NavSection, string | null> = {
   work: null,
-  intelligence: "Intelligence",
+  intelligence: "AI & Intelligence",
   records: "Records",
   connect: "Connect",
   admin: null,

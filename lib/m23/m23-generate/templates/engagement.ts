@@ -14,7 +14,7 @@ export const engagement: AgreementTemplate = {
     C.scope("Scope of Engagement", "Firm", "Client", "work", "engagement request"),
     C.term(doc, "the work is complete"),
     C.termEnd(doc),
-    C.fee("fees", "Fees", "Client", "Firm", "a fee", "work"),
+    C.fee("fees", "Fees", "Client", "Firm", "a fee", "work", true),
     C.payment("Firm", "Client"),
     { id: "client_duties", heading: "Client Responsibilities", required: true, text: "The Client will give the Firm complete and accurate information and instructions in good time." },
     C.confidentiality(doc),

@@ -6,6 +6,7 @@ import { one } from "@/lib/db";
 import { Card, Notice, PageHeader } from "@/components/ui";
 import { DeliveryBadge } from "@/components/outbox/DeliveryBadge";
 import { DELIVERY, deliveryOf, kindLabel, type LoggedEmail } from "@/components/outbox/delivery";
+import { CLIENT_INVITE_KINDS, EMAIL_HELP } from "@/lib/email-guidance";
 
 export const metadata = { title: "Email" };
 
@@ -72,6 +73,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
               </div>
             </dl>
           </Card>
+          {d === "delivered" && CLIENT_INVITE_KINDS.includes(m.kind) && <Notice tone="info">{EMAIL_HELP.client}</Notice>}
           {d === "failed" && (
             <Notice tone="error">
               <span className="font-medium">Not delivered.</span> <span className="[overflow-wrap:anywhere]">Reason: {m.error || "the provider gave no reason"}</span>
@@ -79,7 +81,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
           )}
           <Notice tone="info">
             This is the copy kept in the log. Personal signing links, codes and password links are withheld from it, so nobody reading the log can use them
-            {d === "delivered" ? <>; the recipient&apos;s email had the real link.</> : "."}
+            {d === "delivered" ? <>; the email the mail server accepted had the real link.</> : "."}
           </Notice>
         </aside>
       </div>

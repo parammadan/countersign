@@ -89,7 +89,9 @@ test("library: upload checks, drag and drop, live/draft/archived, search, use", 
   await expect(nav.getByRole("link", { name: "Archived 1" })).toBeVisible();
   await expect(card(page, secondName)).toHaveCount(0);
   await page.goto("/app/files/new");
-  await expect(page.locator('select[name="templateId"]')).toHaveCount(0); // one agreement left, so no picker
+  // one agreement left: the picker still shows which agreement (and version) is being sent
+  await expect(page.locator('select[name="templateId"] option')).toHaveCount(1);
+  await expect(page.getByRole("status", { name: "Agreement being sent" })).toContainText(firstName);
   await page.goto("/app/agreements?view=archived");
   await expect(card(page, secondName).getByText("Archived", { exact: true })).toBeVisible();
   await expect(card(page, secondName).getByRole("link", { name: "Use for a new file" })).toHaveCount(0);

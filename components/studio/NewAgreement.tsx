@@ -1,30 +1,105 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Card, CardHeader, Field, Notice, Select, inputCls, cx } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, Field, Notice, Select, inputCls, cx } from "@/components/ui";
+import { Icon } from "@/components/icons";
 import { createDraftAction, suggestAction } from "@/app/studio-actions";
-import type { KindSpec, StudioAi, SuggestFailure, Suggestion } from "@/lib/drafts/service";
-import { AI_UNAVAILABLE } from "./ai-state";
+import type { Clarification, Clarifications, KindSpec, StudioAi, SuggestFailure, Suggestion } from "@/lib/drafts/service";
+import { TERM_LABEL, humanIssue } from "@/lib/drafts/labels";
+import { AI_COPY, AI_UNAVAILABLE } from "./ai-state";
 
-const TERM_LABEL: Record<string, string> = {
-  fee: "Fee (with currency, e.g. $5,000)", paymentDays: "Payment due (days after invoice)", startDate: "Start date", endDate: "End date",
-  noticeDays: "Notice period (days)", governingLaw: "Governing law (state or country)", lateFeePercent: "Late fee (% of the overdue amount)",
-  lateFeePeriod: "Late fee charged per", rent: "Rent (with currency)", deposit: "Deposit (with currency)", confidentialityYears: "Confidentiality lasts (years)",
-  propertyAddress: "Property address", licensedMaterial: "Licensed material (its name)", territory: "Territory (one or more, separated by ;)",
-  exclusivity: "Exclusivity", ipOwner: "Who owns the work product", licensedUse: "What the licence allows", licenceTransfer: "Sublicensing or transfer",
-  feePeriod: "Retainer fee is charged per", rentSchedule: "Rent schedule", premisesUse: "Use of the premises", subletting: "Subletting",
-};
 const SUGGEST_FAILED: Record<SuggestFailure, string> = {
   ai_off: "AI isn't configured on this server, so fill in the form below.",
   unverified: "Confirm your email address to use the AI assistant. Until then, fill in the form below.",
   spend_cap: "AI isn't available right now (daily limit); fill in the form below.",
   limit: "Too many suggestions this hour; fill in the form below.",
   invalid: "Describe the agreement in up to 4,000 characters.",
-  failed: "The suggestion service didn't answer. Fill in the form below.",
+  failed: "Claude didn't answer. Try again, or fill in the form below.",
 };
 const label = (k: string) => TERM_LABEL[k] ?? k;
 const inputType = (t: string) => (t === "date" ? "date" : t === "int" || t === "percent" ? "number" : "text");
+
+/** A form field whose label says when its value is Claude's suggestion (until the person changes it). */
+export function FormField({ label: text, suggested, children }: { label: string; suggested: boolean; children?: ReactNode }) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 flex flex-wrap items-center gap-2 text-[13px] font-medium text-ink-2">
+        {text}
+        {suggested && <Badge tone="warn" icon="spark">Suggested by Claude: check it</Badge>}
+      </span>
+      {children}
+    </label>
+  );
+}
+
+/**
+ * What Claude's suggestion puts into the form: the agreement type, party names and terms it stated, the keys to mark
+ * "Suggested by Claude" (until the person changes them), and the message to show. Pure, so it can be tested.
+ */
+export function suggestionToForm(sg: Suggestion, kinds: KindSpec[], current: KindSpec) {
+  const k = sg.kind ? kinds.find((x) => x.kind === sg.kind) : undefined;
+  const roles = (k ?? current).roles;
+  const names: Record<string, string> = {};
+  for (const p of sg.parties) {
+    const role = roles.find((x) => x.toLowerCase() === p.role.toLowerCase());
+    if (role && p.name) names[role] = p.name;
+  }
+  const allowed = new Set<string>((k ?? current).terms.map((t) => t.key));
+  const terms = Object.fromEntries(Object.entries(sg.terms).filter(([key, v]) => typeof v === "string" && v !== "" && allowed.has(key))) as Record<string, string>;
+  const marked = new Set([...(k ? ["kind"] : []), ...Object.keys(names).map((x) => `role:${x}`), ...Object.keys(terms).map((x) => `term:${x}`)]);
+  const n = marked.size;
+  const result: { tone: "ok" | "error"; text: string } = n
+    ? { tone: "ok", text: `Claude suggested ${n} ${n === 1 ? "detail" : "details"} from your description. Each is marked below: check it, and change anything that isn't right. Only values your description states are suggested.` }
+    : { tone: "error", text: "Claude couldn't find agreement details in your description. Add the parties and terms, or fill in the form below." };
+  return { kind: k?.kind, names, terms, marked, result };
+}
+
+/**
+ * The clarifications still worth showing for the form as it is now: a needed or optional item goes once the person
+ * fills it in (or picks another agreement type without that field); what the template can't include stays.
+ */
+export function visibleClarifications(c: Clarifications, spec: KindSpec, names: Record<string, string>, terms: Record<string, string>, kindChosen: boolean): Clarifications {
+  const open = (x: Clarification) => {
+    if (x.key === "kind") return !kindChosen;
+    if (x.key.startsWith("party:")) return spec.roles.includes(x.key.slice(6)) && !(names[x.key.slice(6)] ?? "").trim();
+    if (x.key === "other") return true;
+    return spec.terms.some((t) => t.key === x.key) && !(terms[x.key] ?? "").trim();
+  };
+  // what can't be included stays, unless it was about a field the person has now filled in
+  const settled = (x: Clarification) => x.key !== "other" && spec.terms.some((t) => t.key === x.key) && !!(terms[x.key] ?? "").trim();
+  return { needed: c.needed.filter(open), optional: c.optional.filter(open), unsupported: c.unsupported.filter((x) => !settled(x)) };
+}
+
+const GROUPS = [
+  { key: "needed", title: "Needed before you can generate", tone: "warn" },
+  { key: "optional", title: "Optional — not in your description", tone: "info" },
+  { key: "unsupported", title: "Claude understood, but this template can't include it", tone: "info" },
+] as const;
+
+/** Claude's clarifications in three separate groups, human labels only. */
+export function ClarificationGroups({ groups }: { groups: Clarifications }) {
+  if (!GROUPS.some((g) => groups[g.key].length)) return null;
+  return (
+    <div data-testid="ai-clarifications" className="mt-3 space-y-3">
+      {GROUPS.filter((g) => groups[g.key].length).map((g) => (
+        <section key={g.key} aria-label={g.title}>
+          <Notice tone={g.tone}>
+            <p className="font-medium text-ink">{g.title}</p>
+            <ul className="mt-1 list-disc space-y-0.5 pl-5">
+              {groups[g.key].map((x, i) => (
+                <li key={`${x.key}-${i}`}>
+                  <span className="font-medium">{x.label}</span>
+                  {x.text && <>: {x.text}</>}
+                </li>
+              ))}
+            </ul>
+          </Notice>
+        </section>
+      ))}
+    </div>
+  );
+}
 
 export function NewAgreement({ kinds, ai }: { kinds: KindSpec[]; ai: StudioAi }) {
   const canSuggest = ai.suggest.available;
@@ -42,29 +117,32 @@ export function NewAgreement({ kinds, ai }: { kinds: KindSpec[]; ai: StudioAi })
   const [errors, setErrors] = useState<string[]>([]);
   const [info, setInfo] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const [suggesting, startSuggest] = useTransition();
+  /** fields whose value came from Claude and hasn't been changed by the person since ("kind", "role:<role>", "term:<key>") */
+  const [fromAi, setFromAi] = useState<Set<string>>(new Set());
+  const [aiResult, setAiResult] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
+  /** the person picked the agreement type themselves after the suggestion */
+  const [kindChosen, setKindChosen] = useState(false);
+  const confirm = (key: string) => fromAi.has(key) && setFromAi((s) => { const n = new Set(s); n.delete(key); return n; });
 
-  function suggest() {
+  function suggest(text = description) {
     setErrors([]);
     setInfo(null);
-    start(async () => {
-      const r = await suggestAction(description);
+    setAiResult(null);
+    startSuggest(async () => {
+      const r = await suggestAction(text);
       if (!r.ok) {
-        setErrors([SUGGEST_FAILED[r.code] ?? SUGGEST_FAILED.failed]);
+        setAiResult({ tone: "error", text: SUGGEST_FAILED[r.code] ?? SUGGEST_FAILED.failed });
         return;
       }
-      const sg = r.suggestion;
-      setSuggested(sg);
-      const k = sg.kind ? kinds.find((x) => x.kind === sg.kind) : undefined;
-      if (k) setKind(k.kind);
-      const roles = (k ?? spec).roles;
-      const n: Record<string, string> = {};
-      for (const p of sg.parties) {
-        const role = roles.find((x) => x.toLowerCase() === p.role.toLowerCase());
-        if (role) n[role] = p.name;
-      }
-      setNames(n);
-      setTerms(Object.fromEntries(Object.entries(sg.terms).filter(([, v]) => typeof v === "string")) as Record<string, string>);
-      setInfo("Filled in from your description. Check every value: only values your description states were kept, and nothing is drafted until you press Generate.");
+      const f = suggestionToForm(r.suggestion, kinds, spec);
+      setSuggested(r.suggestion);
+      setKindChosen(false);
+      if (f.kind) setKind(f.kind);
+      setNames(f.names);
+      setTerms(f.terms);
+      setFromAi(f.marked);
+      setAiResult(f.result);
     });
   }
 
@@ -81,7 +159,7 @@ export function NewAgreement({ kinds, ai }: { kinds: KindSpec[]; ai: StudioAi })
     start(async () => {
       const r = await createDraftAction({ kind: spec.kind, parties, terms: t, ...(canReword && instructions.trim() && { instructions }) });
       if (!r.ok) {
-        setErrors(r.issues.length ? r.issues : ["The draft couldn't be generated."]);
+        setErrors(r.issues.length ? r.issues.map(humanIssue) : ["The draft couldn't be generated."]);
         return;
       }
       router.push(`/app/studio/${r.draftId}?new=${r.landing}${r.fallback ? `&why=${r.fallback}` : ""}`);
@@ -90,65 +168,86 @@ export function NewAgreement({ kinds, ai }: { kinds: KindSpec[]; ai: StudioAi })
 
   return (
     <Card>
-      <CardHeader title="New agreement" description="Describe what you need, check the details, then generate a draft. A person always reviews and approves before anything is sent." />
+      <CardHeader title="New agreement" description="Start from a reviewed template: let Claude suggest the details from a description, or fill them in yourself. A person always reviews and approves before anything is sent." />
       <div className="space-y-5 px-5 py-4">
-        <Field label="Describe the agreement" hint={canSuggest ? "AI reads this and fills in the form below. It never invents values." : "Without the AI assistant, fill in the form below yourself."}>
-          <textarea
-            className={cx(inputCls, "min-h-24")}
-            value={description}
-            maxLength={4000}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="e.g. A consulting agreement between Northwind Advisory LLC (consultant) and Acme Corp (client), $12,000 fee, payable within 30 days, starting 2027-01-15, 30 days' notice, Delaware law, the client owns the work."
-          />
-        </Field>
         {canSuggest ? (
-          <Button type="button" variant="secondary" icon="spark" onClick={suggest} loading={pending} disabled={!description.trim()}>
-            Fill in from description
-          </Button>
+          <section aria-labelledby="ai-create" className="rounded-xl border border-brand/25 bg-brand/[0.04] p-4">
+            <h3 id="ai-create" className="flex items-center gap-2 text-[15px] font-semibold text-ink">
+              <Icon name="spark" size={18} className="text-brand" /> {AI_COPY.heading}
+            </h3>
+            <p className="mt-1 text-sm text-ink-2">{AI_COPY.intro}</p>
+            <Field className="mt-3" label={AI_COPY.inputLabel}>
+              <textarea
+                className={cx(inputCls, "min-h-24")}
+                value={description}
+                maxLength={4000}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder={AI_COPY.placeholder}
+              />
+            </Field>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <Button type="button" icon="spark" onClick={() => suggest()} loading={suggesting} disabled={!description.trim() || pending}>
+                {AI_COPY.button}
+              </Button>
+              {/* the real suggest step on a fixed example description: no canned result */}
+              <Button type="button" variant="secondary" size="sm" onClick={() => { setDescription(AI_COPY.example); suggest(AI_COPY.example); }} disabled={suggesting || pending}>
+                {AI_COPY.exampleButton}
+              </Button>
+              {suggesting && <span role="status" className="text-sm text-muted">{AI_COPY.working}</span>}
+            </div>
+            <p className="mt-2 text-sm text-ink-2">{AI_COPY.hint}</p>
+            <p className="mt-3 text-xs leading-relaxed text-muted">{AI_COPY.footnote}</p>
+            {aiResult && <div className="mt-3"><Notice tone={aiResult.tone}>{aiResult.text}</Notice></div>}
+            {suggested && <ClarificationGroups groups={visibleClarifications(suggested.clarifications, spec, names, terms, kindChosen)} />}
+          </section>
         ) : (
           <Notice tone={ai.suggest.reason === "off" ? "info" : "warn"}>{AI_UNAVAILABLE[ai.suggest.reason]}</Notice>
         )}
         {info && <Notice tone="info">{info}</Notice>}
-        {suggested && suggested.unclear.length > 0 && (
-          <Notice tone="warn">Not stated in your description: {suggested.unclear.join("; ")}</Notice>
-        )}
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Type of agreement">
-            <Select value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
-              {kinds.map((k) => <option key={k.kind} value={k.kind}>{k.title}</option>)}
-            </Select>
-          </Field>
-          {spec.roles.map((role) => (
-            <Field key={role} label={`${role} (legal name)`}>
-              <input className={inputCls} value={names[role] ?? ""} maxLength={200} onChange={(e) => setNames({ ...names, [role]: e.target.value })} />
-            </Field>
-          ))}
-          {spec.terms.map((t) => (
-            <Field key={t.key} label={`${label(t.key)}${t.required ? "" : " (optional)"}`}>
-              {t.choices ? (
-                <Select value={terms[t.key] ?? ""} onChange={(e) => setTerms({ ...terms, [t.key]: e.target.value })}>
-                  <option value="">Choose…</option>
-                  {Object.entries(t.choices).map(([k, text]) => <option key={k} value={k}>{text}</option>)}
-                </Select>
-              ) : (
-                <input className={inputCls} type={inputType(t.type)} value={terms[t.key] ?? ""} maxLength={200} onChange={(e) => setTerms({ ...terms, [t.key]: e.target.value })} />
-              )}
-            </Field>
-          ))}
-        </div>
+        <section aria-labelledby="details">
+          <h3 id="details" className="text-[15px] font-semibold text-ink">Agreement details</h3>
+          <p className="mt-1 mb-3 text-sm text-muted">
+            {canSuggest ? "Fill these in yourself, or let Claude suggest them above. Every value is yours to check before you generate." : "Fill in the details for one of the reviewed templates."}
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FormField label="Type of agreement" suggested={fromAi.has("kind")}>
+              <Select value={kind} onChange={(e) => { setKind(e.target.value as typeof kind); setKindChosen(true); confirm("kind"); }}>
+                {kinds.map((k) => <option key={k.kind} value={k.kind}>{k.title}</option>)}
+              </Select>
+            </FormField>
+            {spec.roles.map((role) => (
+              <FormField key={role} label={`${role} (legal name)`} suggested={fromAi.has(`role:${role}`)}>
+                <input className={inputCls} value={names[role] ?? ""} maxLength={200} onChange={(e) => { setNames({ ...names, [role]: e.target.value }); confirm(`role:${role}`); }} />
+              </FormField>
+            ))}
+            {spec.terms.map((t) => (
+              <FormField key={t.key} label={`${label(t.key)}${t.required ? "" : " (optional)"}`} suggested={fromAi.has(`term:${t.key}`)}>
+                {t.choices ? (
+                  <Select value={terms[t.key] ?? ""} onChange={(e) => { setTerms({ ...terms, [t.key]: e.target.value }); confirm(`term:${t.key}`); }}>
+                    <option value="">Choose…</option>
+                    {Object.entries(t.choices).map(([k, text]) => <option key={k} value={k}>{text}</option>)}
+                  </Select>
+                ) : (
+                  <input className={inputCls} type={inputType(t.type)} value={terms[t.key] ?? ""} maxLength={200} onChange={(e) => { setTerms({ ...terms, [t.key]: e.target.value }); confirm(`term:${t.key}`); }} />
+                )}
+              </FormField>
+            ))}
+          </div>
+        </section>
         {rewordNotice && <Notice tone="warn">{rewordNotice}</Notice>}
         {canReword && (
-          <Field label="Wording notes (optional)" hint="Tone or style only. They can't change parties, figures or clauses.">
+          <Field label="Wording notes (optional)" hint="Tone or style only. Claude may adjust wording within the template's rules; it can't change parties, figures or clauses.">
             <input className={inputCls} value={instructions} maxLength={1000} onChange={(e) => setInstructions(e.target.value)} placeholder="e.g. plain English" />
           </Field>
         )}
+        {fromAi.size > 0 && <Notice tone="warn">{fromAi.size} {fromAi.size === 1 ? "detail is" : "details are"} still Claude&apos;s suggestion. Check {fromAi.size === 1 ? "it" : "them"} before you generate.</Notice>}
         {errors.length > 0 && (
           <Notice tone="error">
             <ul className="list-disc pl-5">{errors.map((e) => <li key={e}>{e}</li>)}</ul>
           </Notice>
         )}
-        <Button type="button" icon="agreement" onClick={generate} loading={pending}>Generate draft</Button>
+        <Button type="button" icon="agreement" onClick={generate} loading={pending} disabled={suggesting}>Generate draft</Button>
       </div>
     </Card>
   );

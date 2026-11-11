@@ -1,6 +1,7 @@
 // What the file page says, worked out from the file's real state. Pure functions: no database, no clock
 // except the one passed in, so every rule can be tested.
 import type { FileRow } from "./types";
+import { EMAIL_HELP } from "./email-guidance";
 
 export type StageState = "done" | "current" | "todo" | "stopped";
 export type Stage = { key: string; label: string; at: string | null; state: StageState; note?: string };
@@ -64,7 +65,7 @@ export function nextStep(
       if (s.inviteFailed)
         return { tone: "error", title: `The email to ${first} wasn't delivered`, body: `${s.inviteError ? `The mail server said: ${s.inviteError}. ` : ""}The signing link still works. Resend the email, or copy the link and send it another way.` };
       return f.status === "sent"
-        ? { tone: "info", title: `Waiting for ${first} to open the agreement`, body: s.outbox ? "Email delivery isn't configured on this server, so share the signing link yourself." : "The signing email was delivered. Reminders go out on their own; you can also nudge them now." }
+        ? { tone: "info", title: `Waiting for ${first} to open the agreement`, body: s.outbox ? "Email delivery isn't configured on this server, so share the signing link yourself." : `The mail server accepted the signing email. ${EMAIL_HELP.client} Reminders go out on their own; you can also nudge them now.` }
         : { tone: "info", title: `${first} opened it and hasn't signed yet`, body: "Reminders go out on their own; you can also nudge them now." };
     case "signed":
       return s.admin

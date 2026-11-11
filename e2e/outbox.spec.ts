@@ -60,7 +60,7 @@ test("empty log, a logged invitation, filters, redaction, layouts and accessibil
   await expect(row).toContainText(`to ${client}`);
   await expect(row).toContainText("Logged only");
   await expect(filters(page).getByRole("link", { name: "All 1" })).toHaveAttribute("aria-current", "page");
-  for (const f of ["Delivered 0", "Failed 0", "Logged only 1"]) await expect(filters(page).getByRole("link", { name: f })).toBeVisible();
+  for (const f of ["Sent 0", "Failed 0", "Logged only 1"]) await expect(filters(page).getByRole("link", { name: f })).toBeVisible();
   expect(await everything(page)).not.toContain(token);
   await audit(page, "email log (one email)");
 
@@ -142,7 +142,7 @@ test("a long log: counts, filters and pages cover every email, and only this wor
 
   const pager = (p: Page) => p.getByRole("navigation", { name: "Email log pages" });
   await page.goto("/app/outbox");
-  for (const f of ["All 230", "Delivered 150", "Failed 55", "Logged only 25"]) await expect(filters(page).getByRole("link", { name: f })).toBeVisible();
+  for (const f of ["All 230", "Sent 150", "Failed 55", "Logged only 25"]) await expect(filters(page).getByRole("link", { name: f })).toBeVisible();
   await expect(emails(page)).toHaveCount(50);
   await expect(pager(page)).toContainText("Showing 1–50 of 230");
   await expect(pager(page).getByRole("link", { name: "Previous" })).toHaveCount(0);
@@ -183,14 +183,14 @@ test("a long log: counts, filters and pages cover every email, and only this wor
   await expect(pager(page)).toContainText("Showing 1–50 of 55");
   await audit(page, "email log (failed, page 1)");
 
-  // Logged only and Delivered return only their state
+  // Logged only and Sent return only their state
   await filters(page).getByRole("link", { name: "Logged only 25" }).click();
   await expect(emails(page)).toHaveCount(25);
   for (const r of await emails(page).all()) await expect(r).toContainText("Logged only");
   await expect(pager(page).getByRole("link", { name: "Next" })).toHaveCount(0);
   await page.goto("/app/outbox?status=delivered&page=3");
   await expect(pager(page)).toContainText("Showing 101–150 of 150");
-  for (const r of await emails(page).all()) await expect(r).toContainText("Delivered");
+  for (const r of await emails(page).all()) await expect(r).toContainText("Sent (accepted by the mail server)");
 
   // another workspace's email can't be opened by id
   const res = await page.goto(`/app/outbox/em_${tag}_other_0`);
@@ -236,7 +236,7 @@ test.describe("with email delivery", () => {
 
     await page.goto(`${MAIL}/app/outbox`);
     await expect(emails(page)).toHaveCount(2);
-    await expect(filters(page).getByRole("link", { name: "Delivered 1" })).toBeVisible();
+    await expect(filters(page).getByRole("link", { name: "Sent 1" })).toBeVisible();
     await expect(filters(page).getByRole("link", { name: "Failed 1" })).toBeVisible();
     await expect(filters(page).getByRole("link", { name: "Logged only 0" })).toBeVisible();
     await expect(page.getByText(/Email delivery isn't configured/)).toHaveCount(0);
@@ -245,7 +245,7 @@ test.describe("with email delivery", () => {
     await expect(failed).toContainText("Failed");
     await expect(failed).toContainText(/Reason: .*550/);
     const delivered = emails(page).filter({ hasText: "Email confirmation" });
-    await expect(delivered).toContainText("Delivered");
+    await expect(delivered).toContainText("Sent (accepted by the mail server)");
     await expect(delivered).not.toContainText("Reason:");
     expect(await everything(page)).not.toContain(confirmToken);
     await audit(page, "email log (delivered and failed)");
@@ -253,7 +253,7 @@ test.describe("with email delivery", () => {
     await filters(page).getByRole("link", { name: "Failed 1" }).click();
     await expect(emails(page)).toHaveCount(1);
     await expect(emails(page).first()).toContainText("Team invitation");
-    await filters(page).getByRole("link", { name: "Delivered 1" }).click();
+    await filters(page).getByRole("link", { name: "Sent 1" }).click();
     await expect(emails(page)).toHaveCount(1);
     await expect(emails(page).first()).toContainText("Email confirmation");
 
@@ -267,7 +267,7 @@ test.describe("with email delivery", () => {
     // delivered detail: no confirmation link in the stored copy
     await page.goto(`${MAIL}/app/outbox?status=delivered`);
     await emails(page).first().getByRole("link").click();
-    await expect(page.getByRole("complementary", { name: "Delivery" })).toContainText("Delivered");
+    await expect(page.getByRole("complementary", { name: "Delivery" })).toContainText("Sent (accepted by the mail server)");
     await expect(panel(page).getByRole("alert")).toHaveCount(0);
     expect(await everything(page)).not.toContain(confirmToken);
   });

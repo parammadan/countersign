@@ -1,4 +1,5 @@
 import type { IconName } from "@/components/icons";
+import { EMAIL_HELP } from "@/lib/email-guidance";
 
 // How the email log reads a stored email: what kind it is and what happened to it. Pure helpers, shared by
 // the list and the detail page, so both say exactly the same thing.
@@ -24,7 +25,8 @@ export function deliveryOf(status: string): Delivery {
 }
 
 export const DELIVERY: Record<Delivery, { label: string; filter: string; tone: "ok" | "bad" | "neutral"; icon: IconName; explain: string }> = {
-  delivered: { label: "Delivered", filter: "Delivered", tone: "ok", icon: "checkCircle", explain: "Accepted by the mail server for delivery." },
+  // "sent" means the mail server accepted it, not that it reached the inbox: never call it delivered
+  delivered: { label: EMAIL_HELP.sent, filter: "Sent", tone: "ok", icon: "checkCircle", explain: EMAIL_HELP.sentExplain },
   failed: { label: "Failed", filter: "Failed", tone: "bad", icon: "error", explain: "The mail server refused it or couldn't be reached, so it wasn't delivered." },
   logged: { label: "Logged only", filter: "Logged only", tone: "neutral", icon: "info", explain: "Recorded here and not sent: email delivery wasn't configured when this was recorded." },
 };

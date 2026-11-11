@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { fileAction, type FormState } from "@/app/actions";
 import { Button, Notice, inputCls } from "./ui";
 import type { FileStatus } from "@/lib/types";
+import { EMAIL_HELP } from "@/lib/email-guidance";
 
 export function CopyButton({ text, label = "Copy", className, done: doneLabel = "Copied ✓", size }: { text: string; label?: string; className?: string; done?: string; size?: "sm" | "md" }) {
   const [done, setDone] = useState(false);
@@ -46,13 +47,15 @@ type Props = {
   canResendCopy: boolean;
   copyFailed: boolean;
   countersigner: string;
+  /** no email provider: emails are only recorded, so there is no inbox to check */
+  outbox?: boolean;
 };
 
 /**
  * The workflow actions for the file's current state, and nothing else: one primary action, a few secondary
  * ones. Every button runs a real server action (app/actions.ts fileAction), which re-checks state and role.
  */
-export function FileActions({ fileId, status, link, admin, inviteFailed, canResendCopy, copyFailed, countersigner }: Props) {
+export function FileActions({ fileId, status, link, admin, inviteFailed, canResendCopy, copyFailed, countersigner, outbox = false }: Props) {
   const [st, act, pending] = useActionState<FormState, FormData>(fileAction, undefined);
   const [op, setOp] = useState<string | null>(null);
   const open = status === "sent" || status === "viewed";
@@ -84,11 +87,18 @@ export function FileActions({ fileId, status, link, admin, inviteFailed, canRese
       {status === "signed" && admin && <p className="text-xs text-muted">Applies {countersigner}&apos;s adopted signature, seals the PDF and emails the client their copy.</p>}
       <div aria-live="polite">
         {st?.error && <Notice tone="error">{st.error}</Notice>}
-        {st?.ok && <Notice tone="ok">{st.ok}</Notice>}
+        {st?.ok && (
+          <Notice tone="ok">
+            {st.ok}
+            {!outbox && op && SENDS_INVITE.includes(op) && <> {EMAIL_HELP.client}</>}
+          </Notice>
+        )}
       </div>
     </div>
   );
 }
+
+const SENDS_INVITE = ["send", "resend", "remind"];
 
 /** Voiding is final, so it sits apart from the workflow actions and asks for a second click. */
 export function VoidFile({ fileId }: { fileId: string }) {

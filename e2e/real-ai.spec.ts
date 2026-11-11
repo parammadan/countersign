@@ -61,11 +61,11 @@ test("real Claude: Q&A, Studio and Knowledge Hub in the browser", async ({ page,
 
   // ---------- M2.3: describe, fill in, generate with AI wording ----------
   await page.goto("/app/studio");
-  await page.getByLabel("Describe the agreement").fill(
+  await page.getByLabel("Tell AI what you need").fill(
     "A consulting agreement between Northwind Advisory LLC (the consultant) and Acme Widgets Inc (the client). The fee is $12,000, payable within 30 days of invoice, starting 2027-01-15, either party may end it on 30 days' notice, governed by Delaware law, and the client owns the work product.",
   );
-  await page.getByRole("button", { name: "Fill in from description" }).click();
-  const filled = page.getByText(/Filled in from your description/);
+  await page.getByRole("button", { name: "Fill details with AI", exact: true }).click();
+  const filled = page.getByText(/Claude suggested \d+ details? from your description/);
   const suggestErr = page.locator('[role="alert"], .text-red-700').first();
   await expect(filled.or(page.getByText(/AI isn't|didn't answer|Too many/))).toBeVisible({ timeout: 120_000 });
   results.suggest = { filled: await filled.isVisible(), kind: await page.getByLabel("Type of agreement").inputValue() };

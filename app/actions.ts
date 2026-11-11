@@ -6,7 +6,7 @@ import { headers } from "next/headers";
 import { z } from "zod";
 import { one, run, tx } from "@/lib/db";
 import { createSession, destroySession, hashPassword, requireAdmin, requireSession, verifyPassword } from "@/lib/auth";
-import { AppError, countersign, createFile, getFile, getWorkspace, resendSignedCopy, sendFile, sendOnce, voidFile } from "@/lib/files";
+import { AppError, countersign, createFile, getFile, getWorkspace, resendSignedCopy, resolveTemplate, sendFile, sendOnce, voidFile } from "@/lib/files";
 import { ctxFromHeaders } from "@/lib/http";
 import { id, now, sha256, token } from "@/lib/util";
 import { audit } from "@/lib/audit";
@@ -20,6 +20,8 @@ import { escapeHtml } from "@/lib/util";
 import { checkWebhookUrl } from "@/lib/ssrf";
 import { confirmEmail, sendVerification, userVerified, verificationRequired, workspaceVerified } from "@/lib/emailverify";
 import { BRAND } from "@/lib/brand";
+import { EMAIL_HELP } from "@/lib/email-guidance";
+import { verifyResendRefusal } from "@/lib/verify-resend";
 import { printProblem } from "@/lib/pdf/printable";
 
 export type FormState = { error?: string; ok?: string; secret?: string } | undefined;
@@ -152,12 +154,16 @@ export async function acceptInviteAction(_: FormState, fd: FormData): Promise<Fo
 export async function resendVerificationAction(): Promise<FormState> {
   try {
     await throttle("verify-resend", 3);
+    // always the signed-in user's own address: nothing in the form is read, so it can't probe other accounts
     const sess = await requireSession();
-    if (userVerified(sess.userId)) return { ok: "Your email is already confirmed." };
+    if (userVerified(sess.userId)) return { ok: EMAIL_HELP.alreadyVerified };
+    // checked and issued with no await in between (sendVerification records the link before it sends)
+    const refusal = verifyResendRefusal(sess.userId);
+    if (refusal) return { error: refusal };
     const u = one<{ id: string; email: string; name: string }>("SELECT id, email, name FROM users WHERE id = ?", sess.userId)!;
     const r = await sendVerification(u, sess.workspaceId);
     if (!r.delivered) return { error: `We couldn't send the email${r.error ? ` (${r.error})` : ""}. Try again in a minute.` };
-    return { ok: `Sent to ${u.email}. Check your inbox (and spam).` };
+    return { ok: EMAIL_HELP.resent(u.email) };
   } catch (e) {
     return fail(e);
   }
@@ -193,6 +199,10 @@ export async function createFileAction(_: FormState, fd: FormData): Promise<Form
       prefill,
     });
     const send = fd.get("intent") !== "draft";
+    // the form shows which published version it sends; if the agreement was republished since, don't send a different one
+    const shown = s(fd.get("templateVersionId"));
+    if (shown && b.templateId && resolveTemplate(ws.id, b.templateId).version.id !== shown)
+      throw new AppError("This agreement has a newer published version than the one shown. Reload the page to see it, then send.", 409);
     const f = await createFile(ws, b, { kind: "user", label: sess.userEmail, userId: sess.userId }, await ctxFromHeaders(), send);
     fid = f.id;
   } catch (e) {

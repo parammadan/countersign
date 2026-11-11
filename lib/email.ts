@@ -2,6 +2,7 @@ import { run } from "./db";
 import { escapeHtml, id, now } from "./util";
 import { BRAND } from "./brand";
 import { readableBrand } from "./brand-color";
+import { htmlToText } from "./email-text";
 
 export type Attachment = { filename: string; content: Buffer };
 
@@ -56,6 +57,8 @@ export async function sendEmail(opts: {
   let error: string | null = null;
   const mode = emailMode();
   const fromName = (opts.fromName || BRAND.systemSender).replace(/[<>"\r\n]/g, "");
+  // plain-text alternative for the recipient only (it carries the real links); never stored in the log
+  const text = mode === "outbox" ? "" : htmlToText(opts.html);
   if (mode === "smtp") {
     try {
       const info = await (await smtp()).sendMail({
@@ -63,6 +66,7 @@ export async function sendEmail(opts: {
         to: opts.to,
         subject: opts.subject,
         html: opts.html,
+        text,
         replyTo: opts.replyTo || undefined,
         attachments: opts.attachments?.map((a) => ({ filename: a.filename, content: a.content, contentType: "application/pdf" })),
       });
@@ -84,6 +88,7 @@ export async function sendEmail(opts: {
           to: [opts.to],
           subject: opts.subject,
           html: opts.html,
+          text,
           reply_to: opts.replyTo || undefined,
           attachments: opts.attachments?.map((a) => ({ filename: a.filename, content: a.content.toString("base64") })),
         }),

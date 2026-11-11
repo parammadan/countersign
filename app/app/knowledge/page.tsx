@@ -59,7 +59,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ e
         title="Knowledge Hub"
         sub={
           <>
-            Ask a question across all of this workspace&apos;s agreements. Answers quote the passages they rely on, with the agreement and page. If your agreements don&apos;t support an answer, you&apos;re told so and nothing is quoted. Read the passages: an answer can still put them together wrongly. Not legal advice.
+            Ask a question in plain English across all of this workspace&apos;s agreements. When AI is on, Claude answers from the most relevant passages and cites each one, with the agreement and page. If your agreements don&apos;t support an answer, you&apos;re told so and nothing is quoted. Read the passages: an answer can still put them together wrongly. Not legal advice.
           </>
         }
       />
@@ -122,7 +122,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ e
           <Button icon="spark">Ask</Button>
         </div>
       </form>
-      <nav aria-label="Example questions" className="mb-6 flex flex-wrap gap-1.5 text-xs">
+      <nav aria-label="Example questions" className="mb-6 flex flex-wrap items-center gap-1.5 text-xs">
+        <span className="mr-1 text-muted">Try an example:</span>
         {EXAMPLES.map((e) => (
           <Link key={e} href={`?q=${encodeURIComponent(e)}`} className="rounded-full border border-line bg-white px-2.5 py-0.5 text-muted hover:text-ink">{e}</Link>
         ))}

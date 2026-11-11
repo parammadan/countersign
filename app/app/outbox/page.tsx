@@ -7,6 +7,7 @@ import { StatusFilter, filterHref } from "@/components/outbox/StatusFilter";
 import { Pager } from "@/components/outbox/Pager";
 import { DELIVERY, parseFilter } from "@/components/outbox/delivery";
 import { emailPage, parsePage } from "@/components/outbox/query";
+import { EMAIL_HELP } from "@/lib/email-guidance";
 
 export const metadata = { title: "Email log" };
 
@@ -19,7 +20,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ s
 
   return (
     <>
-      <PageHeader title="Email log" sub="Every email sent for your workspace: invitations, reminders, codes and signed copies, and whether each one was delivered." />
+      <PageHeader title="Email log" sub="Every email sent for your workspace: invitations, reminders, codes and signed copies, and whether the mail server accepted each one." />
       {emailMode() === "outbox" && (
         <div className="mb-4">
           <Notice tone="warn">
@@ -50,6 +51,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ s
           </Card>
           {total > 0 && <Pager filter={filter} page={page} pages={pages} from={from} to={to} total={total} />}
           <p className="mt-3 text-xs leading-relaxed text-muted">
+            {EMAIL_HELP.sentExplain} {EMAIL_HELP.client}
+          </p>
+          <p className="mt-1 text-xs leading-relaxed text-muted">
             Personal signing links, codes and password links are withheld from the log, so nobody reading it can use them.
           </p>
         </>

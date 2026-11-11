@@ -21,12 +21,14 @@ describe("Agreement Studio: AI suggestions never invent values", () => {
     expect(s.terms.noticeDays).toBeUndefined(); // 14 is not stated
     expect(s.terms.governingLaw).toBe("Delaware"); // the invented New York is dropped
     expect(s.terms.startDate).toBe("2027-01-15");
-    expect(s.unclear).toEqual(["notice period"]);
+    // a plain-string note (the old shape) is kept in plain words; what's needed comes from the template, not the model
+    expect(s.clarifications.optional.map((c) => c.text)).toContain("Notice period.");
+    expect(s.clarifications.needed.map((c) => c.label)).toEqual(["Client's legal name", "Notice period", "Who owns the work product"]);
     expect(Object.keys(s.terms)).not.toContain("notAKey");
   });
   it("malformed model output gives an empty suggestion, not an error", () => {
     for (const raw of [null, "x", 42, [], { kind: "spaceship", parties: "no", terms: {} }]) {
-      expect(cleanSuggestion(raw, desc)).toEqual({ kind: null, parties: [], terms: {}, unclear: [] });
+      expect(cleanSuggestion(raw, desc)).toEqual({ kind: null, parties: [], terms: {}, clarifications: { needed: [{ key: "kind", label: "Type of agreement", text: expect.any(String) }], optional: [], unsupported: [] } });
     }
   });
   it("choice terms must be one of the listed choices", () => {
