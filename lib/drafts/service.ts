@@ -285,6 +285,14 @@ function wholeName(description: string, name: string): boolean {
   return false;
 }
 
+/**
+ * A complete name, also when it ends a sentence: "for Bluefin Foods Inc. Flat fee …" — the name's own final period is
+ * the sentence's, so the capital after it starts the next sentence, not a longer name. The name is kept as written.
+ */
+function wholeOrSentenceEndName(description: string, name: string): boolean {
+  return wholeName(description, name) || (name.endsWith(".") && name.length > 3 && wholeName(description, name.slice(0, -1)));
+}
+
 /** A model note as one short plain sentence: no markup, no raw term keys, nothing instruction-like (else empty). */
 function plainNote(s: unknown): string {
   if (typeof s !== "string") return "";
@@ -365,7 +373,7 @@ export function cleanSuggestion(raw: unknown, description: string, o: { source?:
   const kind = typeof r.kind === "string" && (KINDS as readonly string[]).includes(r.kind) ? (r.kind as Kind) : null;
   const parties = (Array.isArray(r.parties) ? r.parties : [])
     .filter((p): p is { role: string; name: string } => typeof p?.role === "string" && typeof p?.name === "string")
-    .filter((p) => p.name.trim().length >= 3 && said(p.name, 3) && wholeName(description, p.name.trim()))
+    .filter((p) => p.name.trim().length >= 3 && said(p.name, 3) && wholeOrSentenceEndName(description, p.name.trim()))
     .slice(0, 2)
     .map((p) => ({ role: p.role.slice(0, 40), name: p.name.trim().slice(0, 200) }));
   const spec = kind ? kindSpecs().find((k) => k.kind === kind)! : null;
