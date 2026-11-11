@@ -1,11 +1,12 @@
 // Overview, brand-new workspace: four short ways in, each linking to the real screen where it happens. Fixed text
 // only; it describes what each screen does now (rules reading without AI, template-based suggestions with it).
 import Link from "next/link";
+import { KNOWLEDGE_EXAMPLES } from "@/lib/m3/examples";
 import { Badge, Card, CardHeader } from "@/components/ui";
 import { Icon, type IconName } from "@/components/icons";
 import type { AiState } from "@/lib/ai/budget";
 
-export const KNOWLEDGE_EXAMPLE = "Which agreements allow early termination?";
+export const KNOWLEDGE_EXAMPLE = KNOWLEDGE_EXAMPLES[0];
 
 export type StartItem = { id: string; icon: IconName; title: string; where: string; text: string; href: string; ai?: boolean; admin?: boolean };
 
