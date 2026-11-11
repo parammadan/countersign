@@ -15,6 +15,15 @@ function soffice(): string {
   return process.env.SOFFICE_PATH || "soffice";
 }
 
+// Word-family files are sniffed by content, not trusted by extension, before LibreOffice sees them.
+export function looksLike(data: Buffer, ext: string): boolean {
+  const head = data.subarray(0, 8);
+  if (ext === ".docx" || ext === ".odt") return head.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]));
+  if (ext === ".doc") return head.equals(Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]));
+  if (ext === ".rtf") return data.subarray(0, 5).toString("latin1") === "{\\rtf";
+  return false;
+}
+
 export async function toPdf(data: Buffer, filename: string): Promise<Buffer> {
   const ext = path.extname(filename).toLowerCase();
   const isPdf = data.subarray(0, 5).toString("latin1") === "%PDF-";
@@ -22,6 +31,7 @@ export async function toPdf(data: Buffer, filename: string): Promise<Buffer> {
   if (isPdf) {
     pdf = data;
   } else if (WORD_EXT.includes(ext)) {
+    if (!looksLike(data, ext)) throw new ConvertError(`This file isn't a real ${ext} document. Open it in Word and save it again, or export a PDF.`);
     pdf = await convertWithLibreOffice(data, ext);
   } else {
     throw new ConvertError("Upload a PDF or Word document (.pdf, .docx, .doc, .odt, .rtf).");
