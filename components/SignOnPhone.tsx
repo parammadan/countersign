@@ -75,6 +75,8 @@ type Props = {
   signUrl: string;
   /** the QR code as an image data URL (lib/qr.ts) */
   qr: string;
+  /** called once when the agreement leaves "pending" (e.g. to drop this device's unsent draft) */
+  onOutcome?: () => void;
   requireOtp: boolean;
   /** stop checking while this device is itself signing or declining, so the two don't race */
   paused?: boolean;
@@ -83,11 +85,17 @@ type Props = {
   defaultOpen?: boolean;
 };
 
-export function SignOnPhone({ token, firm, signUrl, qr, requireOtp, paused, className, defaultOpen = false }: Props) {
+export function SignOnPhone({ token, firm, signUrl, qr, requireOtp, paused, className, defaultOpen = false, onOutcome }: Props) {
   const router = useRouter();
   const desktop = useMedia(DESKTOP);
   const visible = useVisible();
   const [open, setOpen] = useState(defaultOpen);
+  const outcomeCb = useRef(onOutcome);
+  useEffect(() => {
+    outcomeCb.current = onOutcome;
+  }, [onOutcome]);
+  // background checks only once the client has asked to sign on their phone (opened the dialog at least once)
+  const [wanted, setWanted] = useState(defaultOpen);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [reconnecting, setReconnecting] = useState(false);
   const [stopped, setStopped] = useState(false);
@@ -106,13 +114,14 @@ export function SignOnPhone({ token, firm, signUrl, qr, requireOtp, paused, clas
     setStopped(false);
     setReconnecting(false);
     setCopied(null);
+    setWanted(true);
     setOpen(true);
   };
 
   // Ask where the agreement is: every 3 s with the dialog open, every 10 s otherwise while the page is visible (only
   // on a desktop-sized screen: on a phone this page is the one signing). Network errors back off (up to 30 s); after
   // 20 minutes it stops and says so.
-  const watching = desktop && !paused && !outcome && !stopped && (open || visible);
+  const watching = desktop && !paused && !outcome && !stopped && (open || (visible && wanted));
   useEffect(() => {
     if (!watching) return;
     let cancelled = false;
@@ -133,6 +142,7 @@ export function SignOnPhone({ token, firm, signUrl, qr, requireOtp, paused, clas
         }
         if (!r.ok) throw new Error(String(r.status));
         const { status } = (await r.json()) as { status?: string };
+        if (cancelled) return;
         if (status !== "pending" && !OUTCOMES.includes(status ?? "")) throw new Error("bad status");
         fails.current = 0;
         setReconnecting(false);
@@ -148,7 +158,7 @@ export function SignOnPhone({ token, firm, signUrl, qr, requireOtp, paused, clas
       }
       if (!cancelled) timer = setTimeout(tick, wait);
     };
-    // check at once when the dialog opens (or the page comes back into view), then on the interval
+    // check at once when the dialog opens; otherwise after one interval (also when the page comes back into view)
     timer = setTimeout(tick, open ? 0 : POLL_IDLE_MS);
     return () => {
       cancelled = true;
@@ -161,6 +171,7 @@ export function SignOnPhone({ token, firm, signUrl, qr, requireOtp, paused, clas
   // say what happened here first, then let the page show its own state for it (signed, complete, declined...)
   useEffect(() => {
     if (!outcome) return;
+    outcomeCb.current?.();
     const t = setTimeout(refresh, REFRESH_AFTER_MS);
     return () => clearTimeout(t);
   }, [outcome, refresh]);

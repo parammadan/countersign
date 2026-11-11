@@ -75,7 +75,8 @@ export default async function Page({ params }: { params: Promise<{ token: string
   const pre = verified ? prefillValues(file, ws, fields) : new Map();
   // "Sign on your phone": a QR code of this same link, made here (never by a third-party service)
   const signUrl = `${appUrl()}/s/${token}`;
-  const qr = await qrDataUrl(signUrl);
+  // a QR failure must never take the signing page down: without it, "Sign on your phone" just isn't offered
+  const qr = await qrDataUrl(signUrl).catch(() => null);
   const signerFields: SignerField[] = fields.map((f) => {
     const v = pre.get(f.id);
     return { ...f, reason: undefined, confidence: undefined, value: v?.kind === "text" ? v.text : v?.kind === "check" && v.on ? "✓" : undefined };

@@ -1,7 +1,10 @@
 // "Sign on your phone": the desktop polls /api/sign/[token]/status while the client signs on the phone. It answers
 // only { status } from a small public set, by the signing page's rules (unknown link 404, expiry, the 30 days after
 // completion), writes nothing (no audit event, no "viewed", no expiry update) and has its own per-IP limit.
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
+
+// no request here, so no verification cookie: an OTP workspace treats this caller as unverified
+vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => undefined }) }));
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -79,6 +82,19 @@ describe("the signing link's status route", () => {
     await mod.completeClientSigning(tok, { consent: true, values: {}, signature: PNG, method: "drawn" }, {});
     expect(await body(tok)).toBe("signed");
     await mod.countersign(mod.getFile(ws.id, f.id), ws, { kind: "user", label: "avery@example.com" }, {});
+    expect(await body(tok)).toBe("completed");
+  });
+
+  it("with emailed codes on, an unverified link holder is told 'signed', not 'completed' (as the page withholds it)", async () => {
+    const { f, tok } = await file();
+    await mod.completeClientSigning(tok, { consent: true, values: {}, signature: PNG, method: "drawn" }, {});
+    await mod.countersign(mod.getFile(ws.id, f.id), ws, { kind: "user", label: "avery@example.com" }, {});
+    db.run("UPDATE workspaces SET require_otp = 1 WHERE id = ?", ws.id);
+    try {
+      expect(await body(tok)).toBe("signed");
+    } finally {
+      db.run("UPDATE workspaces SET require_otp = 0 WHERE id = ?", ws.id);
+    }
     expect(await body(tok)).toBe("completed");
   });
 

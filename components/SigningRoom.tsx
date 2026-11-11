@@ -29,7 +29,8 @@ type Props = {
   consented: boolean;
   /** the signing link as emailed, and its QR code (made on the server), for "Sign on your phone" */
   signUrl: string;
-  qr: string;
+  /** null when the QR couldn't be made: the page still works, without "Sign on your phone" */
+  qr: string | null;
 };
 
 export function SigningRoom(p: Props) {
@@ -168,7 +169,7 @@ export function SigningRoom(p: Props) {
 
   // desktop-sized screens only (the button hides itself below lg), and not once this device has signed
   const phone = (className?: string) => (
-    <SignOnPhone token={p.token} firm={p.firm} signUrl={p.signUrl} qr={p.qr} requireOtp={p.requireOtp} paused={busy || declining} className={className} />
+    p.qr ? <SignOnPhone token={p.token} firm={p.firm} signUrl={p.signUrl} qr={p.qr} requireOtp={p.requireOtp} paused={busy || declining} className={className} onOutcome={forgetDraft} /> : null
   );
 
   if (stage === "done") return <Done token={p.token} firm={p.firm} email={p.clientEmail} status={doneStatus} />;
