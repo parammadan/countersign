@@ -114,7 +114,7 @@ describe("the signing room offers it", () => {
       const h = renderToStaticMarkup(createElement(SigningRoom, { ...props, ...extra }));
       const btn = /<button[^>]*>(?:(?!<\/button>)[\s\S])*Sign on your phone<\/button>/.exec(h)?.[0];
       expect(btn, "the button").toBeTruthy();
-      expect(btn).toMatch(/class="[^"]*\bhidden\b[^"]*\blg:inline-flex\b/);
+      expect(btn).toMatch(/class="[^"]*max-lg:hidden/); // a variant, so it beats the button's own inline-flex below lg
       expect(btn).toContain('aria-haspopup="dialog"');
       expect(btn).toContain("<svg"); // the phone icon
       expect(h).not.toContain('role="dialog"'); // closed until asked

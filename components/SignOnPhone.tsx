@@ -194,7 +194,7 @@ export function SignOnPhone({ token, firm, signUrl, qr, requireOtp, paused, clas
 
   return (
     <>
-      <Button variant="secondary" icon="phone" className={cx("hidden lg:inline-flex", className)} onClick={openDialog} aria-haspopup="dialog">
+      <Button variant="secondary" icon="phone" className={cx("max-lg:hidden", className)} onClick={openDialog} aria-haspopup="dialog">
         Sign on your phone
       </Button>
       {open &&
