@@ -157,13 +157,11 @@ describe("landing page", () => {
       expect(text(fig)).toContain("Scan with your phone's camera. You'll sign there; this page updates when you're done.");
     });
 
-    it("phone scanning stays off until it ships; voice input (shipped) is shown once", async () => {
-      expect(PHONE_SCAN).toBe(false);
+    it("phone scanning and voice input (both shipped) are each shown once", async () => {
+      expect(PHONE_SCAN).toBe(true);
       expect(VOICE_INPUT).toBe(true);
-      const h = await render();
-      const t = text(h);
-      for (const x of [PHONE_SCAN_COPY.label, PHONE_SCAN_COPY.text]) expect(t).not.toContain(x);
-      expect(t).not.toMatch(/scan with phone|photograph the pages/i);
+      const t = text(await render());
+      expect(t.split(PHONE_SCAN_COPY.text)).toHaveLength(2);
       expect(t.split(VOICE_INPUT_COPY.text)).toHaveLength(2);
     });
 

@@ -129,7 +129,7 @@ export const PHONE_SIGN = {
  * Phone document scanning in the agreement upload. Not shipped yet: false keeps every mention of it off the page.
  * Flip it when "Scan with phone" is live, and check the wording against the shipped feature.
  */
-export const PHONE_SCAN = false;
+export const PHONE_SCAN = true;
 export const PHONE_SCAN_COPY = {
   label: "Scan with phone",
   text: "Only have it on paper? Open a QR code on your computer, photograph the pages with your phone, and they arrive as a PDF in the agreement upload, ready for the field editor.",
