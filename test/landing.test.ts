@@ -157,13 +157,14 @@ describe("landing page", () => {
       expect(text(fig)).toContain("Scan with your phone's camera. You'll sign there; this page updates when you're done.");
     });
 
-    it("unshipped features stay off the page while their flags are false", async () => {
+    it("phone scanning stays off until it ships; voice input (shipped) is shown once", async () => {
       expect(PHONE_SCAN).toBe(false);
-      expect(VOICE_INPUT).toBe(false);
+      expect(VOICE_INPUT).toBe(true);
       const h = await render();
       const t = text(h);
-      for (const x of [PHONE_SCAN_COPY.label, PHONE_SCAN_COPY.text, VOICE_INPUT_COPY.label, VOICE_INPUT_COPY.text]) expect(t).not.toContain(x);
-      expect(t).not.toMatch(/scan with phone|photograph the pages|voice input|out loud|microphone|dictat/i);
+      for (const x of [PHONE_SCAN_COPY.label, PHONE_SCAN_COPY.text]) expect(t).not.toContain(x);
+      expect(t).not.toMatch(/scan with phone|photograph the pages/i);
+      expect(t.split(VOICE_INPUT_COPY.text)).toHaveLength(2);
     });
 
     it("makes no compliance claims, testimonials, metrics or drafting claims anywhere in the copy", async () => {

@@ -139,7 +139,7 @@ export const PHONE_SCAN_COPY = {
  * Voice input in Agreement Studio. Being built: false keeps every mention of it off the page. Flip it when it ships,
  * and check the wording against the shipped feature.
  */
-export const VOICE_INPUT = false;
+export const VOICE_INPUT = true;
 export const VOICE_INPUT_COPY = {
   label: "Voice input",
   text: "Prefer to talk? Describe the agreement out loud in Agreement Studio, check the words, then let Claude fill in the template.",
