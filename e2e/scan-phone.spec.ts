@@ -7,8 +7,8 @@ import { signup } from "./helpers";
 
 // "Scan with phone": an admin on a desktop opens the dialog, the QR code is read from the dialog's own image with
 // jsQR (so the code on screen is proved to scan and to carry the phone link), and an emulated phone (Pixel 7,
-// iPhone 13: Playwright device emulation on Chromium, not real devices or cameras) opens it, adds generated photos
-// through the page's file inputs, turns, reorders and deletes pages, and sends them. The desktop moves on by itself
+// iPhone 13: Playwright device emulation on Chromium, not real devices or cameras) opens it, adds generated PNG photos
+// through the page's file inputs (the page converts them to JPEG, the only thing the server accepts), turns, reorders and deletes pages, and sends them. The desktop moves on by itself
 // to the new draft's field editor. Nothing is published or sent.
 
 let ipN = 0;
@@ -151,7 +151,11 @@ test.describe.serial("scan with phone", () => {
       await expect(phone.getByTestId("scan-count")).toHaveText("2 pages");
       await expect(phone.getByRole("img", { name: "Page 2" })).toHaveAttribute("data-rot", "1");
 
-      // what goes over the wire: JPEGs only, never the original PNGs
+      // the server takes JPEG only: the same PNG sent as is (not through the page) is refused
+      const direct = await phone.request.put(link.replace("/scan/", "/api/scan/phone/") + "/pages/9", { data: SQUARE.buffer, headers: { "content-type": "image/jpeg" } });
+      expect(direct.status()).toBe(415);
+
+      // what goes over the wire: JPEGs only, the page converted the chosen PNGs
       const types: string[] = [];
       phone.on("request", (r) => r.method() === "PUT" && types.push(r.headers()["content-type"] ?? ""));
 
