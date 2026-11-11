@@ -307,9 +307,12 @@ export function loadByToken(tok: string) {
 
 export function expireIfDue(f: FileRow, ws: Workspace): FileRow {
   if ((f.status === "sent" || f.status === "viewed") && f.expires_at && f.expires_at < now()) {
-    run("UPDATE files SET status = 'expired' WHERE id = ? AND status IN ('sent','viewed')", f.id);
-    audit(ws.id, f.id, "file.expired", "system");
+    const u = run("UPDATE files SET status = 'expired' WHERE id = ? AND status IN ('sent','viewed')", f.id);
     const nf = getFile(ws.id, f.id);
+    // the row we were handed can be stale (the worker holds one across awaits): if the file was signed, voided or
+    // expired by someone else meanwhile, nothing changed here, so nothing is logged or announced
+    if (Number(u.changes) !== 1) return nf;
+    audit(ws.id, f.id, "file.expired", "system");
     emit(ws.id, "file.expired", fileJson(nf));
     return nf;
   }
