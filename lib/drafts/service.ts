@@ -225,22 +225,39 @@ export async function suggestFromDescription(
 const MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
 const own = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k);
 /** The text as lower-case tokens joined by single spaces, with separators padded so whole-token matching works. */
-const tokens = (x: string) => ` ${x.toLowerCase().normalize("NFKC").replace(/(?<=\d)[,\u00a0'’](?=\d{3}\b)/g, "").replace(/[^\p{L}\p{N}$€£¥.%-]+/gu, " ").replace(/(?<!\d)\.|\.(?!\d)/g, " ").replace(/\s+/g, " ").trim()} `;
+const tokens = (x: string) => ` ${x.toLowerCase().normalize("NFKC").replace(/(?<=\d)[,\u00a0'’](?=\d{3}\b)/g, "").replace(/(?<=\d)-(?=\p{L})|(?<=\p{L})-(?=\d)/gu, " ").replace(/[^\p{L}\p{N}$€£¥.%-]+/gu, " ").replace(/(?<!\d)\.|\.(?!\d)/g, " ").replace(/\s+/g, " ").trim()} `;
 /** Every ISO date written in the description, as written ("2027-01-15") or as "January 15, 2027" / "15 January 2027". */
 function datesIn(description: string): Set<string> {
   const out = new Set<string>();
   const d = description.toLowerCase();
   for (const m of d.matchAll(/\b(\d{4})-(\d{2})-(\d{2})\b/g)) out.add(`${m[1]}-${m[2]}-${m[3]}`);
-  const mon = MONTHS.join("|");
+  // full names and the usual abbreviations ("Jan 15, 2027", "15 Sept. 2027")
+  const names: [string, number][] = MONTHS.flatMap((m, i): [string, number][] => [[m, i + 1], [m.slice(0, 3), i + 1], ...(m === "september" ? ([["sept", 9]] as [string, number][]) : [])]);
+  const idx = new Map(names);
+  const mon = [...idx.keys()].sort((a, b) => b.length - a.length).join("|");
   const add = (y: string, mo: string, day: string) => {
-    const n = MONTHS.indexOf(mo) + 1;
+    const n = idx.get(mo) ?? 0;
     const dd = Number(day);
     if (n > 0 && dd >= 1 && dd <= 31) out.add(`${y}-${String(n).padStart(2, "0")}-${String(dd).padStart(2, "0")}`);
   };
-  for (const m of d.matchAll(new RegExp(`\\b(${mon})\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})\\b`, "g"))) add(m[3], m[1], m[2]);
-  for (const m of d.matchAll(new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(${mon}),?\\s+(\\d{4})\\b`, "g"))) add(m[3], m[2], m[1]);
+  for (const m of d.matchAll(new RegExp(`\\b(${mon})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})\\b`, "g"))) add(m[3], m[1], m[2]);
+  for (const m of d.matchAll(new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?(${mon})\\.?,?\\s+(\\d{4})\\b`, "g"))) add(m[3], m[2], m[1]);
   return out;
 }
+
+/** Amounts written with a k/m suffix ("$12k", "USD 3.5k"), as currency + whole amount: "$12000". */
+function shorthandAmounts(description: string): Set<string> {
+  const out = new Set<string>();
+  for (const m of description.matchAll(/(?<![\p{L}\p{N}])(usd|eur|gbp|cad|[$€£])\s?(\d{1,3}(?:\.\d{1,3})?)\s?([km])(?![\p{L}\p{N}])/giu)) {
+    const [whole, frac = ""] = m[2].split(".");
+    const unit = m[3].toLowerCase() === "k" ? 3 : 6;
+    if (frac.length > unit) continue;
+    const amount = `${whole}${frac.padEnd(unit, "0")}`.replace(/^0+(?=\d)/, "");
+    out.add(`${m[1].toUpperCase()}${amount}`);
+  }
+  return out;
+}
+const moneyKey = (v: string) => v.trim().replace(/^(usd|eur|gbp|cad)\s?/i, (c) => c.trim().toUpperCase()).replace(/,/g, "").replace(/\s/g, "");
 
 /** The name appears in the description as a complete name: not with another capitalised word right before or after it. */
 function wholeName(description: string, name: string): boolean {
@@ -291,15 +308,32 @@ const BASIS_CUE: Record<string, RegExp> = {
   quarter: /\b(?:per|a|each|every)\s+quarter\b|\bquarterly\b/i,
   year: /\b(?:per|a|each|every)\s+(?:year|annum)\b|\b(?:yearly|annually|annual)\b|\bper\s+annum\b/i,
 };
+/**
+ * The description with the parts that can't be about the fee's basis taken out: a sentence about a late fee or
+ * interest ("1.5% per month"), a "fixed term/period/date" (a duration, not a fee), and a notice period ("a month's notice").
+ */
+function basisText(description: string): string {
+  return description
+    .split(/[;\n]|\.(?=\s|$)/)
+    .filter((sentence) => !/\b(?:late|overdue|interest|penalt\w*|default)\b/i.test(sentence))
+    .join(". ")
+    .replace(/\bfixed[- ](?:term|period|date|length|duration|schedule)\b/gi, " ")
+    .replace(/\b(?:a|one|1|each|every)\s+(?:month|quarter|year)(?:['’]s?)?\s+(?:written\s+)?notice\b/gi, " ")
+    .replace(/\bnotice\s+(?:of|period of)\s+(?:a|one|1)\s+(?:month|quarter|year)\b/gi, " ");
+}
 /** Where the suggested values were read from: the person's description (Studio) or a read document (Document Intelligence). */
 export type SuggestionSource = "description" | "document";
 const SOURCE_TEXT: Record<SuggestionSource, string> = { description: "your description", document: "the document" };
+/** A note about a party keeping its own tools / background IP: the consulting template already says that. */
+const PRE_EXISTING_IP = /\b(?:pre-?existing|prior|background|existing)\b[^.]{0,60}\b(?:ip|intellectual property|tools?|materials?|code|software|methods?|templates?)\b|\b(?:keeps?|retains?|owns?)\b[^.]{0,30}\b(?:own|its|their)\b[^.]{0,20}\b(?:ip|intellectual property|tools?|materials?|code|software|methods?|templates?)\b|\b(?:ip|intellectual property|tools?|materials?|code|software|methods?|templates?)\b[^.]{0,30}\b(?:before|already owned)\b/i;
 /** What happens instead, for something the description states that the template can't include. */
 function insteadText(kind: Kind | null, key: string, said: string, unmatched: boolean, source: SuggestionSource = "description"): string {
   if (!kind) return "None of the templates can include this, so it won't be in the agreement.";
   const t = TEMPLATES[kind];
   if (kind === "retainer" && key === "feePeriod" && ONE_OFF.test(said))
     return "A retainer is a recurring fee, so a one-time retainer isn't offered. For a one-time fee, choose Consulting Agreement or Services Agreement as the type of agreement.";
+  if (kind === "consulting" && key === "other" && PRE_EXISTING_IP.test(said))
+    return "The Consulting Agreement already says each party keeps the intellectual property it owned before the agreement, so that part is covered. It can't name specific tools or carve-outs, so none will be listed.";
   const accepted = own(TERM_TYPES, key) && kindSpecs().find((k) => k.kind === kind)!.terms.some((x) => x.key === key);
   if (!accepted) return `The ${t.title} template can't include this, so it won't be in the agreement.`;
   const required = t.requiredTerms.includes(key as TermKey);
@@ -322,6 +356,7 @@ export function cleanSuggestion(raw: unknown, description: string, o: { source?:
   const r = (typeof raw === "object" && raw !== null && !Array.isArray(raw) ? raw : {}) as Record<string, unknown>;
   const desc = tokens(description);
   const dates = datesIn(description);
+  const shorthand = shorthandAmounts(description);
   const said = (v: string, min = 1) => {
     const t = tokens(v).trim();
     return t.length >= min && v.length <= 200 && desc.includes(` ${t} `);
@@ -346,9 +381,9 @@ export function cleanSuggestion(raw: unknown, description: string, o: { source?:
     const key = t.key as TermKey;
     const choices = own(CHOICES, key) ? CHOICES[key] : undefined;
     const type = TERM_TYPES[key];
-    const ok = choices ? own(choices, t.value) : type === "date" ? dates.has(t.value) : said(t.value);
+    const ok = choices ? own(choices, t.value) : type === "date" ? dates.has(t.value) : said(t.value) || (type === "percent" && /^\d{1,2}(?:\.\d{1,2})?$/.test(t.value) && said(`${t.value}%`)) || (type === "money" && shorthand.has(moneyKey(t.value)));
     // a stated value this kind has no place for, or a choice none of the options means: say so, never coerce it
-    if (ok && (key === "feeBasis" || key === "feePeriod") && !(own(BASIS_CUE, t.value) && BASIS_CUE[t.value].test(description))) continue;
+    if (ok && (key === "feeBasis" || key === "feePeriod") && !(own(BASIS_CUE, t.value) && BASIS_CUE[t.value].test(basisText(description)))) continue;
     if (!accepts(key)) { if (ok) addUnsupported(key, ""); continue; }
     if (!ok) { if (choices && kind) addUnsupported(key, "", t.value); continue; }
     terms[key] = t.value.slice(0, 200);
