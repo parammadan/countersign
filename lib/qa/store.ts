@@ -200,29 +200,8 @@ async function answerAndStore(
   state: { called: boolean },
   { pages, findings }: { pages: PageLines[]; findings: Finding[] },
 ): Promise<string> {
-
-  let result: QaResult;
-  let mode = "passages";
-  let billed: Usage | undefined;
-  let verifyBilled: Usage | undefined;
-  if (provider) {
-    state.called = true;
-    try {
-      result = await answerWithModel(provider, question, pages, QA_LIMITS, { history: turns, title: templateName, verifier });
-      mode = "model";
-      billed = result.usage;
-      verifyBilled = result.verifyUsage;
-    } catch (e) {
-      if (!(e instanceof AnalysisError)) throw e;
-      // the assistant failed (timeout, refusal, bad output): show the relevant passages instead, and keep what
-      // the failed call cost
-      billed = e instanceof QaModelError ? e.usage : undefined;
-      mode = "model_failed";
-      result = answerFromPassages(question, pages, { findings });
-      result.warnings.unshift("The AI assistant couldn't answer just now, so these are the most relevant passages instead.");
-    }
-  } else result = answerFromPassages(question, pages, { findings });
-  result.warnings.unshift(...notes);
+  if (provider) state.called = true;
+  const { result, mode, billed, verifyBilled } = await answerPages({ provider, verifier, question, pages, findings, turns, title: templateName, notes });
 
   // the real cost when the API reported it; otherwise (timeout, network failure) the call may still have been
   // billed, so the worst case stays booked
@@ -256,6 +235,40 @@ async function answerAndStore(
     cost_usd: cost / 1e6,
   });
   return qid;
+}
+
+export type PagesAnswer = { result: QaResult; mode: "passages" | "model" | "model_failed"; billed?: Usage; verifyBilled?: Usage };
+
+/**
+ * The answer step every single-document Q&A shares (an agreement version here, a read document in
+ * lib/intake/ai-service): Claude over these pages, checked and verified, when a provider is given; otherwise, or when
+ * the call fails, the most relevant passages. `notes` (why there's no AI answer) are shown first. Nothing is stored.
+ */
+export async function answerPages(o: { provider: ModelProvider | null; verifier: ModelProvider | null; question: string; pages: PageLines[]; findings?: Finding[]; turns: Turn[]; title: string; notes: string[] }): Promise<PagesAnswer> {
+  const { provider, verifier, question, pages, turns, notes } = o;
+  const findings = o.findings ?? [];
+  let result: QaResult;
+  let mode: PagesAnswer["mode"] = "passages";
+  let billed: Usage | undefined;
+  let verifyBilled: Usage | undefined;
+  if (provider) {
+    try {
+      result = await answerWithModel(provider, question, pages, QA_LIMITS, { history: turns, title: o.title, verifier });
+      mode = "model";
+      billed = result.usage;
+      verifyBilled = result.verifyUsage;
+    } catch (e) {
+      if (!(e instanceof AnalysisError)) throw e;
+      // the assistant failed (timeout, refusal, bad output): show the relevant passages instead, and keep what
+      // the failed call cost
+      billed = e instanceof QaModelError ? e.usage : undefined;
+      mode = "model_failed";
+      result = answerFromPassages(question, pages, { findings });
+      result.warnings.unshift("The AI assistant couldn't answer just now, so these are the most relevant passages instead.");
+    }
+  } else result = answerFromPassages(question, pages, { findings });
+  result.warnings.unshift(...notes);
+  return { result, mode, billed, verifyBilled };
 }
 
 type Row = { id: string; thread_id: string | null; question: string; result_json: string; asked_by: string; created_at: string };
