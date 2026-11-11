@@ -79,3 +79,18 @@ describe("numbers attached to words", () => {
     expect(run("Payable net-300.", [["paymentDays", "30"]], "services").terms.paymentDays).toBeUndefined();
   });
 });
+
+describe("party names at the end of a sentence", () => {
+  const parties = (desc: string, list: [string, string][], kind = "services") =>
+    cleanSuggestion({ kind, parties: list.map(([role, name]) => ({ role, name })), terms: [], clarifications: [] }, desc).parties;
+  it("keeps 'Bluefin Foods Inc.' when the next sentence starts right after it", () => {
+    const desc = "Harbor Digital LLC will build a mobile app for Bluefin Foods Inc. Flat fee $24,000, payment due net 15.";
+    expect(parties(desc, [["Provider", "Harbor Digital LLC"], ["Client", "Bluefin Foods Inc."]])).toEqual([
+      { role: "Provider", name: "Harbor Digital LLC" },
+      { role: "Client", name: "Bluefin Foods Inc." },
+    ]);
+  });
+  it("still drops a name that is only part of a longer capitalised name", () => {
+    expect(parties("Work for Bluefin Foods Holdings Group on the app.", [["Client", "Bluefin Foods"]])).toEqual([]);
+  });
+});
