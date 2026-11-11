@@ -8,6 +8,7 @@ import { createDraftAction, suggestAction } from "@/app/studio-actions";
 import type { Clarification, Clarifications, KindSpec, StudioAi, SuggestFailure, Suggestion } from "@/lib/drafts/service";
 import { TERM_LABEL, humanIssue } from "@/lib/drafts/labels";
 import { AI_COPY, AI_UNAVAILABLE } from "./ai-state";
+import { VoiceInput } from "./VoiceInput";
 
 const SUGGEST_FAILED: Record<SuggestFailure, string> = {
   ai_off: "AI isn't configured on this server, so fill in the form below.",
@@ -123,6 +124,8 @@ export function NewAgreement({ kinds, ai }: { kinds: KindSpec[]; ai: StudioAi })
   const [aiResult, setAiResult] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
   /** the person picked the agreement type themselves after the suggestion */
   const [kindChosen, setKindChosen] = useState(false);
+  /** a voice session is under way: the box may still change, so it isn't sent to Claude until it ends */
+  const [voiceBusy, setVoiceBusy] = useState(false);
   const confirm = (key: string) => fromAi.has(key) && setFromAi((s) => { const n = new Set(s); n.delete(key); return n; });
 
   function suggest(text = description) {
@@ -185,12 +188,14 @@ export function NewAgreement({ kinds, ai }: { kinds: KindSpec[]; ai: StudioAi })
                 placeholder={AI_COPY.placeholder}
               />
             </Field>
+            {/* speech becomes text in the box above, for the person to check; it never presses the button below */}
+            <VoiceInput value={description} onChange={setDescription} maxLength={4000} disabled={suggesting || pending} onBusyChange={setVoiceBusy} />
             <div className="mt-3 flex flex-wrap items-center gap-3">
-              <Button type="button" icon="spark" onClick={() => suggest()} loading={suggesting} disabled={!description.trim() || pending}>
+              <Button type="button" icon="spark" onClick={() => suggest()} loading={suggesting} disabled={!description.trim() || pending || voiceBusy}>
                 {AI_COPY.button}
               </Button>
               {/* the real suggest step on a fixed example description: no canned result */}
-              <Button type="button" variant="secondary" size="sm" onClick={() => { setDescription(AI_COPY.example); suggest(AI_COPY.example); }} disabled={suggesting || pending}>
+              <Button type="button" variant="secondary" size="sm" onClick={() => { setDescription(AI_COPY.example); suggest(AI_COPY.example); }} disabled={suggesting || pending || voiceBusy}>
                 {AI_COPY.exampleButton}
               </Button>
               {suggesting && <span role="status" className="text-sm text-muted">{AI_COPY.working}</span>}
