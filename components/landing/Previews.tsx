@@ -127,11 +127,11 @@ export function HeroStudioPreview() {
             </div>
           </div>
         </Window>
-        <div className="lp-float absolute bottom-16 -left-10 hidden items-center gap-2 rounded-xl border border-line bg-white/95 px-3 py-2 text-xs font-medium text-ink shadow-3 backdrop-blur xl:flex">
+        <div className="lp-float absolute bottom-7 -left-10 hidden items-center gap-2 rounded-xl border border-line bg-white/95 px-3 py-2 text-xs font-medium text-ink shadow-3 backdrop-blur xl:flex">
           <span className="grid h-6 w-6 place-items-center rounded-full bg-ok-bg text-ok"><Icon name="checkCircle" size={14} /></span>
           Fills a reviewed template
         </div>
-        <div className="lp-float lp-float-late absolute -top-5 right-10 hidden items-center gap-2 rounded-xl border border-line bg-white/95 px-3 py-2 text-xs font-medium text-ink shadow-3 backdrop-blur xl:flex">
+        <div className="lp-float lp-float-late absolute -top-5 right-28 hidden items-center gap-2 rounded-xl border border-line bg-white/95 px-3 py-2 text-xs font-medium text-ink shadow-3 backdrop-blur xl:flex">
           <span className="grid h-6 w-6 place-items-center rounded-full bg-brand-soft text-brand"><Icon name="shield" size={14} /></span>
           Second-admin approval
         </div>

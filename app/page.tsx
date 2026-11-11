@@ -95,7 +95,10 @@ export default async function Home() {
             ) : (
               <>
                 <Link href="/login" className={navLink}>{NAV.signIn}</Link>
-                <LinkButton href="/signup" className="ml-1.5 hidden min-[420px]:inline-flex">{NAV.create}</LinkButton>
+                {/* phones: a compact button, and none below 380px (the hero's is just below) */}
+                <span className="ml-1 hidden min-[380px]:inline-flex sm:ml-1.5">
+                  <LinkButton href="/signup" size="sm" className="sm:h-9 sm:gap-2 sm:rounded-lg sm:px-3.5 sm:text-sm">{NAV.create}</LinkButton>
+                </span>
               </>
             )}
           </nav>
