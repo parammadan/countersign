@@ -6,7 +6,7 @@
 import { useEffect, useReducer, useRef, useState, useSyncExternalStore } from "react";
 import { Button, Notice, cx } from "@/components/ui";
 import { VOICE_COPY } from "./ai-state";
-import { VOICE_IDLE, VOICE_MAX_MS, clock, mergeTranscript, recognitionCtor, startVoiceSession, voiceReducer, type VoiceSession, type VoiceState } from "./voice-state";
+import { VOICE_IDLE, VOICE_MAX_MS, clock, mergeTranscript, recognitionCtor, startVoiceSession, voiceBusy, voiceReducer, type VoiceSession, type VoiceState } from "./voice-state";
 
 export type VoiceSupport = "unknown" | "supported" | "unsupported";
 
@@ -88,9 +88,10 @@ export function VoicePanel({ support, state, elapsed, disabled, onStart, onStop 
 
 /**
  * The voice control for a text box: adds what was said after its current value (cut to `maxLength`), through
- * `onChange` only. It has no other effect, so it can't submit or send anything.
+ * `onChange` only. It has no other effect, so it can't submit or send anything. `onBusyChange` says when a session is
+ * under way (the box may still change), so the panel can hold off sending the box until it ends.
  */
-export function VoiceInput({ value, onChange, maxLength, disabled }: { value: string; onChange: (next: string) => void; maxLength: number; disabled?: boolean }) {
+export function VoiceInput({ value, onChange, maxLength, disabled, onBusyChange }: { value: string; onChange: (next: string) => void; maxLength: number; disabled?: boolean; onBusyChange?: (busy: boolean) => void }) {
   const support = useSyncExternalStore(noSubscribe, clientSupport, serverSupport);
   const [state, dispatch] = useReducer(voiceReducer, VOICE_IDLE);
   const [now, setNow] = useState(0);
@@ -113,6 +114,17 @@ export function VoiceInput({ value, onChange, maxLength, disabled }: { value: st
       end();
     };
   }, []);
+
+  const busy = voiceBusy(state.status);
+  const busyCb = useRef(onBusyChange);
+  useEffect(() => {
+    busyCb.current = onBusyChange;
+  });
+  useEffect(() => {
+    busyCb.current?.(busy);
+  }, [busy]);
+  // not busy any more once the control goes away
+  useEffect(() => () => busyCb.current?.(false), []);
 
   const listening = state.status === "listening";
   useEffect(() => {
