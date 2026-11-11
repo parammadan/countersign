@@ -1,83 +1,155 @@
 // The public landing page's wording, in one place so tests can check it. Fixed text only. It describes what the
 // product actually does: Claude fills in reviewed templates (it doesn't write custom agreements), answers are checked
-// and cited, and signing records consent and an audit trail. No compliance claims, testimonials, logos or metrics.
+// and cited, Document Intelligence reads documents with rules, and signing records consent and an audit trail. No
+// compliance claims, testimonials, logos or metrics.
 import type { IconName } from "@/components/icons";
 import { BRAND } from "@/lib/brand";
 
 export const HERO = {
   eyebrow: "AI-powered agreement workspace",
-  title: "From agreement to signature, all in one place.",
-  subtitle:
-    "Create agreements from plain English with AI, ask questions about any document, get answers across all your agreements with citations to the page, and collect electronic signatures, countersigned and filed automatically.",
+  titleLead: "From first draft to final signature.",
+  titleAccent: "One intelligent workspace.",
+  title: "From first draft to final signature. One intelligent workspace.",
+  subtitle: "Create agreements with AI, understand documents, manage approvals, and send contracts for signature—all in one place.",
+  primary: "Create workspace",
+  caption: "Illustrative example, not a live AI response.",
+  workflowLabel: "One connected workflow:",
+  workflow: ["Create", "Understand", "Approve", "Sign"],
 } as const;
 
-export type Feature = { id: string; icon: IconName; eyebrow: string; title: string; text: string; points: string[] };
+export const NAV = {
+  features: "Features",
+  how: "How it works",
+  verify: "Verify document",
+  signIn: "Sign in",
+  create: "Create workspace",
+  openApp: "Open app",
+} as const;
 
-export const FEATURES: Feature[] = [
-  {
-    id: "create",
-    icon: "spark",
-    eyebrow: "Agreement Studio",
-    title: "Create with AI",
-    text: "Describe the agreement you need in plain English. Claude fills in the details of one of our reviewed templates, such as the parties, fee, dates and notice period. It doesn't write a custom agreement.",
-    points: [
-      "Every value Claude suggests is marked until you check or change it.",
-      "Edit the draft, then a second admin approves it.",
-      "Export it as PDF or DOCX, or publish it for signing.",
-    ],
-  },
-  {
-    id: "understand",
-    icon: "agreement",
-    eyebrow: "Ask and Knowledge Hub",
-    title: "Understand documents",
-    text: "Ask a question about an agreement in plain English. Answers quote the passages they rely on, with page numbers, and are checked against the agreement before they're shown. If an answer can't be verified, it's withheld and you see the relevant passages instead.",
-    points: [
-      "Knowledge Hub: ask across all your agreements, with each answer citing the agreement and page.",
-      "When nothing in your agreements supports an answer, you're told so.",
-      "Answers help you read faster; they aren't legal advice.",
-    ],
-  },
-  {
-    id: "sign",
-    icon: "pen",
-    eyebrow: "Signing",
-    title: "E-signatures",
-    text: "Your client signs on any device, with no account and no download. Your firm's countersignature is applied automatically the moment they sign, and both sides get the sealed PDF with an audit certificate.",
-    points: [
-      "Records each signer's consent and an audit trail of every step.",
-      "Anyone can check a sealed PDF on the public verify page.",
-      "Reminders go out on their own, on a schedule you set.",
-    ],
-  },
-  {
-    id: "manage",
-    icon: "files",
-    eyebrow: "Files and records",
-    title: "Agreement management",
-    text: "Agreements are versioned, so every file records exactly which version was signed. Choose which agreement to send when you open a file, and see who's waiting, for how long, in one files dashboard.",
-    points: [
-      "Reminders, expiry and countersignature run automatically.",
-      "Approvals before a new agreement goes out; resend, remind or void in one click.",
-      "Signed copies and audit records stay with each file.",
-      "A REST API and webhooks connect your CRM or n8n.",
-    ],
-  },
-];
-
-export const STEPS = [
-  { title: "Create", text: "Upload the agreement you already use, or describe a new one and let Claude fill in a reviewed template." },
-  { title: "Review", text: "Check every detail, edit the draft and get a second admin's approval before it's published." },
-  { title: "Sign", text: "Your client signs on any device and your countersignature is applied automatically." },
-  { title: "Manage", text: "Track every file, send reminders and keep the sealed PDF and audit certificate on record." },
-] as const;
-
-export const EXPLORE = {
-  title: "Explore the product",
-  text: "Create a free workspace and try it with your own agreements. AI features need a confirmed email address; signing, files and the verify page work right away.",
-  cta: "Create a free workspace",
+/** The sample used in every preview. Fictional names only. */
+export const SAMPLE = {
+  consultant: "Northwind Advisory LLC",
+  client: "Acme Widgets Inc",
+  description:
+    "I need a consulting agreement between Northwind Advisory LLC (the consultant) and Acme Widgets Inc (the client). It's a one-time fixed fee of $12,000, and Delaware law applies.",
 } as const;
 
 export const PREVIEW_LABEL = "Illustrative preview";
 
-export const FOOTER_NOTE = `Not legal advice. ${BRAND.name} helps you prepare, understand and sign agreements; it doesn't replace a lawyer.`;
+export type Feature = { id: string; icon: IconName; eyebrow: string; title: string; text: string; points: readonly string[] };
+
+export const STUDIO: Feature = {
+  id: "studio",
+  icon: "spark",
+  eyebrow: "Agreement Studio",
+  title: "Describe the agreement. Claude fills in a reviewed template.",
+  text: "Describe the agreement you need in everyday language. Claude extracts the structured terms, such as the parties, fee, dates, notice period and governing law, and fills in one of the reviewed templates. It doesn't write a custom agreement.",
+  points: [
+    "Every value Claude suggests is marked until you check or change it.",
+    "Edit the draft, then a second admin approves it.",
+    "Export it as PDF or DOCX, or publish it for signing.",
+  ],
+};
+
+/**
+ * Document Intelligence's wording. The deployed version reads documents with rules only; an AI version is being built
+ * separately. Flip this one flag when it ships, and the landing page's section, badge and preview change together.
+ */
+export const DOC_INTEL_AI = false;
+
+export const DOC_INTEL_COPY = {
+  rules: {
+    id: "documents",
+    icon: "agreement",
+    eyebrow: "Document Intelligence",
+    title: "Know what a document says before you act on it.",
+    text: "Upload an incoming document and see what it is: its type, the parties, amounts, dates and governing law, each with the page it came from. Conflicting values are flagged, and text that looks like instructions aimed at an AI is quarantined and never read for a value.",
+    points: [
+      "Read by rules only: no AI is involved.",
+      "Conflicts, missing values and warnings are listed for a person to review.",
+      "When it's ready, start a pre-filled Agreement Studio draft and confirm each value.",
+    ],
+    badge: "Rules only: no AI",
+  },
+  ai: {
+    id: "documents",
+    icon: "agreement",
+    eyebrow: "Document Intelligence",
+    title: "Know what a document says before you act on it.",
+    text: "Upload a document and get an AI summary and its key terms, each with the passage it's cited from. Then chat with that one document to ask what it says.",
+    points: [
+      "Key terms quote the passage and page they come from.",
+      "Chat with this one document: answers stay within it.",
+      "Informational, not legal advice.",
+    ],
+    badge: "AI summary: informational",
+  },
+} as const satisfies Record<"rules" | "ai", Feature & { badge: string }>;
+
+export const DOC_INTEL = DOC_INTEL_AI ? DOC_INTEL_COPY.ai : DOC_INTEL_COPY.rules;
+
+export const KNOWLEDGE: Feature = {
+  id: "knowledge",
+  icon: "overview",
+  eyebrow: "Knowledge Hub",
+  title: "Ask across every agreement. Get the passage, not a guess.",
+  text: "Ask a question in plain English across your indexed agreements. Answers quote the source passages with the agreement and page, and when nothing in your agreements supports an answer, you're told so.",
+  points: [
+    "Ask about one agreement: answers are checked against it before they're shown, and withheld if they can't be verified.",
+    "Every answer cites its passages, so you can read them yourself.",
+    "Answers help you read faster; they aren't legal advice.",
+  ],
+};
+
+export const SIGN: Feature = {
+  id: "signatures",
+  icon: "pen",
+  eyebrow: "E-signatures",
+  title: "Send the agreement. Get back a sealed copy anyone can verify.",
+  text: "Upload the PDF or Word agreement you already use, then choose which agreement to send to each client. Your client signs on any device, your countersignature is applied automatically, and both sides get the sealed PDF with an audit certificate.",
+  points: [
+    "No account or download for your client.",
+    "Records each signer's consent and an audit trail of every step.",
+    "Anyone can check a sealed PDF on the public verify page.",
+  ],
+};
+
+export const CLAUSES: Feature = {
+  id: "clauses",
+  icon: "files",
+  eyebrow: "Clause Library & approvals",
+  title: "Your standard wording, versioned and approved.",
+  text: "Keep your firm's reusable clauses in one library. Every change is a new version, and only text a second admin has approved can be used in an agreement.",
+  points: ["Every version and decision is kept.", "Placeholders for the details that change.", "Approved by a different owner or admin."],
+};
+
+export const FEATURES_INTRO = {
+  eyebrow: "Features",
+  title: "Everything between the first draft and the signed copy.",
+  text: "Connected tools in one workspace. AI helps where it's useful, and every suggestion is yours to check before anything is sent.",
+} as const;
+
+export const FEATURES: Feature[] = [STUDIO, DOC_INTEL, KNOWLEDGE, SIGN, CLAUSES];
+
+export const STEPS = [
+  { title: "Create", icon: "spark", text: "Describe an agreement in everyday language and Claude fills in a reviewed template." },
+  { title: "Understand & Review", icon: "agreement", text: "Read incoming documents, ask questions with cited answers, and check every detail of the draft." },
+  { title: "Approve", icon: "checkCircle", text: "A second admin approves new agreements and clause changes before they're used." },
+  { title: "Sign & Manage", icon: "pen", text: "Your client signs on any device. Countersignature, the sealed PDF and the audit certificate follow automatically." },
+] as const satisfies readonly { title: string; icon: IconName; text: string }[];
+
+export const HOW = {
+  eyebrow: "How it works",
+  title: "Four steps, one record.",
+  note: "Already have an agreement? Upload your PDF or Word file and send it for signing — no AI needed.",
+} as const;
+
+export const CTA = {
+  title: "Your next agreement starts here.",
+  text: "Create a workspace and try it with your own agreements. AI features need a confirmed email address; uploading, signing and the verify page work right away.",
+} as const;
+
+export const FOOTER = {
+  about: `${BRAND.name} is an agreement workspace: create agreements from reviewed templates with AI, understand documents, manage approvals and collect electronic signatures.`,
+  note: `Informational, not legal advice. ${BRAND.name} helps you prepare, understand and sign agreements; it doesn't replace a lawyer.`,
+} as const;

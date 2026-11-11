@@ -1,5 +1,6 @@
-// Public landing page: hero and calls to action for signed-out and signed-in visitors, the four feature sections,
-// the workflow steps, labelled illustrative previews, one h1, and no compliance claims, testimonials or metrics.
+// Public landing page: hero and calls to action for signed-out and signed-in visitors, the feature sections, the
+// workflow steps, labelled illustrative previews, one h1, Document Intelligence wording that follows its flag, and no
+// compliance claims, testimonials or metrics.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -7,15 +8,21 @@ const getSession = vi.fn();
 vi.mock("@/lib/auth", () => ({ getSession: () => getSession() }));
 
 const { default: Home } = await import("@/app/page");
-const { FEATURES, HERO, STEPS, PREVIEW_LABEL, EXPLORE, FOOTER_NOTE } = await import("@/components/landing/copy");
+const copy = await import("@/components/landing/copy");
+const { FEATURES, HERO, STEPS, PREVIEW_LABEL, CTA, FOOTER, HOW, NAV, DOC_INTEL, DOC_INTEL_AI, DOC_INTEL_COPY } = copy;
 
-const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/'/g, "&#x27;").replace(/"/g, "&quot;");
 const render = async () => renderToStaticMarkup(await Home());
 /** The text a visitor reads, tags stripped. */
-const text = (h: string) => h.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/\s+/g, " ");
+const text = (h: string) =>
+  h.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\s+/g, " ");
 const links = (h: string, label: string) => [...h.matchAll(/<a [^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)].filter((m) => text(m[2]).trim() === label).map((m) => m[1]);
+const nav = (h: string) => h.match(/<nav aria-label="Main"[\s\S]*?<\/nav>/)![0];
+const footer = (h: string) => h.match(/<footer[\s\S]*<\/footer>/)![0];
 
-const FORBIDDEN = /ESIGN|UETA|eIDAS|compliant|legally binding|testimonial|trusted by|\d+\+ (firms|users|customers)/i;
+const FORBIDDEN =
+  /ESIGN|UETA|eIDAS|\bSOC ?2\b|HIPAA|GDPR|ISO ?27001|compliant|compliance|legally binding|certified|bank-grade|military-grade|testimonial|trusted by|\d+\+ (firms|users|customers|teams)|\d+(\.\d+)?% |\b\d+x faster/i;
+/** Claims of unrestricted drafting: Claude only fills in reviewed templates. */
+const DRAFTING = /(?<!(n't|not|never) )\bwrites? (your|a|any) (custom )?(contract|legal agreement|agreement)|drafts? any (agreement|contract)|any contract you need/i;
 
 describe("landing page", () => {
   beforeEach(() => getSession.mockReset());
@@ -23,94 +30,140 @@ describe("landing page", () => {
   describe("signed out", () => {
     beforeEach(() => getSession.mockResolvedValue(null));
 
-    it("shows the hero: eyebrow, one h1 with the headline, the subtitle", async () => {
+    it("hero: eyebrow, one h1 with the headline, the subtitle", async () => {
       const h = await render();
       expect(h.match(/<h1[\s>]/g)).toHaveLength(1);
-      expect(h).toMatch(new RegExp(`<h1[^>]*>${HERO.title.replace(/\./g, "\\.")}</h1>`));
+      expect(text(h.match(/<h1[\s\S]*?<\/h1>/)![0]).trim()).toBe("From first draft to final signature. One intelligent workspace.");
+      expect(HERO.title).toBe(`${HERO.titleLead} ${HERO.titleAccent}`);
+      expect(HERO.eyebrow.toUpperCase()).toBe("AI-POWERED AGREEMENT WORKSPACE");
       expect(h).toContain(HERO.eyebrow);
-      expect(h).toContain(esc(HERO.subtitle));
-      for (const w of ["plain English", "citations", "electronic signatures"]) expect(HERO.subtitle).toContain(w);
+      expect(text(h)).toContain("Create agreements with AI, understand documents, manage approvals, and send contracts for signature—all in one place.");
     });
 
-    it("Get started goes to /signup and Sign in to /login; no Open app", async () => {
+    it("hero preview: the real Studio panel copy, sample fields, and the not-a-live-response caption", async () => {
+      const h = text(await render());
+      for (const t of ["Create an agreement with AI", "Tell AI what you need", "Fill details with AI", "Suggested by Claude: check it", "Consulting", "$12,000", "a one-time fixed fee", "Delaware", "Northwind Advisory LLC", "Acme Widgets Inc"])
+        expect(h).toContain(t);
+      expect(h).toContain("Illustrative example, not a live AI response.");
+      expect(h).toContain("One connected workflow: Create · Understand · Approve · Sign");
+    });
+
+    it("Create workspace goes to /signup and Sign in to /login; no Open app", async () => {
       const h = await render();
-      expect(links(h, "Get started").length).toBeGreaterThanOrEqual(2);
-      expect(new Set(links(h, "Get started"))).toEqual(new Set(["/signup"]));
+      expect(links(h, "Create workspace").length).toBeGreaterThanOrEqual(4);
+      expect(new Set(links(h, "Create workspace"))).toEqual(new Set(["/signup"]));
       expect(links(h, "Sign in").length).toBeGreaterThanOrEqual(2);
       expect(new Set(links(h, "Sign in"))).toEqual(new Set(["/login"]));
-      expect(links(h, EXPLORE.cta)).toEqual(["/signup"]);
       expect(links(h, "Open app")).toEqual([]);
     });
 
-    it("header nav: Features and How it works anchors, Verify a document, Sign in", async () => {
+    it("header nav: Features, How it works, Verify document, Sign in, Create workspace", async () => {
       const h = await render();
-      const nav = h.match(/<nav aria-label="Main"[\s\S]*?<\/nav>/)![0];
-      expect(links(nav, "Features")).toEqual(["#features"]);
-      expect(links(nav, "How it works")).toEqual(["#how-it-works"]);
-      expect(links(nav, "Verify a document")).toEqual(["/verify"]);
-      expect(links(nav, "Sign in")).toEqual(["/login"]);
+      const n = nav(h);
+      expect(links(n, NAV.features)).toEqual(["#features"]);
+      expect(links(n, NAV.how)).toEqual(["#how-it-works"]);
+      expect(links(n, "Verify document")).toEqual(["/verify"]);
+      expect(links(n, "Sign in")).toEqual(["/login"]);
+      expect(links(n, "Create workspace")).toEqual(["/signup"]);
       expect(h).toContain('id="features"');
       expect(h).toContain('id="how-it-works"');
     });
 
-    it("has the four feature sections and the Create, Review, Sign, Manage steps", async () => {
+    it("has no product demo video, nav item or embed", async () => {
       const h = await render();
-      expect(FEATURES.map((f) => f.title)).toEqual(["Create with AI", "Understand documents", "E-signatures", "Agreement management"]);
+      expect(h).not.toMatch(/youtube|<iframe|id="demo"|#demo|Watch product demo|Product demo/i);
+    });
+
+    it("has the five feature sections, each with its heading and text", async () => {
+      const h = await render();
+      expect(FEATURES.map((f) => f.eyebrow)).toEqual(["Agreement Studio", "Document Intelligence", "Knowledge Hub", "E-signatures", "Clause Library & approvals"]);
       for (const f of FEATURES) {
-        expect(h).toMatch(new RegExp(`<h2 id="${f.id}-heading"[^>]*>${f.title}</h2>`));
-        expect(h).toContain(esc(f.text));
+        expect(h).toContain(`id="${f.id}"`);
+        expect(text(h.match(new RegExp(`<h2 id="${f.id}-heading"[^>]*>[\\s\\S]*?</h2>`))![0]).trim()).toBe(f.title);
+        expect(text(h)).toContain(f.text);
+        for (const p of f.points) expect(text(h)).toContain(p);
       }
-      expect(STEPS.map((s) => s.title)).toEqual(["Create", "Review", "Sign", "Manage"]);
-      for (const s of STEPS) expect(h).toMatch(new RegExp(`<h3[^>]*>${s.title}</h3>`));
+    });
+
+    it("how it works: four steps and the no-AI upload note", async () => {
+      const h = await render();
+      expect(STEPS.map((s) => s.title)).toEqual(["Create", "Understand & Review", "Approve", "Sign & Manage"]);
+      for (const s of STEPS) expect(text(h)).toMatch(new RegExp(`Step \\d ${s.title} `));
+      expect(HOW.note).toBe("Already have an agreement? Upload your PDF or Word file and send it for signing — no AI needed.");
+      expect(text(h)).toContain(HOW.note);
     });
 
     it("labels every preview as illustrative and hides the mock-ups from assistive tech", async () => {
       const h = await render();
       const figures = h.match(/<figure[\s\S]*?<\/figure>/g) ?? [];
-      expect(figures).toHaveLength(5);
+      expect(figures.length).toBeGreaterThanOrEqual(9);
       for (const f of figures) {
-        expect(f).toContain(`<figcaption class="mt-2 text-center text-xs text-muted">${PREVIEW_LABEL}`);
-        expect(f).toMatch(/<div aria-hidden="true" class="overflow-hidden/);
-        expect(f).not.toMatch(/<(a|button|input|textarea|select)[\s>]/);
+        expect(text(f.match(/<figcaption[\s\S]*?<\/figcaption>/)![0])).toMatch(new RegExp(`^ ?(${PREVIEW_LABEL}|${HERO.caption.replace(/\./g, "\\.")}) ?:`));
+        expect(f).toMatch(/<div aria-hidden="true" class="relative">/);
+        expect(f).not.toMatch(/<(a|button|input|textarea|select|iframe)[\s>]/);
       }
-      expect(h).toContain("Create an agreement with AI");
-      expect(h).toContain("Suggested by Claude");
-      expect(h).toContain("Relevant passages");
-      expect(h).toContain("Northwind Advisory LLC");
-      expect(h).toContain("Acme Widgets Inc");
+      expect(figures.filter((f) => f.includes(HERO.caption))).toHaveLength(1);
     });
 
-    it("describes AI accurately: reviewed templates, checked and cited answers, confirmed email for AI", async () => {
+    it("describes AI accurately: reviewed templates, second admin, checked and cited answers", async () => {
       const h = text(await render());
-      expect(h).toMatch(/reviewed template/);
+      expect(h).toMatch(/reviewed templates?/);
       expect(h).toMatch(/doesn't write a custom agreement/);
       expect(h).toMatch(/second admin/);
       expect(h).toMatch(/PDF or DOCX/);
-      expect(h).toMatch(/withheld/);
-      expect(h).toMatch(/Knowledge Hub/);
+      expect(h).toMatch(/withheld if they can't be verified/);
+      expect(h).toMatch(/agreement and page/);
+      expect(h).toMatch(/nothing in your agreements supports an answer/i);
+      expect(h).toMatch(/Ask about this agreement/);
       expect(h).toMatch(/AI features need a confirmed email/);
       expect(h).toMatch(/records each signer's consent and an audit trail/i);
-      expect(h).not.toMatch(/writes? (your|a|any) (custom )?(contract|legal agreement)|drafts? any agreement/i);
+      expect(h).toMatch(/automatic countersignature|countersignature is applied automatically/i);
+      expect(h).toMatch(/sealed PDF with an audit certificate/);
+      expect(h).toMatch(/public verify page/);
+      expect(h).not.toMatch(DRAFTING);
     });
 
-    it("makes no compliance claims, testimonials or usage metrics", async () => {
+    it("Document Intelligence follows its one flag: rules-only now, AI wording ready", async () => {
+      const h = text(await render());
+      expect(DOC_INTEL_AI).toBe(false);
+      expect(DOC_INTEL).toBe(DOC_INTEL_COPY.rules);
+      expect(h).toContain(DOC_INTEL_COPY.rules.text);
+      expect(h).toContain("Rules only: no AI");
+      expect(h).toContain("Read by rules only: no AI is involved.");
+      expect(h).toMatch(/quarantined/i);
+      expect(h).toMatch(/pre-filled Agreement Studio draft/);
+      expect(h).not.toContain(DOC_INTEL_COPY.ai.text);
+      expect(h).not.toMatch(/AI summary/);
+      // the AI wording, for when it ships: summary, cited key terms, chat with one document, not legal advice
+      const ai = [DOC_INTEL_COPY.ai.text, ...DOC_INTEL_COPY.ai.points].join(" ");
+      for (const w of [/AI summary/, /key terms/, /cited/, /chat with (that|this) one document/i, /Informational, not legal advice/]) expect(ai).toMatch(w);
+      expect(DOC_INTEL_COPY.ai.id).toBe(DOC_INTEL_COPY.rules.id);
+    });
+
+    it("makes no compliance claims, testimonials, metrics or drafting claims anywhere in the copy", async () => {
       const h = await render();
       expect(text(h)).not.toMatch(FORBIDDEN);
       expect(h).not.toMatch(FORBIDDEN);
+      const all = JSON.stringify(copy);
+      expect(all).not.toMatch(FORBIDDEN);
+      expect(all).not.toMatch(DRAFTING);
     });
 
-    it("footer: product name, Sign in, Get started, Verify a document, not-legal-advice note", async () => {
+    it("final call to action and footer", async () => {
       const h = await render();
-      const footer = h.match(/<footer[\s\S]*<\/footer>/)![0];
-      expect(footer).toContain("Agreement");
-      expect(links(footer, "Sign in")).toEqual(["/login"]);
-      expect(links(footer, "Get started")).toEqual(["/signup"]);
-      expect(links(footer, "Verify a document")).toEqual(["/verify"]);
-      expect(footer).toContain(esc(FOOTER_NOTE));
-      expect(FOOTER_NOTE).toMatch(/^Not legal advice/);
+      expect(text(h.match(/<h2 id="cta-heading"[\s\S]*?<\/h2>/)![0]).trim()).toBe("Your next agreement starts here.");
+      expect(text(h)).toContain(CTA.text);
+      const f = footer(h);
+      expect(f).toContain("Agreement");
+      expect(links(f, "Verify a document")).toEqual(["/verify"]);
+      expect(links(f, "Sign in")).toEqual(["/login"]);
+      expect(links(f, "Create workspace")).toEqual(["/signup"]);
+      expect(text(f)).toContain(FOOTER.about);
+      expect(text(f)).toContain(FOOTER.note);
+      expect(FOOTER.note).toMatch(/^Informational, not legal advice/);
     });
 
-    it("has header, main and footer landmarks", async () => {
+    it("has header, main and footer landmarks and clips horizontal overflow", async () => {
       const h = await render();
       for (const t of ["header", "main", "footer"]) expect(h).toContain(`<${t}`);
       expect(h).toContain("overflow-x-clip");
@@ -120,16 +173,16 @@ describe("landing page", () => {
   describe("signed in", () => {
     beforeEach(() => getSession.mockResolvedValue({ userId: "u_1", workspaceId: "w_1", role: "owner" }));
 
-    it("shows Open app to /app instead of Get started and the header Sign in", async () => {
+    it("shows Open app to /app instead of the header Sign in and Create workspace", async () => {
       const h = await render();
-      expect(links(h, "Open app").length).toBeGreaterThanOrEqual(2);
+      expect(links(h, "Open app").length).toBeGreaterThanOrEqual(3);
       expect(new Set(links(h, "Open app"))).toEqual(new Set(["/app"]));
-      const nav = h.match(/<nav aria-label="Main"[\s\S]*?<\/nav>/)![0];
-      expect(links(nav, "Open app")).toEqual(["/app"]);
-      expect(links(nav, "Sign in")).toEqual([]);
-      expect(links(nav, "Get started")).toEqual([]);
-      expect(links(h, EXPLORE.cta)).toEqual([]);
-      expect(h).toContain(HERO.title);
+      const n = nav(h);
+      expect(links(n, "Open app")).toEqual(["/app"]);
+      expect(links(n, "Sign in")).toEqual([]);
+      expect(links(n, "Create workspace")).toEqual([]);
+      expect(links(h.replace(footer(h), ""), "Create workspace")).toEqual([]);
+      expect(text(h)).toContain(HERO.title);
       expect(text(h)).not.toMatch(FORBIDDEN);
     });
   });

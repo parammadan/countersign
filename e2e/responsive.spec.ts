@@ -28,7 +28,7 @@ test("landing page fits every width", async ({ browser }) => {
     await page.goto("/");
     expect(await overflow(page), `${size.name}: landing scrolls sideways`).toBeLessThanOrEqual(0);
     await onScreen(page, page.getByRole("heading", { level: 1 }), `${size.name}: headline`);
-    await onScreen(page, page.getByRole("main").getByRole("link", { name: "Get started" }), `${size.name}: primary call to action`);
+    await onScreen(page, page.getByRole("main").getByRole("link", { name: "Create workspace" }).first(), `${size.name}: primary call to action`);
     await onScreen(page, page.getByRole("banner").getByRole("link", { name: "Sign in" }), `${size.name}: header sign in`);
     await ctx.close();
   }
