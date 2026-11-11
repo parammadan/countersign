@@ -20,7 +20,11 @@ import { configuredProvider } from "../ai/anthropic";
 import { aiGate, aiState, estimateUsd, type AiState } from "../ai/budget";
 import type { ModelProvider } from "../understand/model";
 import type { Principal } from "./roles";
-import { generateAgreement, TEMPLATES, KINDS, type GenerateInput, type Kind, type TermKey } from "../m23/m23-generate";
+import { generateAgreement, TEMPLATES, KINDS as ALL_KINDS, type GenerateInput, type Kind, type TermKey } from "../m23/m23-generate";
+import { hybridEnabled } from "../hybrid/service";
+/** The agreement types Studio offers: the general agreement only with hybrid drafting on (its specifics are AI-proposed clauses). */
+const KINDS = ALL_KINDS.filter((k) => k !== "general" || hybridEnabled());
+import { unreviewedBlock } from "../hybrid/service";
 import { CHOICES, LIST_MAX_ITEMS, listItems, TERM_TYPES } from "../m23/m23-generate/terms";
 import { validateInput } from "../m23/m23-generate/build";
 import { disguisedCharacters, scanInjection } from "../m23/m23-generate/checks";
@@ -108,6 +112,7 @@ export const TERM_MEANING: Record<TermKey, string> = {
   premisesUse: "what the premises may be used for.",
   subletting: "whether the Tenant may sublet.",
   services: "the services or deliverables the description lists, each copied as written, separated by \";\" (at most 12, short items, no legal terms).",
+  agreementTitle: "the agreement's name as the description gives it (general agreements only), for example Event Sponsorship Agreement.",
 };
 /** What each choice means, for the model. Every choice key of every choice term is here (asserted in the tests). */
 export const CHOICE_MEANING: Partial<Record<TermKey, Record<string, string>>> = {
@@ -674,7 +679,15 @@ export const abortPublish = (s: SessionLike, id: string) => store().abortPublish
 export const submitDraft = (s: SessionLike, id: string, version: number) => store().submit(principal(s), id, version);
 export const requestChanges = (s: SessionLike, id: string) => store().requestChanges(principal(s), id);
 
+/** AI-proposed clauses (hybrid drafting) still in the draft and not yet reviewed block approval and publishing. */
+function aiReviewBlock(s: SessionLike, id: string): string | null {
+  const g = getDraft(s, id);
+  return g.ok ? unreviewedBlock(s.workspaceId, id, g.version.doc as DraftDocument) : null;
+}
+
 export async function approveDraft(s: SessionLike, id: string, version: number) {
+  const block = aiReviewBlock(s, id);
+  if (block) return { ok: false as const, code: "check_failed", message: block };
   const g = await checkedGate(s, id, version);
   if (!g.ok) return { ok: false as const, code: "check_failed", message: g.message };
   return store().approve(principal(s), id, version, g.check);
@@ -689,6 +702,8 @@ export async function publishDraft(s: SessionLike, id: string, version: number) 
   const draft = getDraft(s, id);
   if (!draft.ok) return draft;
   if (s.role === "staff") return { ok: false as const, code: "forbidden", message: "Only an owner or admin can publish." };
+  const block = aiReviewBlock(s, id);
+  if (block) return { ok: false as const, code: "check_failed", message: block };
   const g = await checkedGate(s, id, version);
   if (!g.ok) return { ok: false as const, code: "check_failed", message: g.message };
   const claim = store().claimPublish(principal(s), id, version, g.check);
