@@ -5,9 +5,10 @@ import { Button, Notice, cx } from "../ui";
 import { Icon } from "../icons";
 
 // "Scan with phone", the phone page (/scan/<token>). Photos are taken through the browser's own file input with
-// capture="environment" (the camera app; iOS hands back a JPEG) or chosen from the library. Each page is drawn on a
-// canvas here, turned by the chosen rotation, scaled down to at most 2200 px on its long edge and saved as JPEG 0.85;
-// only those JPEGs are sent. No edge detection, cropping or OCR: the pages go into the PDF as photographed.
+// capture="environment" (the camera app; iOS hands back a JPEG) or chosen from the library (JPEG, PNG, or anything
+// else this browser can open, such as HEIC on Safari). Each page is drawn on a canvas here, turned by the chosen
+// rotation, scaled down to at most 2200 px on its long edge and saved as JPEG 0.85 (every path ends in
+// toBlob("image/jpeg")); only those JPEGs are sent, and the server accepts nothing else. No edge detection, cropping or OCR: the pages go into the PDF as photographed.
 // Every request carries the token in its path and nothing else: no cookies are needed or used.
 
 export const OUT_LONG_EDGE = 2200;
@@ -72,6 +73,17 @@ async function pageJpeg(s: Shot): Promise<Blob> {
 
 type Reply = { status: number; body: { error?: string; [k: string]: unknown } };
 
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** Retry while the server says it's busy (503): 1, 2, 4, 8 s, then give up with its answer. */
+async function withRetry(send: () => Promise<Reply>): Promise<Reply> {
+  let r = await send();
+  for (let i = 0; r.status === 503 && i < 4; i++) {
+    await wait(1000 * 2 ** i);
+    r = await send();
+  }
+  return r;
+}
+
 function put(url: string, blob: Blob, onProgress: (f: number) => void): Promise<Reply> {
   return new Promise((resolve, reject) => {
     const x = new XMLHttpRequest();
@@ -100,9 +112,11 @@ function left(ms: number) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
-export function GoneMessage({ reason }: { reason: "expired" | "ended" | "invalid" }) {
+export function GoneMessage({ reason }: { reason: "expired" | "ended" | "invalid" | "busy" }) {
   const t =
-    reason === "expired"
+    reason === "busy"
+      ? { title: "Too many requests", body: "Wait a minute, then reload this page." }
+      : reason === "expired"
       ? { title: "This scan link has expired", body: "Links work for 10 minutes. On your computer, choose Start again for a new code." }
       : reason === "ended"
         ? { title: "This scan has ended", body: "It was sent, cancelled or replaced. On your computer, choose Scan with phone again if you need to." }
@@ -249,7 +263,7 @@ export function PhoneScan({ token, expiresAt: initialExpiry }: { token: string; 
         const jpeg = await pageJpeg(list[i]).catch(() => {
           throw new Error(`Page ${i + 1} couldn't be prepared. Retake it and try again.`);
         });
-        const r = await put(`${base}/pages/${i}`, jpeg, (f) => setPhase({ kind: "sending", page: i + 1, of, pct: Math.round(((i + f) / of) * 100) })).catch(() => {
+        const r = await withRetry(() => put(`${base}/pages/${i}`, jpeg, (f) => setPhase({ kind: "sending", page: i + 1, of, pct: Math.round(((i + f) / of) * 100) }))).catch(() => {
           throw new Error("The page didn't reach your computer. Check your connection and try again.");
         });
         if (r.status === 410) return setPhase({ kind: "gone", reason: /expired/i.test(r.body.error ?? "") ? "expired" : "ended" });
@@ -258,7 +272,7 @@ export function PhoneScan({ token, expiresAt: initialExpiry }: { token: string; 
         sent.current.set(i, sig);
       }
       setPhase({ kind: "finishing", of });
-      const r = await post(`${base}/finish`, { count: of }).catch(() => {
+      const r = await withRetry(() => post(`${base}/finish`, { count: of })).catch(() => {
         throw new Error("Couldn't reach your computer to finish. Check your connection and try again.");
       });
       if (r.status === 200) return setPhase({ kind: "sent" });
@@ -301,7 +315,7 @@ export function PhoneScan({ token, expiresAt: initialExpiry }: { token: string; 
 
       {/* the inputs: the camera (capture), the photo library, and a retake for one page */}
       <input ref={camera} type="file" accept="image/*" capture="environment" hidden data-testid="scan-camera-input" onChange={(e) => { const f = e.target.files; void add(f).finally(() => (e.target.value = "")); }} />
-      <input ref={chooser} type="file" accept="image/jpeg,image/png" multiple hidden data-testid="scan-choose-input" onChange={(e) => { const f = e.target.files; void add(f).finally(() => (e.target.value = "")); }} />
+      <input ref={chooser} type="file" accept="image/*" multiple hidden data-testid="scan-choose-input" onChange={(e) => { const f = e.target.files; void add(f).finally(() => (e.target.value = "")); }} />
       <input
         ref={retake}
         type="file"
@@ -326,7 +340,7 @@ export function PhoneScan({ token, expiresAt: initialExpiry }: { token: string; 
       </div>
       <p className="mt-2 text-xs text-muted">
         {noCamera ? "No camera was found on this device, so choose photos instead. " : "If the camera doesn't open, or you said no to camera access, use Choose photos. "}
-        JPEG or PNG; HEIC photos from the library may not open in every browser.
+        Pages are sent as JPEG. HEIC photos from the library open only in browsers that support them (such as Safari).
       </p>
 
       <div className="mt-3 space-y-2" aria-live="polite">
