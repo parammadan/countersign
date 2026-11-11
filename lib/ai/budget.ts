@@ -22,7 +22,7 @@ export const DEFAULT_DAILY_USD = 5;
 const OVERHEAD_TOKENS = 1_000;
 
 /** doc_intel / doc_qa: Document Intelligence's analysis of one read document, and questions about it (lib/intake). */
-export type Feature = "qa" | "m3" | "studio_suggest" | "studio_draft" | "doc_intel" | "doc_qa";
+export type Feature = "qa" | "m3" | "studio_suggest" | "studio_draft" | "doc_intel" | "doc_qa" | "hybrid";
 export type Usage = ModelUsage;
 
 export const MESSAGES = {
