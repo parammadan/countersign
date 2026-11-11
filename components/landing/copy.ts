@@ -77,8 +77,8 @@ export const DOC_INTEL_COPY = {
     id: "documents",
     icon: "agreement",
     eyebrow: "Document Intelligence",
-    title: "Understand any document before you act on it.",
-    text: "Upload a PDF or Word document and Claude explains it: an AI summary in plain English and the key terms, each cited with the passage and page it comes from and checked against the document's text. Then chat with that one document, or start an Agreement Studio draft from it.",
+    title: "One document: understand it before you act on it.",
+    text: "Upload a single PDF or Word document and Claude explains that document: an AI summary in plain English and the key terms, each cited with the passage and page it comes from and checked against the document's text. Then chat with that one document, or start an Agreement Studio draft from it.",
     points: [
       "Every point quotes its passage and page, so you can check it in the document.",
       "Chat with this one document: answers quote the passages they rely on, and one that can't be confirmed is withheld.",
@@ -96,8 +96,8 @@ export const KNOWLEDGE: Feature = {
   id: "knowledge",
   icon: "overview",
   eyebrow: "Knowledge Hub",
-  title: "Ask across every agreement. Get the passage, not a guess.",
-  text: "Ask a question in plain English across your indexed agreements. Answers quote the source passages with the agreement and page, and when nothing in your agreements supports an answer, you're told so.",
+  title: "All your agreements: ask across them, get the passage.",
+  text: "Ask one question across every agreement indexed in your workspace. Answers quote the source passages with the agreement and page, and when nothing in your agreements supports an answer, you're told so.",
   points: [
     "Ask about one agreement: answers are checked against it before they're shown, and withheld if they can't be verified.",
     "Every answer cites its passages, so you can read them yourself.",
