@@ -75,13 +75,13 @@ describe("D1: long tokens and oversized input never hang", () => {
 
   it("hard-breaks are exact: every piece fits the line and one more character would not", async () => {
     const token = "iWl.mM'".repeat(700);
-    const font = await (await PDFDocument.create()).embedFont(StandardFonts.Helvetica);
+    const font = await (await PDFDocument.create()).embedFont(StandardFonts.TimesRoman); // the body font, 10.5 pt
     const pieces = (await pdfLines(withText(token))).map((i) => i.str).filter((s) => token.includes(s) && s.length > 20);
     expect(pieces.join("")).toBe(token);
     let at = 0;
     for (const [k, s] of pieces.entries()) {
-      expect(font.widthOfTextAtSize(s, 11)).toBeLessThanOrEqual(468);
-      if (k < pieces.length - 1) expect(font.widthOfTextAtSize(token.slice(at, at + s.length + 1), 11)).toBeGreaterThan(468);
+      expect(font.widthOfTextAtSize(s, 10.5)).toBeLessThanOrEqual(468);
+      if (k < pieces.length - 1) expect(font.widthOfTextAtSize(token.slice(at, at + s.length + 1), 10.5)).toBeGreaterThan(468);
       at += s.length;
     }
   });
@@ -169,7 +169,8 @@ describe("D2: bidi controls refused, zero-width characters stripped the same way
     const pdf = (await pdfLines(d)).map((i) => i.str).join("\n");
     for (const s of ["Services Agreement", "Provider: Northwind", "Client: Maple Row", "1. Liability", "We are not liable for xy."]) {
       expect(docx).toContain(s);
-      expect(pdf).toContain(s);
+      // the PDF's party table shows the role as a label over the name, so the name is checked on its own there
+      expect(pdf).toContain(s.replace(/^(Provider|Client): /, ""));
     }
     expect(docx).not.toMatch(/[​-‍⁠﻿]/);
     expect(pdf).not.toMatch(/[​-‍⁠﻿?]/);
@@ -275,7 +276,9 @@ describe("independent review follow-ups", () => {
     for (const lines of [docx, pdf]) {
       expect(lines).toContain("1. Scope 5. Payment Client pays $1");
       expect(lines).not.toContain("5. Payment");
-      expect(lines).toContain("Provider: Bob Alice");
+      // the DOCX party line reads "Provider: Bob Alice"; the PDF's party table puts the name on its own line
+      expect(lines).toContain(lines === docx ? "Provider: Bob Alice" : "Bob Alice");
+      expect(lines).not.toContain("Bob");
       expect(lines).toContain("Signed for Bob Alice (Provider)");
     }
   });

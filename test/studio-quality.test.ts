@@ -114,25 +114,33 @@ describe("party names in common description formats", () => {
   });
 });
 
-describe("IP ownership conditions the Consulting template can't express", () => {
-  const run = (desc: string, kind = "consulting") =>
-    cleanSuggestion({ kind, parties: [], terms: [{ key: "ipOwner", value: "Client" }], clarifications: [] }, desc);
-  const flagged = (desc: string, kind = "consulting") => run(desc, kind).clarifications.unsupported.some((u) => u.label === "Ownership only after payment");
-  it("warns when ownership passes only after full payment, and still fills the owner", () => {
-    const desc = "Client owns new project deliverables only after full payment. Consultant retains pre-existing IP and tools.";
-    const s = run(desc);
-    expect(s.terms.ipOwner).toBe("Client");
-    expect(s.clarifications.unsupported.find((u) => u.label === "Ownership only after payment")!.text).toMatch(/won't be in the agreement.*Pre-existing intellectual property and tools are covered/);
-    for (const d of ["Title to the deliverables transfers to the Client upon payment in full.", "Once paid in full, the client owns all work product.", "Deliverables belong to the Client subject to payment of all fees."]) expect(flagged(d), d).toBe(true);
+describe("IP ownership tied to payment (Consulting)", () => {
+  const run = (desc: string, owner = "Client", kind = "consulting") =>
+    cleanSuggestion({ kind, parties: [], terms: [{ key: "ipOwner", value: owner }], clarifications: [] }, desc);
+  const warned = (s: ReturnType<typeof run>) => s.clarifications.unsupported.some((u) => u.label === "Ownership only after payment");
+  it("reads 'Client owns the deliverables only after full payment' as the reviewed after-payment option, with no warning", () => {
+    for (const d of [
+      "Client owns new project deliverables only after full payment. Consultant retains pre-existing IP and tools.",
+      "Title to the deliverables transfers to the Client upon payment in full.",
+      "Once paid in full, the client owns all work product.",
+      "Deliverables belong to the Client subject to payment of all fees.",
+    ]) {
+      const s = run(d);
+      expect(s.terms.ipOwner, d).toBe("Client after payment");
+      expect(warned(s), d).toBe(false);
+    }
   });
-  it("says nothing when ownership has no payment condition, or for other templates", () => {
-    expect(flagged("The client owns the deliverables. Payment is due in 30 days.")).toBe(false);
-    expect(flagged("Client owns deliverables only after full payment.", "services")).toBe(false);
+  it("keeps a plain owner when ownership has no payment condition, and warns when the form says otherwise", () => {
+    expect(run("The client owns the deliverables. Payment is due in 30 days.").terms.ipOwner).toBe("Client");
+    const s = run("Client owns deliverables only after full payment.", "Consultant");
+    expect(s.terms.ipOwner).toBe("Consultant");
+    expect(s.clarifications.unsupported.find((u) => u.label === "Ownership only after payment")!.text).toMatch(/Choose “Client, once all fees are paid in full”/);
+    expect(warned(run("Client owns deliverables only after full payment.", "Client", "services"))).toBe(false);
   });
-  it("the template itself keeps pre-existing IP with each party and has no payment condition (what the note says)", async () => {
+  it("the after-payment wording keeps pre-existing IP and tools and passes ownership only on full payment", async () => {
     const { TEMPLATES } = await import("@/lib/m23/m23-generate/templates");
-    const ip = TEMPLATES.consulting.clauses.find((c: { id: string }) => c.id === "ip") as { text: string };
+    const ip = TEMPLATES.consulting.clauses.find((c: { id: string }) => c.id === "ip") as { text: string; variants: { texts: Record<string, string> } };
+    expect(ip.variants.texts["Client after payment"]).toMatch(/pre-existing tools, templates and methods.*belongs to the Consultant until the Client has paid all fees due under this Agreement in full, and from then on belongs to the Client/);
     expect(ip.text).toMatch(/Each party keeps the intellectual property it owned before this Agreement/);
-    expect(ip.text).not.toMatch(/pay/i);
   });
 });

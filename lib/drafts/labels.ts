@@ -28,6 +28,8 @@ export const TERM_TEXT: Record<TermKey, TermText> = {
   territory: { label: "Territory (one or more, separated by ;)", name: "Territory" },
   exclusivity: { label: "Exclusivity", name: "Exclusivity" },
   ipOwner: { label: "Who owns the work product", name: "Who owns the work product" },
+  services: { label: "Services and deliverables (one per line)", name: "Services and deliverables" },
+  agreementTitle: { label: "Agreement title", name: "Agreement title" },
   licensedUse: { label: "What the licence allows", name: "What the licence allows" },
   licenceTransfer: { label: "Sublicensing or transfer", name: "Sublicensing or transfer" },
   feePeriod: { label: "Retainer fee is charged per", name: "How often the retainer fee is charged" },

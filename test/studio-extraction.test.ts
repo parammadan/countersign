@@ -27,7 +27,7 @@ describe("the prompt: per-kind terms with meanings, and the existing safety rule
     for (const k of kindSpecs()) {
       expect(SUGGEST_SYSTEM).toContain(`- ${k.kind}: ${k.title}; parties ${k.roles.join(" and ")}; terms ${k.terms.map((t) => `${t.key}${t.required ? "*" : ""}`).join(", ")}.`);
     }
-    expect(SUGGEST_SYSTEM).toContain("- consulting: Consulting Agreement; parties Consultant and Client; terms fee*, startDate*, noticeDays*, governingLaw*, ipOwner*, endDate, feeBasis, paymentDays.");
+    expect(SUGGEST_SYSTEM).toContain("- consulting: Consulting Agreement; parties Consultant and Client; terms fee*, startDate*, noticeDays*, governingLaw*, ipOwner*, services, endDate, feeBasis, paymentDays, lateFeePercent, lateFeePeriod.");
     for (const key of Object.keys(TERM_TYPES) as TermKey[]) expect(SUGGEST_SYSTEM).toContain(`- ${key} (${TERM_TYPES[key]}): ${TERM_MEANING[key]}`);
     for (const [key, choices] of Object.entries(CHOICES)) expect(Object.keys(CHOICE_MEANING[key as TermKey] ?? {}).sort(), key).toEqual(Object.keys(choices!).sort());
     expect(SUGGEST_SYSTEM).toContain('"fixed" = a one-time, fixed, flat or lump-sum fee for the whole work');
@@ -76,8 +76,10 @@ describe("regression: the owner's consulting description", () => {
     expect(s.clarifications.needed).toEqual([]);
     expect(s.clarifications.unsupported).toEqual([]);
     expect(s.clarifications.optional).toEqual([
+      { key: "services", label: "Services and deliverables", text: "You can add this, or leave it out — the agreement then refers to the services described in the client's engagement request." },
       { key: "endDate", label: "End date", text: "You can add this, or leave it out — the agreement then has no fixed end date." },
       { key: "paymentDays", label: "Invoice payment timing", text: "You can add this, or leave it out — the agreement then states no due date." },
+      { key: "lateFeePercent", label: "Late fee", text: "You can add this, or leave it out — the agreement then has no late fee." },
     ]);
     expect(allText(s)).not.toMatch(RAW);
   });
@@ -114,7 +116,7 @@ describe("regression: the owner's consulting description", () => {
     // ownership wasn't given as an option, so the person chooses it (the form marks it); never filled in
     expect(s.clarifications.needed.map((c) => c.label)).toEqual(["Who owns the work product"]);
     expect(s.clarifications.unsupported).toEqual([{ key: "ipOwner", label: "Who owns the work product", text: "Claude couldn't match what your description says to one of this template's options. Choose one below." }]);
-    expect(s.clarifications.optional.map((c) => c.label)).toEqual(["End date", "How the fee is charged", "Invoice payment timing"]);
+    expect(s.clarifications.optional.map((c) => c.label)).toEqual(["Services and deliverables", "End date", "How the fee is charged", "Invoice payment timing", "Late fee"]);
     expect(allText(s)).not.toMatch(RAW);
     expect(allText(s)).not.toMatch(/feePeriod|ipOwner|paymentDays|retainer/i);
   });
@@ -209,7 +211,7 @@ describe("the form: three separate groups, human labels only", () => {
     expect(before.needed.map((c) => c.key)).toEqual(["ipOwner"]);
     const after = visibleClarifications(s.clarifications, consulting, f.names, { ...f.terms, ipOwner: "Client", paymentDays: "30" }, false);
     expect(after.needed).toEqual([]);
-    expect(after.optional.map((c) => c.key)).toEqual(["endDate", "feeBasis"]);
+    expect(after.optional.map((c) => c.key)).toEqual(["services", "endDate", "feeBasis", "lateFeePercent"]);
     expect(after.unsupported).toHaveLength(1);
     const unknown = cleanSuggestion({ kind: "unknown" }, REGRESSION);
     expect(visibleClarifications(unknown.clarifications, consulting, {}, {}, false).needed.map((c) => c.label)).toEqual(["Type of agreement"]);
@@ -218,7 +220,7 @@ describe("the form: three separate groups, human labels only", () => {
 
   it("the form offers the fee basis for consulting, with its human label", () => {
     expect(consulting.terms.find((t) => t.key === "feeBasis")).toMatchObject({ required: false, choices: CHOICES.feeBasis });
-    expect(kinds.find((k) => k.kind === "services")!.terms.map((t) => t.key)).toEqual(["fee", "paymentDays", "startDate", "noticeDays", "governingLaw", "endDate", "feeBasis", "lateFeePercent", "lateFeePeriod"]);
+    expect(kinds.find((k) => k.kind === "services")!.terms.map((t) => t.key)).toEqual(["fee", "paymentDays", "startDate", "noticeDays", "governingLaw", "services", "endDate", "feeBasis", "lateFeePercent", "lateFeePeriod"]);
     expect(kinds.find((k) => k.kind === "retainer")!.terms.map((t) => t.key)).not.toContain("feeBasis");
   });
 

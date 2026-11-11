@@ -65,7 +65,7 @@ export function validateInput(input: GenerateInput): Validated | { issues: strin
     if (v === undefined || v === null || String(v).trim() === "") continue;
     const r = renderTerm(key, v);
     if (!r.ok) issues.push(r.error);
-    else if (TERM_TYPES[key] === "text" && scanInjection(r.text).length) issues.push(`${key}: contains instruction-like text`);
+    else if ((TERM_TYPES[key] === "text" || TERM_TYPES[key] === "list") && scanInjection(r.text).length) issues.push(`${key}: contains instruction-like text`);
     else if (TERM_TYPES[key] === "text" && operativeWords(r.text, partyRefs, key === "licensedMaterial").length) issues.push(`${key}: must be a name or address only; it may not mention a party or contain obligation, payment, negation or licence-scope words (${operativeWords(r.text, partyRefs, key === "licensedMaterial").join(", ")})`);
     else rendered[key] = r.text;
   }
@@ -84,6 +84,10 @@ export function validateInput(input: GenerateInput): Validated | { issues: strin
 
 /** The wording a template clause uses for this input: its variant for the chosen value, else its own text. */
 export function clauseSource(tc: TemplateClause, terms: Partial<Record<TermKey, string | number>>): string {
+  if (tc.alt) {
+    const a = (terms as Record<string, unknown>)[tc.alt.when];
+    if (a !== undefined && a !== null && String(a).trim() !== "") return tc.alt.text;
+  }
   if (!tc.variants) return tc.text;
   const v = (terms as Record<string, unknown>)[tc.variants.term];
   const key = v === undefined || v === null ? "" : String(v).trim();

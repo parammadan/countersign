@@ -20,8 +20,12 @@ import { configuredProvider } from "../ai/anthropic";
 import { aiGate, aiState, estimateUsd, type AiState } from "../ai/budget";
 import type { ModelProvider } from "../understand/model";
 import type { Principal } from "./roles";
-import { generateAgreement, TEMPLATES, KINDS, type GenerateInput, type Kind, type TermKey } from "../m23/m23-generate";
-import { CHOICES, TERM_TYPES } from "../m23/m23-generate/terms";
+import { generateAgreement, TEMPLATES, KINDS as ALL_KINDS, type GenerateInput, type Kind, type TermKey } from "../m23/m23-generate";
+import { hybridEnabled } from "../hybrid/service";
+/** The agreement types Studio offers: the general agreement only with hybrid drafting on (its specifics are AI-proposed clauses). */
+const KINDS = ALL_KINDS.filter((k) => k !== "general" || hybridEnabled());
+import { unreviewedBlock } from "../hybrid/service";
+import { CHOICES, LIST_MAX_ITEMS, listItems, TERM_TYPES } from "../m23/m23-generate/terms";
 import { validateInput } from "../m23/m23-generate/build";
 import { disguisedCharacters, scanInjection } from "../m23/m23-generate/checks";
 import { RAW_TERM_KEYS, termName, withTermNames } from "./labels";
@@ -66,7 +70,7 @@ const termsIn = (text: string) => [...text.matchAll(/\{\{term:([^}]+)\}\}/g)].ma
 /** A template's optional terms the user decides on: an optional clause's term, or a wording variant's term. */
 function ownOptional(kind: Kind): TermKey[] {
   const t = TEMPLATES[kind];
-  return [...new Set(t.clauses.flatMap((c) => [c.when, c.variants?.term]).filter((w): w is TermKey => !!w && !t.requiredTerms.includes(w)))];
+  return [...new Set(t.clauses.flatMap((c) => [c.when, c.variants?.term, c.alt?.when]).filter((w): w is TermKey => !!w && !t.requiredTerms.includes(w)))];
 }
 
 export function kindSpecs(): KindSpec[] {
@@ -107,11 +111,13 @@ export const TERM_MEANING: Record<TermKey, string> = {
   rentSchedule: "how often and when rent is paid.",
   premisesUse: "what the premises may be used for.",
   subletting: "whether the Tenant may sublet.",
+  services: "the services or deliverables the description lists, each copied as written, separated by \";\" (at most 12, short items, no legal terms).",
+  agreementTitle: "the agreement's name as the description gives it (general agreements only), for example Event Sponsorship Agreement.",
 };
 /** What each choice means, for the model. Every choice key of every choice term is here (asserted in the tests). */
 export const CHOICE_MEANING: Partial<Record<TermKey, Record<string, string>>> = {
   feeBasis: { fixed: "a one-time, fixed, flat or lump-sum fee for the whole work", month: "the fee is charged every month", quarter: "every quarter", year: "every year" },
-  ipOwner: { Client: "the Client owns what the Consultant creates", Consultant: "the Consultant owns what it creates" },
+  ipOwner: { Client: "the Client owns what the Consultant creates", Consultant: "the Consultant owns what it creates", "Client after payment": "the Client owns what the Consultant creates only once all fees are paid in full (until then the Consultant owns it)" },
   exclusivity: { exclusive: "exclusive licence", "non-exclusive": "non-exclusive licence" },
   licensedUse: { use: "use only", "use and modify": "use and modify", "use, modify and distribute": "use, modify and distribute" },
   licenceTransfer: { "not permitted": "never", "with written consent": "only with the Licensor's written consent" },
@@ -128,6 +134,7 @@ export const IF_LEFT_OUT: Partial<Record<TermKey, string>> = {
   feeBasis: "the agreement then states the fee without saying whether it is one-time or recurring",
   lateFeePercent: "the agreement then has no late fee",
   noticeDays: "the agreement then has no early-termination clause",
+  services: "the agreement then refers to the services described in the client's engagement request",
 };
 
 const CLARIFY_STATUS = ["missing", "not_supported"] as const;
@@ -167,6 +174,9 @@ export const SUGGEST_SYSTEM = [
     "Agreement says each party keeps the intellectual property it owned before the agreement, so \"the Consultant keeps",
     "its pre-existing IP\" is already covered; ipOwner only says who owns what the Consultant creates under it.",
   ].join(" "),
+  ...(KINDS.includes("general" as Kind)
+    ? ["Choose general when no specific template can state the agreement faithfully: an agreement type not listed, or one a listed template would misstate (for example a mutual NDA, which the one-way nda template can't express). Never squeeze an agreement into the wrong template. For general, the parties are First Party and Second Party, and agreementTitle is the agreement's name."]
+    : []),
   "Kinds (* = required term; the others are optional):",
   ...kindSpecs().map((k) => `- ${k.kind}: ${k.title}; parties ${k.roles.join(" and ")}; terms ${k.terms.map((t) => `${t.key}${t.required ? "*" : ""}`).join(", ")}.`),
   "Terms:",
@@ -355,13 +365,15 @@ const PRE_EXISTING_IP = /\b(?:pre-?existing|prior|background|existing)\b[^.]{0,6
 /** Ownership of the work tied to payment ("owns the deliverables only after full payment", "title passes upon payment in full"). */
 const PAYMENT_CONDITIONED_IP = /\b(?:own|owns|owned|ownership|title|rights?|transfer|transfers|vest|vests|assign|assigns|belong|belongs)\b[^.\n]{0,80}\b(?:after|upon|on|once|until|following|subject to|conditional on|contingent on)\b[^.\n]{0,30}\b(?:payment|paid)\b|\b(?:paid|payment) in full\b[^.\n]{0,80}\b(?:own|owns|ownership|title|rights?|transfer|vest|assign|belong)/i;
 const IP_PAYMENT_NOTE =
-  "The Consulting Agreement gives the work product to the owner you choose with no payment condition, so “only after full payment” won't be in the agreement. Pre-existing intellectual property and tools are covered: each party keeps what it owned before the agreement.";
+  "Your description ties ownership to payment. Choose “Client, once all fees are paid in full” for who owns the work product, or “only after full payment” won't be in the agreement. Pre-existing intellectual property and tools are covered either way.";
 /** What happens instead, for something the description states that the template can't include. */
 function insteadText(kind: Kind | null, key: string, said: string, unmatched: boolean, source: SuggestionSource = "description"): string {
   if (!kind) return "None of the templates can include this, so it won't be in the agreement.";
   const t = TEMPLATES[kind];
   if (kind === "retainer" && key === "feePeriod" && ONE_OFF.test(said))
     return "A retainer is a recurring fee, so a one-time retainer isn't offered. For a one-time fee, choose Consulting Agreement or Services Agreement as the type of agreement.";
+  if (kind && key === "other" && /\bconfidential/i.test(said) && TEMPLATES[kind].clauses.some((c) => c.id === "confidentiality"))
+    return `The ${t.title} already has a confidentiality clause: each party keeps the other party's confidential information private and uses it only for the agreement. It can't add other confidentiality terms.`;
   if (kind === "consulting" && key === "other" && PRE_EXISTING_IP.test(said))
     return "The Consulting Agreement already says each party keeps the intellectual property it owned before the agreement, so that part is covered. It can't name specific tools or carve-outs, so none will be listed.";
   const accepted = own(TERM_TYPES, key) && kindSpecs().find((k) => k.kind === kind)!.terms.some((x) => x.key === key);
@@ -402,7 +414,9 @@ export function cleanSuggestion(raw: unknown, description: string, o: { source?:
   const unsupported: Clarification[] = [];
   const addUnsupported = (key: string, note: string, value?: string) => {
     if (key !== "other" && unsupported.some((u) => u.key === key)) return;
-    const text = [note, insteadText(kind, key, `${note} ${value ?? ""}`, value !== undefined, source)].filter(Boolean).join(" ");
+    const instead = insteadText(kind, key, `${note} ${value ?? ""}`, value !== undefined, source);
+    // "already has a confidentiality clause" replaces the model's note, which would say the opposite
+    const text = (/already has a confidentiality clause/.test(instead) ? [instead] : [note, instead]).filter(Boolean).join(" ");
     unsupported.push({ key, label: termName(key), text });
   };
   const terms: Partial<Record<TermKey, string>> = {};
@@ -411,13 +425,20 @@ export function cleanSuggestion(raw: unknown, description: string, o: { source?:
     const key = t.key as TermKey;
     const choices = own(CHOICES, key) ? CHOICES[key] : undefined;
     const type = TERM_TYPES[key];
-    const ok = choices ? own(choices, t.value) : type === "date" ? dates.has(t.value) : said(t.value) || (type === "percent" && /^\d{1,2}(?:\.\d{1,2})?$/.test(t.value) && said(`${t.value}%`)) || (type === "money" && shorthand.has(moneyKey(t.value)));
+    // a list (services) is checked item by item: each one must be written in the description
+    const items = type === "list" ? listItems(t.value).slice(0, LIST_MAX_ITEMS) : [];
+    const ok = choices ? own(choices, t.value) : type === "list" ? items.length > 0 && items.every((x) => said(x, 2)) : type === "date" ? dates.has(t.value) : said(t.value) || (type === "percent" && /^\d{1,2}(?:\.\d{1,2})?$/.test(t.value) && said(`${t.value}%`)) || (type === "money" && shorthand.has(moneyKey(t.value)));
     // a stated value this kind has no place for, or a choice none of the options means: say so, never coerce it
     if (ok && (key === "feeBasis" || key === "feePeriod") && !(own(BASIS_CUE, t.value) && BASIS_CUE[t.value].test(basisText(description)))) continue;
     if (!accepts(key)) { if (ok) addUnsupported(key, ""); continue; }
     if (!ok) { if (choices && kind) addUnsupported(key, "", t.value); continue; }
-    terms[key] = t.value.slice(0, 200);
+    // an agreement's name reads as a title ("Event Sponsorship Agreement"); its words were checked against the description above
+    const titled = (v: string) => v.split(" ").map((w, i) => (i > 0 && /^(of|and|the|for|to|in|on|with)$/i.test(w) ? w.toLowerCase() : w.charAt(0).toUpperCase() + w.slice(1))).join(" ");
+    terms[key] = type === "list" ? items.join("; ").slice(0, 1_200) : key === "agreementTitle" ? titled(t.value.trim()).slice(0, 80) : t.value.slice(0, 200);
   }
+  // ownership tied to payment, read as Client: the reviewed "Client after payment" wording says exactly that
+  const ipOnPayment = kind === "consulting" && PAYMENT_CONDITIONED_IP.test(description);
+  if (ipOnPayment && terms.ipOwner === "Client") terms.ipOwner = "Client after payment";
   for (const k of Object.keys(terms)) {
     const i = unsupported.findIndex((u) => u.key === k);
     if (i >= 0) unsupported.splice(i, 1); // a valid value came later: it is represented
@@ -447,8 +468,12 @@ export function cleanSuggestion(raw: unknown, description: string, o: { source?:
   // a material IP condition the template can't express, flagged whatever the model said: ownership that passes only
   // once the client has paid ("Client owns the deliverables only after full payment"). The Consulting Agreement's
   // clause gives the work product to the chosen owner outright, so the condition would otherwise vanish unnoticed.
-  if (kind === "consulting" && PAYMENT_CONDITIONED_IP.test(description) && !unsupported.some((u) => /\bpa(id|yment)\b/i.test(u.text) && /\bown/i.test(u.text)))
+  // payment-conditioned ownership the form doesn't yet say: point at the reviewed option rather than drop it
+  if (ipOnPayment && terms.ipOwner !== "Client after payment")
     unsupported.push({ key: "other", label: "Ownership only after payment", text: IP_PAYMENT_NOTE });
+  // the model's own note about it is now represented by the reviewed wording
+  if (terms.ipOwner === "Client after payment")
+    for (let i = unsupported.length - 1; i >= 0; i--) if (/\bpa(id|yment)\b/i.test(unsupported[i].text) && /\bown/i.test(unsupported[i].text)) unsupported.splice(i, 1);
 
   const needed: Clarification[] = [];
   const optional: Clarification[] = [];
@@ -487,6 +512,8 @@ export type DraftFallback = "unverified" | "spend_cap" | "hourly_limit" | "provi
 export type DraftLanding = "template" | "model" | "model_unchanged" | "template_fallback";
 
 export async function createDraft(s: SessionLike, input: GenerateInput, model: ModelProvider | null = configuredProvider()) {
+  // the general agreement is part of hybrid drafting: refused outright while it is off, before anything is metered
+  if (!(KINDS as readonly string[]).includes(input?.kind)) return { ok: false as const, status: "invalid" as const, issues: ["That agreement type isn't available."] };
   // the model step is optional: without it (or when it fails) the draft is the template alone, and that is said
   let provider: GenerationProvider | undefined;
   let skipped: DraftFallback | undefined;
@@ -659,7 +686,15 @@ export const abortPublish = (s: SessionLike, id: string) => store().abortPublish
 export const submitDraft = (s: SessionLike, id: string, version: number) => store().submit(principal(s), id, version);
 export const requestChanges = (s: SessionLike, id: string) => store().requestChanges(principal(s), id);
 
+/** AI-proposed clauses (hybrid drafting) still in the draft and not yet reviewed block approval and publishing. */
+function aiReviewBlock(s: SessionLike, id: string): string | null {
+  const g = getDraft(s, id);
+  return g.ok ? unreviewedBlock(s.workspaceId, id, g.version.doc as DraftDocument) : null;
+}
+
 export async function approveDraft(s: SessionLike, id: string, version: number) {
+  const block = aiReviewBlock(s, id);
+  if (block) return { ok: false as const, code: "check_failed", message: block };
   const g = await checkedGate(s, id, version);
   if (!g.ok) return { ok: false as const, code: "check_failed", message: g.message };
   return store().approve(principal(s), id, version, g.check);
@@ -674,6 +709,8 @@ export async function publishDraft(s: SessionLike, id: string, version: number) 
   const draft = getDraft(s, id);
   if (!draft.ok) return draft;
   if (s.role === "staff") return { ok: false as const, code: "forbidden", message: "Only an owner or admin can publish." };
+  const block = aiReviewBlock(s, id);
+  if (block) return { ok: false as const, code: "check_failed", message: block };
   const g = await checkedGate(s, id, version);
   if (!g.ok) return { ok: false as const, code: "check_failed", message: g.message };
   const claim = store().claimPublish(principal(s), id, version, g.check);

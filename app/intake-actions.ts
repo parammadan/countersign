@@ -36,7 +36,7 @@ export async function startDraftAction(intakeId: string, input: GenerateInput, c
   const safe: GenerateInput = {
     kind: input?.kind,
     parties: Array.isArray(input?.parties) ? input.parties.slice(0, 2).map((p) => ({ role: text(p?.role, 40), name: text(p?.name, 200) })) : [],
-    terms: Object.fromEntries(Object.entries(input?.terms ?? {}).slice(0, 30).map(([k, v]) => [text(k, 40), typeof v === "number" ? v : text(v, 200)])),
+    terms: Object.fromEntries(Object.entries(input?.terms ?? {}).slice(0, 30).map(([k, v]) => [text(k, 40), typeof v === "number" ? v : text(v, k === "services" ? 1_200 : 200)])), // a services list is longer
   };
   const r = await svc.startDraftFromIntake(s, text(intakeId, 100), safe, confirmed === true);
   if (r.ok) {

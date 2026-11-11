@@ -1,4 +1,8 @@
 import Link from "next/link";
+import { draftDisclosures } from "@/lib/drafts/disclosures";
+import { aiClauses, hybridEnabled, hybridRun } from "@/lib/hybrid/service";
+import { HybridPanel } from "@/components/studio/HybridPanel";
+import type { DraftDocument } from "@/lib/m23/doc-output";
 import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/auth";
 import { all } from "@/lib/db";
@@ -16,6 +20,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const { id } = await params;
   const q = await searchParams;
   const g = getDraft(s, id);
+  const notIncluded = draftDisclosures(s.workspaceId, id);
   if (!g.ok) notFound();
   const h = versions(s, id);
   if (!h.ok) notFound();
@@ -24,6 +29,21 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const who = (uid: string) => people.get(uid) ?? "former member";
   const authors = new Set([g.draft.created_by, ...h.versions.map((v) => v.author)]);
   const scope = { workspaceId: g.draft.workspace_id, lastEditor: g.draft.last_editor, authors: [...authors] };
+  // hybrid drafting (behind HYBRID_DRAFTING): the requirements check and AI-proposed clauses for this draft
+  const doc = g.version.doc as DraftDocument;
+  const numberOf = Object.fromEntries(doc.clauses.map((c, i) => [c.id, c.number ?? String(i + 1)]));
+  const run = hybridEnabled() ? hybridRun(s.workspaceId, id) : null;
+  const hybridPanel = hybridEnabled() ? (
+    <HybridPanel
+      draftId={id}
+      description={run?.description ?? ""}
+      requirements={run?.requirements ?? []}
+      coverage={run?.coverage ?? []}
+      aiClauses={aiClauses(s.workspaceId, id, doc).map((c) => ({ clauseId: c.clauseId, number: numberOf[c.clauseId] ?? "?", heading: doc.clauses.find((x) => x.id === c.clauseId)?.heading ?? "", reviewed: c.reviewed }))}
+      clauseNumbers={numberOf}
+      canReview={s.role !== "staff"}
+    />
+  ) : null;
   const props: EditorProps = {
     draftId: g.draft.id,
     status: g.draft.status,
@@ -51,6 +71,15 @@ export default async function Page({ params, searchParams }: { params: Promise<{
       {q.new === "template_fallback" && <div className="mb-4"><Notice tone="warn">{fallbackNotice(q.why)}</Notice></div>}
       {q.new === "model" && <div className="mb-4"><Notice tone="info">{MODEL_NOTICES.model}</Notice></div>}
       {q.new === "model_unchanged" && <div className="mb-4"><Notice tone="info">{MODEL_NOTICES.model_unchanged}</Notice></div>}
+      {notIncluded.length > 0 && (
+        <div className="mb-4">
+          <Notice tone="warn">
+            <p className="font-medium">Not in this draft: your description asked for {notIncluded.length === 1 ? "this, and the template can't include it" : "these, and the template can't include them"}. Check before you approve or send it.</p>
+            <ul className="mt-1 list-disc pl-5">{notIncluded.map((d, i) => <li key={i}>{d.label ? <><span className="font-medium">{d.label}:</span> </> : null}{d.text}</li>)}</ul>
+          </Notice>
+        </div>
+      )}
+      {hybridPanel}
       <DraftEditor {...props} />
     </>
   );

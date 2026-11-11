@@ -8,7 +8,7 @@ import type { GenerateInput, GenerateOptions, GenerateResult } from "./types";
 function assemble(v: Validated, input: GenerateInput, clauses: ReturnType<typeof fillTemplate>): DraftDocument {
   return {
     schema: 1,
-    title: v.template.title,
+    title: (v.template.titleTerm && v.rendered[v.template.titleTerm]) || v.template.title,
     parties: input.parties.map((p) => ({ role: p.role, name: p.name.trim() })),
     clauses: numberClauses(clauses),
     origin: { kind: "generated" },

@@ -168,7 +168,9 @@ export function NewAgreement({ kinds, ai }: { kinds: KindSpec[]; ai: StudioAi })
       return;
     }
     start(async () => {
-      const r = await createDraftAction({ kind: spec.kind, parties, terms: t, ...(canReword && instructions.trim() && { instructions }) });
+      // what can't be included is kept with the draft, so it is shown again where the draft is reviewed and approved
+      const notIncluded = suggested ? visibleClarifications(suggested.clarifications, spec, names, terms, kindChosen).unsupported.map((c) => ({ label: c.label, text: c.text })) : [];
+      const r = await createDraftAction({ kind: spec.kind, parties, terms: t, ...(canReword && instructions.trim() && { instructions }) }, notIncluded);
       if (!r.ok) {
         setErrors(r.issues.length ? r.issues.map((i) => ({ key: issueKey(i), text: humanIssue(i) })) : [{ key: "", text: "The draft couldn't be generated." }]);
         return;
@@ -241,6 +243,8 @@ export function NewAgreement({ kinds, ai }: { kinds: KindSpec[]; ai: StudioAi })
                     <option value="">Choose…</option>
                     {Object.entries(t.choices).map(([k, text]) => <option key={k} value={k}>{text}</option>)}
                   </Select>
+                ) : t.type === "list" ? (
+                  <textarea className={cx(inputCls, "min-h-24 py-2")} value={(terms[t.key] ?? "").split(/\s*;\s*/).join("\n")} maxLength={1_200} onChange={(e) => { setTerms({ ...terms, [t.key]: e.target.value }); confirm(`term:${t.key}`); edited(t.key); }} />
                 ) : (
                   <input className={inputCls} type={inputType(t.type)} inputMode={inputMode(t.type)} value={terms[t.key] ?? ""} maxLength={200} onChange={(e) => { setTerms({ ...terms, [t.key]: e.target.value }); confirm(`term:${t.key}`); edited(t.key); }} />
                 )}

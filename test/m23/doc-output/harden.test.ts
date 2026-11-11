@@ -131,12 +131,13 @@ function docxPartsSha(buf: Uint8Array): string {
 }
 
 describe("output is unchanged from the pre-optimisation renderer", () => {
-  // PDF: SHA-256 of the file from the renderer before winAnsi was changed (commit d8ba499); pdf-lib compresses
+  // PDF: SHA-256 of the file from the redesigned layout (title block, party table, footers; 2026-11-11), re-recorded
+  // deliberately when the layout changed. pdf-lib compresses
   // with pako (pure JS), so these hold in any environment. DOCX: docxPartsSha of the output at 08ec5df.
   // noClauses is refused now (D3), so it has no hash; mixed marks m2 locked, which does not change output.
   const PDF: Record<string, string> = {
-    base: "8f2583dcfee2d1f686cfd4ef442cf2f792168dd077031095cab10b63c6864b6c",
-    mixed: "575b91b7f87f3ca074b8bb00340af99ae4c6b42ed15311c94e0794c353c81334",
+    base: "2afcc92702d8c7a558e6c2ca797d3b20ed2d0da6aa9aefc3f62de9271565a2a0",
+    mixed: "2e9d3483a4c5fd88f7f619c7043d9b47e35928cb202cf0dbd44f441320808b87",
   };
   const DOCX: Record<string, string> = {
     base: "841f04862b078fbdf179f68eab6e595e6cca8d472e6e7f24eec6757b44b5e39a",

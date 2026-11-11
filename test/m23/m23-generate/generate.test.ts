@@ -58,7 +58,8 @@ describe("template-only happy paths", () => {
     const ids = ok(await generateAgreement({ ...services, terms })).draft.clauses.map((c) => c.id);
     expect(ids).not.toContain("late_fee");
   });
-  it("covers seven kinds", () => expect([...KINDS].sort()).toEqual(["consulting", "engagement", "lease", "licence", "nda", "retainer", "services"]));
+  // seven specific kinds, plus the general agreement (offered by Studio only with hybrid drafting on)
+  it("covers seven kinds and the general agreement", () => expect([...KINDS].sort()).toEqual(["consulting", "engagement", "general", "lease", "licence", "nda", "retainer", "services"]));
   it("every template placeholder is resolvable", () => {
     for (const t of Object.values(TEMPLATES)) {
       const ids = new Set(t.clauses.map((c) => c.id));

@@ -16,10 +16,18 @@ export const scope = (heading: string, provider: string, client: string, what: s
   text: `The ${provider} will perform the ${what} described in the ${client}'s ${where}, with reasonable skill and care.`,
 });
 
+/** The scope as the user's own list of services, when they gave one (`services`): one (a), (b) line per item. */
+export const listedScope = (provider: string, what: string): NonNullable<TemplateClause["alt"]> => ({
+  when: "services",
+  text: `The ${provider} will perform the following ${what}, with reasonable skill and care:\n{{term:services}}`,
+});
+
 /** Start date (required) and how it ends; `until` says what ends it besides termination. */
 export const term = (doc: string, until?: string): TemplateClause => ({
   id: "term", heading: "Term", required: true,
   text: `This ${doc} starts on {{term:startDate}} and continues until ${until ? `${until} or ` : ""}it is ended under clause {{ref:termination}}.`,
+  // with a fixed end date, the end date governs: no "until the services are complete" beside a date that says otherwise
+  alt: { when: "endDate", text: `This ${doc} starts on {{term:startDate}} and continues until the end date in clause {{ref:term_end}}, unless it is ended earlier under clause {{ref:termination}}.` },
 });
 
 /** Optional fixed end date, only when the user gave one. */

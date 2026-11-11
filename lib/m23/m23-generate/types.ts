@@ -1,18 +1,19 @@
 import type { DraftDocument, ModelProvider } from "../shared/agreement-model";
 
-export type Kind = "services" | "nda" | "lease" | "retainer" | "engagement" | "consulting" | "licence";
+export type Kind = "services" | "nda" | "lease" | "retainer" | "engagement" | "consulting" | "licence" | "general";
 export type TermKey =
   | "fee" | "paymentDays" | "startDate" | "endDate" | "noticeDays" | "governingLaw"
   | "lateFeePercent" | "rent" | "deposit" | "confidentialityYears" | "propertyAddress"
   | "licensedMaterial" | "territory" | "exclusivity" | "ipOwner" | "licensedUse" | "licenceTransfer" | "feePeriod"
-  | "feeBasis" | "rentSchedule" | "premisesUse" | "subletting" | "lateFeePeriod";
+  | "feeBasis" | "rentSchedule" | "premisesUse" | "subletting" | "lateFeePeriod" | "services" | "agreementTitle";
 
 /**
  * money: "$5,000" / "USD 5,000.00" (a currency is required; bare numbers are rejected); date: YYYY-MM-DD; int;
  * percent: number 0-100; text: short free text; choice: one of a fixed list of values (see CHOICES in terms.ts);
- * territory: one or more names from the closed list in territories.ts, separated by ";".
+ * territory: one or more names from the closed list in territories.ts, separated by ";"; list: the user's own short
+ * items (services, deliverables), separated by ";" or new lines, rendered as (a), (b), (c) lines.
  */
-export type TermType = "money" | "date" | "int" | "percent" | "text" | "choice" | "territory";
+export type TermType = "money" | "date" | "int" | "percent" | "text" | "choice" | "territory" | "list";
 
 export type GenerateInput = {
   kind: Kind;
@@ -36,11 +37,15 @@ export type TemplateClause = {
    * they didn't. Every choice of the term must have a text (asserted in the template tests).
    */
   variants?: { term: TermKey; texts: Record<string, string> };
+  /** Reviewed wording used instead of `text` when this (optional) term was supplied, e.g. a listed scope of services. */
+  alt?: { when: TermKey; text: string };
 };
 
 export type AgreementTemplate = {
   kind: Kind;
   title: string;
+  /** A text term whose value is the document's title instead of `title` (the general agreement: "Event Sponsorship Agreement"). */
+  titleTerm?: TermKey;
   roles: [string, string];
   requiredTerms: TermKey[];
   clauses: TemplateClause[];
