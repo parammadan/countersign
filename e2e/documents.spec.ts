@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import path from "node:path";
 import { signup } from "./helpers";
 
 // Synthetic agreement text only.
@@ -109,4 +110,29 @@ test("Document Intelligence: the synthetic sample runs the real path; without AI
   await expect(page).toHaveURL(/thread=dq_/, { timeout: 30_000 });
   await expect(page.getByText("Relevant passages").first()).toBeVisible();
   await expect(page.getByText(/30 days' written notice/).first()).toBeVisible();
+});
+
+test("Document Intelligence: no sideways scrolling at phone width, a scanned PDF gets the reason (no AI, no chat), a too-large file is refused before upload", async ({ page }) => {
+  await signup(page);
+  await page.goto("/app/documents");
+  await page.getByRole("button", { name: "Try a sample agreement" }).click();
+  await expect(page).toHaveURL(/\/app\/documents\/int_/, { timeout: 30_000 });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Checked by rules" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.setViewportSize({ width: 1280, height: 900 });
+
+  await page.goto("/app/documents");
+  await page.locator("#doc-file").setInputFiles(path.join(process.cwd(), "fixtures/agreements/11-scanned-image-only.pdf"));
+  await page.getByRole("button", { name: "Read the document" }).click();
+  await expect(page).toHaveURL(/\/app\/documents\/int_/, { timeout: 60_000 });
+  await expect(page.getByText("This document has no text we can read").first()).toBeVisible();
+  await expect(page.getByLabel("Your question")).toHaveCount(0);
+  await expect(page.getByText("No extractable text").first()).toBeVisible();
+
+  await page.goto("/app/documents");
+  await page.locator("#doc-file").setInputFiles({ name: "big.pdf", mimeType: "application/pdf", buffer: Buffer.concat([Buffer.from("%PDF-1.4\n"), Buffer.alloc(2_000_000, 32)]) });
+  await expect(page.getByText("big.pdf: Files up to 1.9 MB can be read here.")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Remove big\.pdf/ })).toHaveCount(0);
 });
