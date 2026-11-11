@@ -14,10 +14,14 @@ export const AI_UNAVAILABLE = {
  */
 export const AI_COPY = {
   heading: "Create an agreement with AI",
-  intro: "Describe what you need in plain English. Claude AI will extract the details and prepare your agreement form for review.",
-  inputLabel: "What agreement would you like to create?",
-  placeholder: "E.g. Create a consulting agreement between Acme Inc. and Northwind LLC for $12,000, starting January 15, 2027, payable within 30 days, with 30 days' notice, under Delaware law.",
-  button: "Fill details with Claude AI",
+  intro: "Describe your agreement in everyday language. AgreementOS AI (Claude) will extract the details and fill in the agreement form for your review.",
+  inputLabel: "Tell AI what you need",
+  placeholder: "Example: \"I need a consulting agreement between Acme Inc. and Northwind LLC for $12,000, starting January 15, 2027, with 30 days' notice, under Delaware law.\"",
+  button: "Fill details with AI",
+  hint: "Review the extracted details before generating your agreement.",
+  exampleButton: "Try an example",
+  /** Put into the box by "Try an example", then sent to the real suggest step (no canned result). */
+  example: "I need a consulting agreement between Northwind Advisory LLC (the consultant) and Acme Widgets Inc (the client). It's a one-time fixed fee of $12,000 for the project, starting 2027-01-15. Either party can end it with 30 days' notice, and Delaware law applies. The client owns the new project work; the consultant keeps its pre-existing IP.",
   working: "Claude is reading your description…",
   footnote: "AI suggests the details for one of our reviewed templates; it doesn't write a custom agreement. You review and approve everything before an agreement is published.",
 } as const;

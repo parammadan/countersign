@@ -5,17 +5,10 @@ import { useRouter } from "next/navigation";
 import { Badge, Button, Card, CardHeader, Field, Notice, Select, inputCls, cx } from "@/components/ui";
 import { Icon } from "@/components/icons";
 import { createDraftAction, suggestAction } from "@/app/studio-actions";
-import type { KindSpec, StudioAi, SuggestFailure, Suggestion } from "@/lib/drafts/service";
+import type { Clarification, Clarifications, KindSpec, StudioAi, SuggestFailure, Suggestion } from "@/lib/drafts/service";
+import { TERM_LABEL, humanIssue } from "@/lib/drafts/labels";
 import { AI_COPY, AI_UNAVAILABLE } from "./ai-state";
 
-const TERM_LABEL: Record<string, string> = {
-  fee: "Fee (with currency, e.g. $5,000)", paymentDays: "Payment due (days after invoice)", startDate: "Start date", endDate: "End date",
-  noticeDays: "Notice period (days)", governingLaw: "Governing law (state or country)", lateFeePercent: "Late fee (% of the overdue amount)",
-  lateFeePeriod: "Late fee charged per", rent: "Rent (with currency)", deposit: "Deposit (with currency)", confidentialityYears: "Confidentiality lasts (years)",
-  propertyAddress: "Property address", licensedMaterial: "Licensed material (its name)", territory: "Territory (one or more, separated by ;)",
-  exclusivity: "Exclusivity", ipOwner: "Who owns the work product", licensedUse: "What the licence allows", licenceTransfer: "Sublicensing or transfer",
-  feePeriod: "Retainer fee is charged per", rentSchedule: "Rent schedule", premisesUse: "Use of the premises", subletting: "Subletting",
-};
 const SUGGEST_FAILED: Record<SuggestFailure, string> = {
   ai_off: "AI isn't configured on this server, so fill in the form below.",
   unverified: "Confirm your email address to use the AI assistant. Until then, fill in the form below.",
@@ -62,6 +55,52 @@ export function suggestionToForm(sg: Suggestion, kinds: KindSpec[], current: Kin
   return { kind: k?.kind, names, terms, marked, result };
 }
 
+/**
+ * The clarifications still worth showing for the form as it is now: a needed or optional item goes once the person
+ * fills it in (or picks another agreement type without that field); what the template can't include stays.
+ */
+export function visibleClarifications(c: Clarifications, spec: KindSpec, names: Record<string, string>, terms: Record<string, string>, kindChosen: boolean): Clarifications {
+  const open = (x: Clarification) => {
+    if (x.key === "kind") return !kindChosen;
+    if (x.key.startsWith("party:")) return spec.roles.includes(x.key.slice(6)) && !(names[x.key.slice(6)] ?? "").trim();
+    if (x.key === "other") return true;
+    return spec.terms.some((t) => t.key === x.key) && !(terms[x.key] ?? "").trim();
+  };
+  // what can't be included stays, unless it was about a field the person has now filled in
+  const settled = (x: Clarification) => x.key !== "other" && spec.terms.some((t) => t.key === x.key) && !!(terms[x.key] ?? "").trim();
+  return { needed: c.needed.filter(open), optional: c.optional.filter(open), unsupported: c.unsupported.filter((x) => !settled(x)) };
+}
+
+const GROUPS = [
+  { key: "needed", title: "Needed before you can generate", tone: "warn" },
+  { key: "optional", title: "Optional — not in your description", tone: "info" },
+  { key: "unsupported", title: "Claude understood, but this template can't include it", tone: "info" },
+] as const;
+
+/** Claude's clarifications in three separate groups, human labels only. */
+export function ClarificationGroups({ groups }: { groups: Clarifications }) {
+  if (!GROUPS.some((g) => groups[g.key].length)) return null;
+  return (
+    <div data-testid="ai-clarifications" className="mt-3 space-y-3">
+      {GROUPS.filter((g) => groups[g.key].length).map((g) => (
+        <section key={g.key} aria-label={g.title}>
+          <Notice tone={g.tone}>
+            <p className="font-medium text-ink">{g.title}</p>
+            <ul className="mt-1 list-disc space-y-0.5 pl-5">
+              {groups[g.key].map((x, i) => (
+                <li key={`${x.key}-${i}`}>
+                  <span className="font-medium">{x.label}</span>
+                  {x.text && <>: {x.text}</>}
+                </li>
+              ))}
+            </ul>
+          </Notice>
+        </section>
+      ))}
+    </div>
+  );
+}
+
 export function NewAgreement({ kinds, ai }: { kinds: KindSpec[]; ai: StudioAi }) {
   const canSuggest = ai.suggest.available;
   const canReword = ai.draft.available;
@@ -82,20 +121,23 @@ export function NewAgreement({ kinds, ai }: { kinds: KindSpec[]; ai: StudioAi })
   /** fields whose value came from Claude and hasn't been changed by the person since ("kind", "role:<role>", "term:<key>") */
   const [fromAi, setFromAi] = useState<Set<string>>(new Set());
   const [aiResult, setAiResult] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
+  /** the person picked the agreement type themselves after the suggestion */
+  const [kindChosen, setKindChosen] = useState(false);
   const confirm = (key: string) => fromAi.has(key) && setFromAi((s) => { const n = new Set(s); n.delete(key); return n; });
 
-  function suggest() {
+  function suggest(text = description) {
     setErrors([]);
     setInfo(null);
     setAiResult(null);
     startSuggest(async () => {
-      const r = await suggestAction(description);
+      const r = await suggestAction(text);
       if (!r.ok) {
         setAiResult({ tone: "error", text: SUGGEST_FAILED[r.code] ?? SUGGEST_FAILED.failed });
         return;
       }
       const f = suggestionToForm(r.suggestion, kinds, spec);
       setSuggested(r.suggestion);
+      setKindChosen(false);
       if (f.kind) setKind(f.kind);
       setNames(f.names);
       setTerms(f.terms);
@@ -117,7 +159,7 @@ export function NewAgreement({ kinds, ai }: { kinds: KindSpec[]; ai: StudioAi })
     start(async () => {
       const r = await createDraftAction({ kind: spec.kind, parties, terms: t, ...(canReword && instructions.trim() && { instructions }) });
       if (!r.ok) {
-        setErrors(r.issues.length ? r.issues : ["The draft couldn't be generated."]);
+        setErrors(r.issues.length ? r.issues.map(humanIssue) : ["The draft couldn't be generated."]);
         return;
       }
       router.push(`/app/studio/${r.draftId}?new=${r.landing}${r.fallback ? `&why=${r.fallback}` : ""}`);
@@ -144,16 +186,19 @@ export function NewAgreement({ kinds, ai }: { kinds: KindSpec[]; ai: StudioAi })
               />
             </Field>
             <div className="mt-3 flex flex-wrap items-center gap-3">
-              <Button type="button" icon="spark" onClick={suggest} loading={suggesting} disabled={!description.trim() || pending}>
+              <Button type="button" icon="spark" onClick={() => suggest()} loading={suggesting} disabled={!description.trim() || pending}>
                 {AI_COPY.button}
+              </Button>
+              {/* the real suggest step on a fixed example description: no canned result */}
+              <Button type="button" variant="secondary" size="sm" onClick={() => { setDescription(AI_COPY.example); suggest(AI_COPY.example); }} disabled={suggesting || pending}>
+                {AI_COPY.exampleButton}
               </Button>
               {suggesting && <span role="status" className="text-sm text-muted">{AI_COPY.working}</span>}
             </div>
+            <p className="mt-2 text-sm text-ink-2">{AI_COPY.hint}</p>
             <p className="mt-3 text-xs leading-relaxed text-muted">{AI_COPY.footnote}</p>
             {aiResult && <div className="mt-3"><Notice tone={aiResult.tone}>{aiResult.text}</Notice></div>}
-            {suggested && suggested.unclear.length > 0 && (
-              <div className="mt-3"><Notice tone="warn">Not stated in your description: {suggested.unclear.join("; ")}</Notice></div>
-            )}
+            {suggested && <ClarificationGroups groups={visibleClarifications(suggested.clarifications, spec, names, terms, kindChosen)} />}
           </section>
         ) : (
           <Notice tone={ai.suggest.reason === "off" ? "info" : "warn"}>{AI_UNAVAILABLE[ai.suggest.reason]}</Notice>
@@ -167,7 +212,7 @@ export function NewAgreement({ kinds, ai }: { kinds: KindSpec[]; ai: StudioAi })
           </p>
           <div className="grid gap-4 sm:grid-cols-2">
             <FormField label="Type of agreement" suggested={fromAi.has("kind")}>
-              <Select value={kind} onChange={(e) => { setKind(e.target.value as typeof kind); confirm("kind"); }}>
+              <Select value={kind} onChange={(e) => { setKind(e.target.value as typeof kind); setKindChosen(true); confirm("kind"); }}>
                 {kinds.map((k) => <option key={k.kind} value={k.kind}>{k.title}</option>)}
               </Select>
             </FormField>
