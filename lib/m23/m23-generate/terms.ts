@@ -10,6 +10,7 @@ export const TERM_TYPES: Record<TermKey, TermType> = {
   licensedMaterial: "text", territory: "territory",
   exclusivity: "choice", ipOwner: "choice", licensedUse: "choice", licenceTransfer: "choice", feePeriod: "choice",
   feeBasis: "choice", rentSchedule: "choice", premisesUse: "choice", subletting: "choice", lateFeePeriod: "choice",
+  services: "list",
 };
 
 /**
@@ -18,7 +19,8 @@ export const TERM_TYPES: Record<TermKey, TermType> = {
  */
 export const CHOICES: Partial<Record<TermKey, Record<string, string>>> = {
   exclusivity: { exclusive: "an exclusive", "non-exclusive": "a non-exclusive" },
-  ipOwner: { Client: "Client", Consultant: "Consultant" },
+  /** "Client after payment": the work belongs to the Consultant until every fee is paid in full (its own clause wording). */
+  ipOwner: { Client: "Client", Consultant: "Consultant", "Client after payment": "Client, once all fees are paid in full" },
   /** What the Licensee may do with the licensed material. */
   licensedUse: { use: "to use", "use and modify": "to use and modify", "use, modify and distribute": "to use, modify and distribute" },
   /** Whether the Licensee may pass the licence on: sublicense, assign OR transfer it (one answer covers all three, and
@@ -50,6 +52,13 @@ export const CHOICES: Partial<Record<TermKey, Record<string, string>>> = {
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const MONEY = /^(?:(USD|EUR|GBP|CAD)\s?|([$€£]))(\d{1,3}(?:,\d{3})+|\d+)(\.\d{2})?$/;
 const TEXT = /^[A-Za-z0-9 .,'#/-]{2,80}$/;
+/** One listed item (a service or deliverable): plain words, 3-120 characters. */
+const LIST_ITEM = /^[\p{L}\p{N}][\p{L}\p{N} .,'&/()+%:-]{1,118}[\p{L}\p{N}).%]$/u;
+export const LIST_MAX_ITEMS = 12;
+/** The items of a list term as written, without bullets or numbering ("- ", "1.", "(a)", "•"). */
+export function listItems(s: string): string[] {
+  return s.split(/\s*(?:;|\r?\n)\s*/).map((x) => x.replace(/^(?:[-*•]+|\(?[a-z0-9]{1,2}[.)])\s*/i, "").trim()).filter(Boolean);
+}
 /** A period inside a text term may only end one of these: initials (D.C., U.S.) or a common address abbreviation. */
 const ABBREV = /^(?:(?:[A-Za-z]\.)+|(?:St|Mt|Ft|Ave|Av|Rd|Apt|Ste|Blvd|Dr|Ln|Ct|Pl|Sq|Fl|No|Bldg|Hwy|Pkwy|Rte|Ter|Terr|Cres|Cir|Pde|Hts|Pt|Ctr|N|S|E|W|NE|NW|SE|SW)\.)$/;
 /** Lower-case words a jurisdiction or an address may contain; every other word must be capitalised (a name). */
@@ -138,6 +147,14 @@ export function renderTerm(key: TermKey, value: string | number): { ok: true; te
       const opts = CHOICES[key] ?? {};
       if (!Object.hasOwn(opts, s)) return bad(`expected one of: ${Object.keys(opts).join(", ")}`);
       return { ok: true, text: opts[s] };
+    }
+    case "list": {
+      const items = listItems(s);
+      if (!items.length) return bad("expected at least one item");
+      if (items.length > LIST_MAX_ITEMS) return bad(`expected at most ${LIST_MAX_ITEMS} items`);
+      const badItem = items.find((x) => !LIST_ITEM.test(x));
+      if (badItem) return bad(`each item must be 3-120 plain characters (letters, digits, spaces and . , ' & / ( ) + % : -): "${badItem.slice(0, 40)}"`);
+      return { ok: true, text: items.map((x, i) => `(${String.fromCharCode(97 + i)}) ${x}`).join("\n") };
     }
     case "text":
       if (!TEXT.test(s)) return bad("expected 2-80 plain characters (letters, digits, spaces and . , ' # / -)");
