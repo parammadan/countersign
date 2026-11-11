@@ -73,7 +73,7 @@ describe("regression through the Studio service", () => {
     expect(p.asked[0].system).toBe(D.SUGGEST_SYSTEM);
     expect(JSON.parse(p.asked[0].document)).toEqual({ description: X.REGRESSION });
     expect(JSON.stringify(p.asked[0].schema)).toContain('"not_supported"');
-    expect(suggestion.clarifications.optional.map((x) => x.key)).toEqual(["endDate", "paymentDays"]);
+    expect(suggestion.clarifications.optional.map((x) => x.key)).toEqual(["services", "endDate", "paymentDays", "lateFeePercent"]);
     expect(c.ok).toBe(true);
     if (!c.ok) return;
     const g = D.getDraft(owner, c.draftId);

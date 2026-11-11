@@ -66,7 +66,7 @@ const termsIn = (text: string) => [...text.matchAll(/\{\{term:([^}]+)\}\}/g)].ma
 /** A template's optional terms the user decides on: an optional clause's term, or a wording variant's term. */
 function ownOptional(kind: Kind): TermKey[] {
   const t = TEMPLATES[kind];
-  return [...new Set(t.clauses.flatMap((c) => [c.when, c.variants?.term]).filter((w): w is TermKey => !!w && !t.requiredTerms.includes(w)))];
+  return [...new Set(t.clauses.flatMap((c) => [c.when, c.variants?.term, c.alt?.when]).filter((w): w is TermKey => !!w && !t.requiredTerms.includes(w)))];
 }
 
 export function kindSpecs(): KindSpec[] {
@@ -129,6 +129,7 @@ export const IF_LEFT_OUT: Partial<Record<TermKey, string>> = {
   feeBasis: "the agreement then states the fee without saying whether it is one-time or recurring",
   lateFeePercent: "the agreement then has no late fee",
   noticeDays: "the agreement then has no early-termination clause",
+  services: "the agreement then refers to the services described in the client's engagement request",
 };
 
 const CLARIFY_STATUS = ["missing", "not_supported"] as const;
@@ -363,6 +364,8 @@ function insteadText(kind: Kind | null, key: string, said: string, unmatched: bo
   const t = TEMPLATES[kind];
   if (kind === "retainer" && key === "feePeriod" && ONE_OFF.test(said))
     return "A retainer is a recurring fee, so a one-time retainer isn't offered. For a one-time fee, choose Consulting Agreement or Services Agreement as the type of agreement.";
+  if (kind && key === "other" && /\bconfidential/i.test(said) && TEMPLATES[kind].clauses.some((c) => c.id === "confidentiality"))
+    return `The ${t.title} already has a confidentiality clause: each party keeps the other party's confidential information private and uses it only for the agreement. It can't add other confidentiality terms.`;
   if (kind === "consulting" && key === "other" && PRE_EXISTING_IP.test(said))
     return "The Consulting Agreement already says each party keeps the intellectual property it owned before the agreement, so that part is covered. It can't name specific tools or carve-outs, so none will be listed.";
   const accepted = own(TERM_TYPES, key) && kindSpecs().find((k) => k.kind === kind)!.terms.some((x) => x.key === key);
@@ -403,7 +406,9 @@ export function cleanSuggestion(raw: unknown, description: string, o: { source?:
   const unsupported: Clarification[] = [];
   const addUnsupported = (key: string, note: string, value?: string) => {
     if (key !== "other" && unsupported.some((u) => u.key === key)) return;
-    const text = [note, insteadText(kind, key, `${note} ${value ?? ""}`, value !== undefined, source)].filter(Boolean).join(" ");
+    const instead = insteadText(kind, key, `${note} ${value ?? ""}`, value !== undefined, source);
+    // "already has a confidentiality clause" replaces the model's note, which would say the opposite
+    const text = (/already has a confidentiality clause/.test(instead) ? [instead] : [note, instead]).filter(Boolean).join(" ");
     unsupported.push({ key, label: termName(key), text });
   };
   const terms: Partial<Record<TermKey, string>> = {};
