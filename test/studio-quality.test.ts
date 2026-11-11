@@ -44,3 +44,19 @@ describe("amounts written as shorthand", () => {
     expect(run("fee $3.5k", [["fee", "$35,000"]]).terms.fee).toBeUndefined();
   });
 });
+
+describe("client owns deliverables except the consultant's tools", () => {
+  const desc = "Acme Studio hires me for a flat fee $12,000. Client owns deliverables except consultant tools.";
+  it("the carve-out note says the template already covers pre-existing IP, not that it is left out", () => {
+    const s = cleanSuggestion({ kind: "consulting", parties: [], terms: [{ key: "ipOwner", value: "Client" }],
+      clarifications: [{ key: "other", status: "not_supported", note: "The Consultant keeps its own tools." }] }, desc);
+    expect(s.terms.ipOwner).toBe("Client");
+    const u = s.clarifications.unsupported[0].text;
+    expect(u).toMatch(/already says each party keeps/);
+    expect(u).not.toMatch(/won't be in the agreement/);
+  });
+  it("an unrelated unsupported item still says it won't be included", () => {
+    const s = cleanSuggestion({ kind: "consulting", parties: [], terms: [], clarifications: [{ key: "other", status: "not_supported", note: "A 10% referral bonus." }] }, "10% referral bonus");
+    expect(s.clarifications.unsupported[0].text).toMatch(/won't be in the agreement/);
+  });
+});

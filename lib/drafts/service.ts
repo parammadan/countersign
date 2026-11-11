@@ -324,12 +324,16 @@ function basisText(description: string): string {
 /** Where the suggested values were read from: the person's description (Studio) or a read document (Document Intelligence). */
 export type SuggestionSource = "description" | "document";
 const SOURCE_TEXT: Record<SuggestionSource, string> = { description: "your description", document: "the document" };
+/** A note about a party keeping its own tools / background IP: the consulting template already says that. */
+const PRE_EXISTING_IP = /\b(?:pre-?existing|prior|background|existing)\b[^.]{0,60}\b(?:ip|intellectual property|tools?|materials?|code|software|methods?|templates?)\b|\b(?:keeps?|retains?|owns?)\b[^.]{0,30}\b(?:own|its|their)\b[^.]{0,20}\b(?:ip|intellectual property|tools?|materials?|code|software|methods?|templates?)\b|\b(?:ip|intellectual property|tools?|materials?|code|software|methods?|templates?)\b[^.]{0,30}\b(?:before|already owned)\b/i;
 /** What happens instead, for something the description states that the template can't include. */
 function insteadText(kind: Kind | null, key: string, said: string, unmatched: boolean, source: SuggestionSource = "description"): string {
   if (!kind) return "None of the templates can include this, so it won't be in the agreement.";
   const t = TEMPLATES[kind];
   if (kind === "retainer" && key === "feePeriod" && ONE_OFF.test(said))
     return "A retainer is a recurring fee, so a one-time retainer isn't offered. For a one-time fee, choose Consulting Agreement or Services Agreement as the type of agreement.";
+  if (kind === "consulting" && key === "other" && PRE_EXISTING_IP.test(said))
+    return "The Consulting Agreement already says each party keeps the intellectual property it owned before the agreement, so that part is covered. It can't name specific tools or carve-outs, so none will be listed.";
   const accepted = own(TERM_TYPES, key) && kindSpecs().find((k) => k.kind === kind)!.terms.some((x) => x.key === key);
   if (!accepted) return `The ${t.title} template can't include this, so it won't be in the agreement.`;
   const required = t.requiredTerms.includes(key as TermKey);
