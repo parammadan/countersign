@@ -44,7 +44,7 @@ AgreementOS is a multi-tenant web app (Next.js 16, SQLite through `node:sqlite`)
 
 ## AI safety model
 
-- **One daily spending cap** for every paid model call, all features together (`lib/ai/budget.ts`, `AI_DAILY_USD_CAP`, default $5). There are also per-workspace and new-workspace caps.
+- **One daily spending cap** for every paid model call, all features together (`lib/ai/budget.ts`, `AI_DAILY_USD_CAP`, default $5; production sets $10). There are also per-workspace and new-workspace caps.
 - **Metered calls**: each call reserves its worst-case cost first and books the actual cost afterwards.
 - **Confirmed-email rule**: only workspaces whose owner confirmed their email may use AI. With no email provider, nothing can be confirmed, so AI stays off.
 - **Off by default**: a model is used only when `AI_PROVIDER=anthropic` and `ANTHROPIC_API_KEY` are set on the server (`lib/ai/anthropic.ts`). Every AI feature falls back to rules or quoted passages.
