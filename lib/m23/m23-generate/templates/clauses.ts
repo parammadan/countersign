@@ -29,10 +29,23 @@ export const termEnd = (doc: string): TemplateClause => ({
 });
 
 /** The fee (required): who pays whom, how much, for what. */
-export const fee = (id: string, heading: string, payer: string, payee: string, label: string, forWhat?: string): TemplateClause => ({
+export const fee = (id: string, heading: string, payer: string, payee: string, label: string, forWhat?: string, basis = false): TemplateClause => ({
   id, heading, required: true,
   text: `The ${payer} will pay the ${payee} ${label} of {{term:fee}}${forWhat ? ` for the ${forWhat}` : ""}.`,
+  ...(basis && forWhat && { variants: feeBasisVariants(payer, payee, forWhat) }),
 });
+
+/**
+ * How the fee is charged, when the user chose it (feeBasis): "a one-time fixed fee of $X for the services" or "a fee
+ * of $X per month for the services". Without feeBasis the clause keeps its plain wording and states no basis.
+ */
+export const feeBasisVariants = (payer: string, payee: string, forWhat: string): NonNullable<TemplateClause["variants"]> => {
+  const periodic = `The ${payer} will pay the ${payee} a fee of {{term:fee}} {{term:feeBasis}} for the ${forWhat}.`;
+  return {
+    term: "feeBasis",
+    texts: { fixed: `The ${payer} will pay the ${payee} {{term:feeBasis}} of {{term:fee}} for the ${forWhat}.`, month: periodic, quarter: periodic, year: periodic },
+  };
+};
 
 /** Optional payment timing, only when the user gave paymentDays; without it the document states no due date. */
 export const payment = (payee: string, payer: string): TemplateClause => ({

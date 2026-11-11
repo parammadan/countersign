@@ -15,7 +15,7 @@ export const consulting: AgreementTemplate = {
     C.scope("Scope of Services", "Consultant", "Client", "consulting services", "engagement request"),
     C.term(doc, "the services are complete"),
     C.termEnd(doc),
-    C.fee("fees", "Fees", "Client", "Consultant", "a fee", "services"),
+    C.fee("fees", "Fees", "Client", "Consultant", "a fee", "services", true),
     C.payment("Consultant", "Client"),
     { id: "ip", heading: "Intellectual Property", required: true, text: "Each party keeps the intellectual property it owned before this Agreement. Intellectual property that the Consultant creates in performing the services belongs to the {{term:ipOwner}}." },
     { id: "independent", heading: "Independent Contractor", required: true, text: "The Consultant is an independent contractor and not an employee, partner or agent of the Client." },

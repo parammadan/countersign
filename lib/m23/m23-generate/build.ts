@@ -1,7 +1,7 @@
 import type { Clause } from "../shared/agreement-model";
 import { TERM_TYPES, renderTerm } from "./terms";
 import { TEMPLATES } from "./templates";
-import type { AgreementTemplate, GenerateInput, TermKey } from "./types";
+import type { AgreementTemplate, GenerateInput, TemplateClause, TermKey } from "./types";
 import { unprintableChars } from "../doc-output/pdf-text";
 import { mixedConfusableScripts, nameSkeleton, oddLatinLetters, operativeWords, scanInjection } from "./checks";
 
@@ -43,10 +43,11 @@ export function validateInput(input: GenerateInput): Validated | { issues: strin
 
   const terms = input.terms && typeof input.terms === "object" ? input.terms : {};
   const given = (k: string) => { const v = (terms as Record<string, unknown>)[k]; return v !== undefined && v !== null && String(v).trim() !== ""; };
-  // An optional clause appears when its term is given; every other term it uses is then required (no defaults).
+  // An optional clause (or wording variant) appears when its term is given; every other term it uses is then
+  // required (no defaults).
   for (const c of template.clauses) {
-    if (!c.when || !given(c.when)) continue;
-    for (const m of c.text.matchAll(/\{\{term:([^}]+)\}\}/g)) {
+    if (c.when ? !given(c.when) : !(c.variants && given(c.variants.term))) continue;
+    for (const m of clauseSource(c, terms).matchAll(/\{\{term:([^}]+)\}\}/g)) {
       const k = m[1] as TermKey;
       if (!given(k) && !template.requiredTerms.includes(k) && !missing.includes(`term:${k}`)) missing.push(`term:${k}`);
     }
@@ -74,10 +75,19 @@ export function validateInput(input: GenerateInput): Validated | { issues: strin
   const used = new Set<string>();
   for (const c of template.clauses) {
     if (c.when) { if (!given(c.when)) continue; used.add(c.when); }
-    for (const m of c.text.matchAll(/\{\{term:([^}]+)\}\}/g)) used.add(m[1]);
+    if (c.variants) used.add(c.variants.term);
+    for (const m of clauseSource(c, terms).matchAll(/\{\{term:([^}]+)\}\}/g)) used.add(m[1]);
   }
   const unused = (Object.keys(rendered) as TermKey[]).filter((k) => !used.has(k));
   return { template, rendered, issues, missing, unused };
+}
+
+/** The wording a template clause uses for this input: its variant for the chosen value, else its own text. */
+export function clauseSource(tc: TemplateClause, terms: Partial<Record<TermKey, string | number>>): string {
+  if (!tc.variants) return tc.text;
+  const v = (terms as Record<string, unknown>)[tc.variants.term];
+  const key = v === undefined || v === null ? "" : String(v).trim();
+  return key && Object.hasOwn(tc.variants.texts, key) ? tc.variants.texts[key] : tc.text;
 }
 
 const PLACEHOLDER = /\{\{(role|term|ref):([^}]+)\}\}/g;
@@ -88,7 +98,7 @@ export function fillTemplate(v: Validated, input: GenerateInput): Clause[] {
   const out: Clause[] = [];
   for (const tc of v.template.clauses) {
     if (tc.when && v.rendered[tc.when] === undefined) continue;
-    const text = tc.text.replace(PLACEHOLDER, (m, kind: string, key: string) => {
+    const text = clauseSource(tc, input.terms ?? {}).replace(PLACEHOLDER, (m, kind: string, key: string) => {
       if (kind === "role") return names.get(key) ?? m;
       if (kind === "term") return v.rendered[key as TermKey] ?? m;
       return m;

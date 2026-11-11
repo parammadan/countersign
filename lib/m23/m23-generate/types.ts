@@ -5,7 +5,7 @@ export type TermKey =
   | "fee" | "paymentDays" | "startDate" | "endDate" | "noticeDays" | "governingLaw"
   | "lateFeePercent" | "rent" | "deposit" | "confidentialityYears" | "propertyAddress"
   | "licensedMaterial" | "territory" | "exclusivity" | "ipOwner" | "licensedUse" | "licenceTransfer" | "feePeriod"
-  | "rentSchedule" | "premisesUse" | "subletting" | "lateFeePeriod";
+  | "feeBasis" | "rentSchedule" | "premisesUse" | "subletting" | "lateFeePeriod";
 
 /**
  * money: "$5,000" / "USD 5,000.00" (a currency is required; bare numbers are rejected); date: YYYY-MM-DD; int;
@@ -31,6 +31,11 @@ export type TemplateClause = {
   locked?: boolean;
   /** Include this clause only when this term was supplied. */
   when?: TermKey;
+  /**
+   * Wording chosen by an optional choice term: `texts[value]` when the user gave that term, `text` (unchanged) when
+   * they didn't. Every choice of the term must have a text (asserted in the template tests).
+   */
+  variants?: { term: TermKey; texts: Record<string, string> };
 };
 
 export type AgreementTemplate = {
