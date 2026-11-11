@@ -53,6 +53,10 @@ test("Studio with AI: Claude fills the form, a needed field typed as '30 days' c
     await expect(page.getByLabel(/^Notice period/)).toHaveValue("30 days");
     await expect(needed(page)).toHaveCount(0);
     await page.getByRole("button", { name: "Generate draft" }).click();
+    // what the template can't include is shown again on the draft, for review and approval
+    await expect(page).toHaveURL(/\/app\/studio\/[^/?]+/, { timeout: 60_000 });
+    await expect(page.getByText(/^Not in this draft/)).toBeVisible();
+    await expect(page.getByText(/split the flat fee into half paid up front/)).toBeVisible();
     await expectDraftSaved(page, "Bluefin Foods Inc.");
   } finally {
     await mock.close();

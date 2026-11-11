@@ -3,6 +3,7 @@
 // M2.3 Agreement Studio actions. Every action takes the server session (never an id, role or workspace from the
 // request) and goes through lib/drafts/service, which authorizes it and scopes it to the workspace.
 import { revalidatePath } from "next/cache";
+import { saveDisclosures } from "@/lib/drafts/disclosures";
 import { requireSession } from "@/lib/auth";
 import * as svc from "@/lib/drafts/service";
 import type { GenerateInput } from "@/lib/m23/m23-generate";
@@ -27,7 +28,7 @@ export async function suggestAction(description: string) {
   return svc.suggestFromDescription(s, text(description, 4_000));
 }
 
-export async function createDraftAction(input: GenerateInput) {
+export async function createDraftAction(input: GenerateInput, disclosures?: unknown) {
   const s = await requireSession();
   // the generator validates every field itself; only the shape is narrowed here
   const safe: GenerateInput = {
@@ -37,7 +38,11 @@ export async function createDraftAction(input: GenerateInput) {
     ...(typeof input?.instructions === "string" && input.instructions.trim() && { instructions: text(input.instructions, 1_000) }),
   };
   const r = await svc.createDraft(s, safe);
-  if (r.ok) revalidatePath("/app/studio");
+  if (r.ok) {
+    // what the description asked for that this draft doesn't contain, shown on the draft for review and approval
+    saveDisclosures(s.workspaceId, r.draftId, disclosures);
+    revalidatePath("/app/studio");
+  }
   return r;
 }
 

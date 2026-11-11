@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { draftDisclosures } from "@/lib/drafts/disclosures";
 import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/auth";
 import { all } from "@/lib/db";
@@ -16,6 +17,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const { id } = await params;
   const q = await searchParams;
   const g = getDraft(s, id);
+  const notIncluded = draftDisclosures(s.workspaceId, id);
   if (!g.ok) notFound();
   const h = versions(s, id);
   if (!h.ok) notFound();
@@ -51,6 +53,14 @@ export default async function Page({ params, searchParams }: { params: Promise<{
       {q.new === "template_fallback" && <div className="mb-4"><Notice tone="warn">{fallbackNotice(q.why)}</Notice></div>}
       {q.new === "model" && <div className="mb-4"><Notice tone="info">{MODEL_NOTICES.model}</Notice></div>}
       {q.new === "model_unchanged" && <div className="mb-4"><Notice tone="info">{MODEL_NOTICES.model_unchanged}</Notice></div>}
+      {notIncluded.length > 0 && (
+        <div className="mb-4">
+          <Notice tone="warn">
+            <p className="font-medium">Not in this draft: your description asked for {notIncluded.length === 1 ? "this, and the template can't include it" : "these, and the template can't include them"}. Check before you approve or send it.</p>
+            <ul className="mt-1 list-disc pl-5">{notIncluded.map((d, i) => <li key={i}>{d.label ? <><span className="font-medium">{d.label}:</span> </> : null}{d.text}</li>)}</ul>
+          </Notice>
+        </div>
+      )}
       <DraftEditor {...props} />
     </>
   );
