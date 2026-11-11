@@ -6,7 +6,7 @@
 import { useEffect, useReducer, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 import { Button, Notice, cx } from "@/components/ui";
 import { VOICE_COPY } from "./ai-state";
-import { VOICE_IDLE, VOICE_MAX_MS, clock, mergeTranscript, micPermission, recognitionCtor, startVoiceSession, voiceBusy, voiceReducer, type MicPermission, type VoiceSession, type VoiceState } from "./voice-state";
+import { VOICE_IDLE, VOICE_MAX_MS, clock, mergeTranscript, micPermission, recognitionCtor, repeatsFinals, startVoiceSession, voiceBusy, voiceReducer, type MicPermission, type VoiceSession, type VoiceState } from "./voice-state";
 
 export type VoiceSupport = "unknown" | "supported" | "unsupported";
 
@@ -25,9 +25,15 @@ function MicGlyph({ size = 16 }: { size?: number }) {
   );
 }
 
-/** Focus a text box with the cursor after its last character, scrolled to show it. */
-export function focusAtEnd(box: HTMLTextAreaElement | null | undefined) {
+/**
+ * Focus a text box with the cursor after its last character, scrolled to show it — but only if focus is nowhere in
+ * particular (the page body) or on the voice control itself (`scope`): never take it from another field.
+ */
+export function focusAtEnd(box: HTMLTextAreaElement | null | undefined, scope?: Node | null) {
   if (!box) return;
+  const doc = box.ownerDocument;
+  const active = doc?.activeElement;
+  if (active && active !== doc.body && active !== box && !(scope && scope.contains(active))) return;
   box.focus();
   const end = box.value.length;
   box.setSelectionRange(end, end);
@@ -52,7 +58,7 @@ export function VoicePanel({ support, state, elapsed, disabled, permission = "un
     status === "requesting" ? VOICE_COPY.requesting
     : status === "listening" ? `${VOICE_COPY.listening} ${clock(elapsed)} of ${clock(VOICE_MAX_MS)}`
     : status === "processing" ? VOICE_COPY.processing
-    : status === "done" ? [VOICE_COPY.done, state.autoStopped && VOICE_COPY.autoStopped, state.truncated && VOICE_COPY.truncated].filter(Boolean).join(" ")
+    : status === "done" ? [state.stoppedEarly && VOICE_COPY.stoppedEarly.replace("{reason}", VOICE_COPY.reasons[state.stoppedEarly]), VOICE_COPY.done, state.autoStopped && VOICE_COPY.autoStopped, state.truncated && VOICE_COPY.truncated].filter(Boolean).join(" ")
     : status === "error" && state.error ? VOICE_COPY.errors[state.error]
     : "";
   return (
@@ -179,7 +185,7 @@ export function VoiceInput({ value, onChange, maxLength, disabled, onBusyChange,
 
   // when text was added, put the cursor at its end so the person can edit straight away
   useEffect(() => {
-    if (state.status === "done") focusAtEnd(target?.current ?? root.current?.closest("section, form")?.querySelector("textarea"));
+    if (state.status === "done") focusAtEnd(target?.current ?? root.current?.closest("section, form")?.querySelector("textarea"), root.current);
   }, [state.status, target]);
 
   const listening = state.status === "listening";
@@ -196,6 +202,7 @@ export function VoiceInput({ value, onChange, maxLength, disabled, onBusyChange,
     setNow(Date.now());
     session.current = startVoiceSession(Ctor, {
       lang: (typeof navigator !== "undefined" && navigator.language) || "en-US",
+      dropRepeats: repeatsFinals(typeof navigator !== "undefined" ? navigator.userAgent : undefined),
       dispatch,
       append: (text) => {
         const { value: v, onChange: set, maxLength: max } = latest.current;

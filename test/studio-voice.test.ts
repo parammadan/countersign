@@ -13,7 +13,7 @@ import { NewAgreement } from "@/components/studio/NewAgreement";
 import { VoicePanel, focusAtEnd } from "@/components/studio/VoiceInput";
 import { AI_COPY, VOICE_COPY } from "@/components/studio/ai-state";
 import {
-  VOICE_IDLE, VOICE_START_GRACE_MS, VOICE_STOP_GRACE_MS, clock, joinFinals, mergeTranscript, micPermission, readResults, recognitionCtor, startVoiceSession, tidyDictation, voiceBusy, voiceError, voiceReducer,
+  VOICE_IDLE, VOICE_START_GRACE_MS, VOICE_STOP_GRACE_MS, clock, joinFinals, mergeTranscript, micPermission, readResults, recognitionCtor, repeatsFinals, startVoiceSession, tidyDictation, voiceBusy, voiceError, voiceReducer,
   type RecognitionLike, type RecognitionResultList, type VoiceAction, type VoiceState,
 } from "@/components/studio/voice-state";
 import type { KindSpec, StudioAi } from "@/lib/drafts/service";
@@ -69,12 +69,25 @@ describe("readResults: final vs interim", () => {
       res(["i need a consulting agreement", true], ["between acme and northwind", true]),
       res(["i need a consulting agreement", true], ["between acme and northwind", true], ["for $12,000", false]),
     ];
-    const seen = events.map(readResults);
+    const seen = events.map((e) => readResults(e));
     expect(seen[4]).toEqual({ finals: ["i need a consulting agreement", "between acme and northwind"], final: "i need a consulting agreement between acme and northwind", interim: "for $12,000" });
   });
   it("Chrome on Android: each growing phrase reported as its own final result is counted once", () => {
     expect(readResults(res(["the fee", true], ["the fee is", true], ["the fee is $5,000", true])).final).toBe("the fee is $5,000");
-    expect(joinFinals(["Acme", "acme", "and Northwind"])).toEqual(["Acme", "and Northwind"]);
+    // an exact repeat is dropped only on Android (where the browser repeats finals); elsewhere it was said twice
+    expect(joinFinals(["Acme", "acme", "and Northwind"], true)).toEqual(["Acme", "and Northwind"]);
+    expect(joinFinals(["Acme", "acme", "and Northwind"])).toEqual(["Acme", "acme", "and Northwind"]);
+    expect(readResults(res(["yes", true], ["yes", true]), true).final).toBe("yes");
+    expect(readResults(res(["yes", true], ["yes", true])).final).toBe("yes yes");
+    expect(repeatsFinals("Mozilla/5.0 (Linux; Android 14; Pixel 7) Chrome/130 Mobile")).toBe(true);
+    expect(repeatsFinals("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) Chrome/130")).toBe(false);
+    expect(repeatsFinals(undefined)).toBe(false);
+  });
+  it("a longer version replaces the one before only at a word boundary", () => {
+    expect(joinFinals(["I", "In the event of a breach"])).toEqual(["I", "In the event of a breach"]);
+    expect(joinFinals(["Pay", "Payment is due in 30 days"])).toEqual(["Pay", "Payment is due in 30 days"]);
+    expect(joinFinals(["the fee", "the fee is $5,000"])).toEqual(["the fee is $5,000"]);
+    expect(joinFinals(["The fee", "the fee is $5,000"], true)).toEqual(["the fee is $5,000"]);
     expect(joinFinals(["start in January", "January"])).toEqual(["start in January", "January"]); // a word said again stays
     expect(joinFinals(["one", " ", "two"])).toEqual(["one", "two"]);
   });
@@ -100,7 +113,11 @@ describe("tidyDictation: the whole dictation once — capital first letter, one 
     expect(tidyDictation("$12,000 per month")).toBe("$12,000 per month.");
     expect(tidyDictation("for 12000")).toBe("For 12000.");
     expect(tidyDictation("McDonald's and iPhone LLC")).toBe("McDonald's and iPhone LLC.");
-    expect(tidyDictation("eBay inc")).toBe("EBay inc."); // only the first letter, as asked
+    // a first word that isn't all lowercase is a name: left as it is
+    expect(tidyDictation("eBay inc")).toBe("eBay inc.");
+    expect(tidyDictation("iPhone case")).toBe("iPhone case.");
+    expect(tidyDictation("mcDonald's")).toBe("mcDonald's.");
+    expect(tidyDictation("acme inc")).toBe("Acme inc.");
     expect(tidyDictation("30%")).toBe("30%");
     expect(tidyDictation("")).toBe("");
   });
@@ -369,6 +386,49 @@ describe("startVoiceSession: shows interim text live, adds final text once at th
     expect(t.box()).toBe("Typed. I need a consulting agreement between acme and northwind.");
     expect(t.box().match(/consulting/g)).toHaveLength(1);
   });
+  for (const code of ["network", "audio-capture", "not-allowed", "service-not-allowed"] as const) {
+    it(`${code} in a restarted run keeps what earlier runs heard, with a note`, () => {
+      const t = session("Typed.");
+      t.rec.onstart?.({});
+      t.rec.onresult?.({ results: res(["a consulting agreement", true]) });
+      t.rec.onend?.({}); // clean end after a phrase: restarted
+      const second = Fake.last!;
+      expect(second).not.toBe(t.rec);
+      second.onresult?.({ results: res(["between acme", true], ["and north", false]) });
+      second.onerror?.({ error: code });
+      second.onend?.({});
+      expect(t.state()).toMatchObject({ status: "done", stoppedEarly: code });
+      // earlier runs plus the failed run's confirmed words; not its unconfirmed tail
+      expect(t.box()).toBe("Typed. A consulting agreement between acme.");
+      const h = renderToStaticMarkup(createElement(VoicePanel, { support: "supported", state: t.state(), elapsed: 0, onStart: () => {}, onStop: () => {} }));
+      expect(h).toContain(esc(`Voice input stopped early: ${VOICE_COPY.reasons[code]}. What was heard before it stopped was added.`));
+      expect(h).toContain(VOICE_COPY.done);
+    });
+  }
+  it("an error with nothing kept from earlier runs is just the error", () => {
+    const t = session("Typed.");
+    t.rec.onstart?.({});
+    t.rec.onresult?.({ results: res(["half a sentence", true]) });
+    t.rec.onerror?.({ error: "network" });
+    t.rec.onend?.({});
+    expect(t.state()).toMatchObject({ status: "error", error: "network", stoppedEarly: null });
+    expect(t.box()).toBe("Typed.");
+  });
+  it("a restart that fails to construct adds the earlier text once, not twice", () => {
+    let made = 0;
+    class FailsSecond extends Fake { constructor() { super(); if (++made === 2) throw new Error("no more recognizers"); } }
+    let st = VOICE_IDLE;
+    let box = "";
+    const appended: string[] = [];
+    startVoiceSession(FailsSecond, { lang: "en-US", dispatch: (a) => { st = voiceReducer(st, a); }, append: (x) => { appended.push(x); box = mergeTranscript(box, x, 4000).text; return false; } });
+    const first = Fake.last!;
+    first.onstart?.({});
+    first.onresult?.({ results: res(["the fee is $5,000", true], ["per month", false]) });
+    first.onend?.({});
+    expect(appended).toEqual(["The fee is $5,000 per month."]);
+    expect(box).toBe("The fee is $5,000 per month.");
+    expect(st.status).toBe("done");
+  });
   it("restarts are capped, and never past the 60 seconds", () => {
     let clock_ = 0;
     let st = VOICE_IDLE;
@@ -514,6 +574,22 @@ describe("server-rendered markup", () => {
     expect(calls).toEqual(["focus", "sel 13-13"]);
     expect(box.scrollTop).toBe(300);
     expect(() => focusAtEnd(null)).not.toThrow();
+  });
+  it("never takes focus from another field; does take it from the body or the voice control", () => {
+    const body = { id: "body" };
+    const stopButton = { id: "stop" };
+    const otherField = { id: "party-name" };
+    const scope = { contains: (n: unknown) => n === stopButton };
+    const make = (active: unknown) => {
+      const calls: string[] = [];
+      const box = { value: "x", scrollHeight: 0, scrollTop: 0, ownerDocument: { body, activeElement: active }, focus: () => calls.push("focus"), setSelectionRange: () => calls.push("sel") };
+      focusAtEnd(box as unknown as HTMLTextAreaElement, scope as unknown as Node);
+      return calls;
+    };
+    expect(make(otherField)).toEqual([]);
+    expect(make(body)).toEqual(["focus", "sel"]);
+    expect(make(stopButton)).toEqual(["focus", "sel"]);
+    expect(make(null)).toEqual(["focus", "sel"]);
   });
   it("done and error states", () => {
     const done = panel("supported", { ...VOICE_IDLE, status: "done", truncated: true, autoStopped: true });

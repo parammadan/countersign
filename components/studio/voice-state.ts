@@ -55,6 +55,8 @@ export type VoiceState = {
   error: VoiceErrorCode | null;
   truncated: boolean;
   autoStopped: boolean;
+  /** the session ended on an error after earlier runs had heard something; that text was still added */
+  stoppedEarly: VoiceErrorCode | null;
   /** when listening began (ms), for the elapsed time */
   startedAt: number | null;
 };
@@ -63,11 +65,11 @@ export type VoiceAction =
   | { type: "listening"; at: number }
   | { type: "heard"; text: string }
   | { type: "processing" }
-  | { type: "done"; truncated: boolean; autoStopped: boolean }
+  | { type: "done"; truncated: boolean; autoStopped: boolean; stoppedEarly?: VoiceErrorCode }
   | { type: "error"; code: VoiceErrorCode }
   | { type: "reset" };
 
-export const VOICE_IDLE: VoiceState = { status: "idle", heard: "", error: null, truncated: false, autoStopped: false, startedAt: null };
+export const VOICE_IDLE: VoiceState = { status: "idle", heard: "", error: null, truncated: false, autoStopped: false, stoppedEarly: null, startedAt: null };
 
 export function voiceReducer(s: VoiceState, a: VoiceAction): VoiceState {
   switch (a.type) {
@@ -80,7 +82,7 @@ export function voiceReducer(s: VoiceState, a: VoiceAction): VoiceState {
     case "processing":
       return s.status === "listening" || s.status === "requesting" ? { ...s, status: "processing" } : s;
     case "done":
-      return { ...s, status: "done", heard: "", error: null, truncated: a.truncated, autoStopped: a.autoStopped, startedAt: null };
+      return { ...s, status: "done", heard: "", error: null, truncated: a.truncated, autoStopped: a.autoStopped, stoppedEarly: a.stoppedEarly ?? null, startedAt: null };
     case "error":
       return { ...s, status: "error", heard: "", error: a.code, startedAt: null };
     case "reset":
@@ -89,29 +91,34 @@ export function voiceReducer(s: VoiceState, a: VoiceAction): VoiceState {
 }
 
 /**
- * Final chunks as one list: a chunk that repeats or extends the one before replaces it instead of being added again
- * (Chrome on Android can report each growing phrase as its own final result).
+ * Final chunks as one list. Chrome on Android can report each growing phrase as its own final result ("the fee",
+ * "the fee is $5,000"), so a chunk that is the one before plus more whole words replaces it ("Pay" then "Payment…"
+ * are different words and both stay). Android can also repeat a final exactly; only when `dropRepeats` (Android) is
+ * an exact consecutive repeat dropped, so a word said twice on purpose elsewhere stays.
  */
-export function joinFinals(chunks: string[]): string[] {
+export function joinFinals(chunks: string[], dropRepeats = false): string[] {
   const out: string[] = [];
   for (const raw of chunks) {
     const c = raw.trim();
     if (!c) continue;
     const prev = out[out.length - 1];
     const lc = c.toLowerCase();
-    // an exact repeat is dropped; a longer version of the one before (the same start) replaces it
-    if (prev !== undefined && prev.toLowerCase() === lc) continue;
-    if (prev !== undefined && lc.startsWith(prev.toLowerCase())) out[out.length - 1] = c;
+    const lp = prev?.toLowerCase();
+    if (lp !== undefined && dropRepeats && lp === lc) continue;
+    if (lp !== undefined && lc.startsWith(`${lp} `)) out[out.length - 1] = c;
     else out.push(c);
   }
   return out;
 }
 
+/** Whether this browser is Chrome-on-Android-like, whose result lists can repeat a final exactly. */
+export const repeatsFinals = (ua: string | undefined) => !!ua && /Android/i.test(ua);
+
 /**
  * Final chunks and interim text in one recognition run's result list. The list holds the whole run (results before
  * `resultIndex` don't change), so re-reading it on every event can't lose or duplicate text.
  */
-export function readResults(list: RecognitionResultList): { finals: string[]; final: string; interim: string } {
+export function readResults(list: RecognitionResultList, dropRepeats = false): { finals: string[]; final: string; interim: string } {
   const fin: string[] = [];
   const mid: string[] = [];
   for (let i = 0; i < list.length; i++) {
@@ -119,13 +126,13 @@ export function readResults(list: RecognitionResultList): { finals: string[]; fi
     const t = (r && r.length > 0 ? r[0]?.transcript ?? "" : "").trim();
     if (t) (r.isFinal ? fin : mid).push(t);
   }
-  const finals = joinFinals(fin);
+  const finals = joinFinals(fin, dropRepeats);
   return { finals, final: finals.join(" "), interim: mid.join(" ") };
 }
 
 /**
  * Tidies a whole dictation once, when it ends: Chrome gives lowercase text without punctuation, split at short pauses,
- * so the chunks are joined with single spaces, the first letter is capitalised (only if it is lowercase), and one full
+ * so the chunks are joined with single spaces, the first letter is capitalised (only if the whole first word is lowercase), and one full
  * stop is added only when the text ends in a letter or digit. Nothing else changes: digits, amounts, names and the
  * rest of the casing stay exactly as heard, and no punctuation is added between chunks.
  */
@@ -133,7 +140,10 @@ export function tidyDictation(chunks: string[] | string, lang = "en-US"): string
   const c = (Array.isArray(chunks) ? chunks.join(" ") : chunks).replace(/\s+/g, " ").trim();
   if (!c) return "";
   const first = String.fromCodePoint(c.codePointAt(0)!);
-  let out = first !== first.toLocaleUpperCase(lang) && first === first.toLocaleLowerCase(lang) ? first.toLocaleUpperCase(lang) + c.slice(first.length) : c;
+  const word = c.split(" ")[0];
+  // only an all-lowercase first word is capitalised: "eBay", "iPhone" and "McDonald's" stay as they are
+  const lower = word === word.toLocaleLowerCase(lang) && first !== first.toLocaleUpperCase(lang);
+  let out = lower ? first.toLocaleUpperCase(lang) + c.slice(first.length) : c;
   // a full stop only after a letter of an alphabet that uses one (not Chinese / Japanese / Thai…) or a digit
   if (/[\p{Script=Latin}\p{Script=Cyrillic}\p{Script=Greek}\p{Nd}]$/u.test(out)) out += ".";
   return out;
@@ -174,6 +184,8 @@ export type VoiceSessionOptions = {
   stopGraceMs?: number;
   startGraceMs?: number;
   maxRestarts?: number;
+  /** drop exact consecutive repeats of a final (Chrome on Android); see joinFinals */
+  dropRepeats?: boolean;
   now?: () => number;
 };
 export type VoiceSession = { stop(): void; abort(): void };
@@ -184,10 +196,10 @@ export const VOICE_START_GRACE_MS = 15_000;
 export const VOICE_MAX_RESTARTS = 20;
 
 /**
- * One listening session, possibly over several recognition runs: Safari (and Chrome after a network hiccup) ends a
- * run on its own, so a run that heard something is started again until the person stops, 60 seconds pass, or a run
- * hears nothing (silence). Text heard in earlier runs is kept. At the end, the final text, tidied, is added to the box
- * through `append`, once. `abort()` (unmount, page hide) ends it silently, adding nothing. Nothing else happens: the
+ * One listening session, possibly over several recognition runs: Safari ends a run on its own after a phrase, so a run
+ * that ended cleanly after hearing something is started again until the person stops, 60 seconds pass, or a run hears
+ * nothing (silence). A run that ends on an error (network, microphone…) is not restarted: the session ends, and text
+ * heard before it is still added, with a note. At the end, the text, tidied, is added to the box through `append`, once. `abort()` (unmount, page hide) ends it silently, adding nothing. Nothing else happens: the
  * person reviews the text and submits it themselves.
  */
 export function startVoiceSession(Ctor: RecognitionCtor, o: VoiceSessionOptions): VoiceSession {
@@ -221,7 +233,7 @@ export function startVoiceSession(Ctor: RecognitionCtor, o: VoiceSessionOptions)
       /* already ended */
     }
   };
-  const chunks = (withInterim: boolean) => joinFinals([...kept, ...finals, ...(withInterim && interim ? [interim] : [])]);
+  const chunks = (withInterim: boolean) => joinFinals([...kept, ...finals, ...(withInterim && interim ? [interim] : [])], o.dropRepeats);
   const text = (withInterim: boolean) => tidyDictation(chunks(withInterim), o.lang);
 
   const finish = () => {
@@ -231,8 +243,15 @@ export function startVoiceSession(Ctor: RecognitionCtor, o: VoiceSessionOptions)
     detach(rec);
     // the whole dictation is tidied once, here. A run the browser ended itself may leave unfinalised words (Safari rarely marks results final): keep them too
     const t = text(true);
-    // silence or a lost connection after something was heard: keep what was heard
-    if (err && !(t.trim() && (err === "no-speech" || err === "aborted"))) return o.dispatch({ type: "error", code: err });
+    if (err && !(t.trim() && (err === "no-speech" || err === "aborted"))) {
+      // an error in a restarted run: what earlier runs heard is kept (with the failed run's confirmed words), and the
+      // note says the session stopped early. With nothing kept, it's just the error.
+      const before = kept.length ? tidyDictation(joinFinals([...kept, ...finals], o.dropRepeats), o.lang) : "";
+      if (!before) return o.dispatch({ type: "error", code: err });
+      const truncated = o.append(before);
+      return o.dispatch({ type: "done", truncated, autoStopped, stoppedEarly: err });
+    }
+    // silence or the browser aborting after something was heard: keep what was heard
     // never opened (a permission prompt dismissed, or cancelled first): back to the start, nothing to report
     if (!t.trim()) return o.dispatch(!live ? { type: "reset" } : { type: "error", code: "no-speech" });
     const truncated = o.append(t);
@@ -286,7 +305,7 @@ export function startVoiceSession(Ctor: RecognitionCtor, o: VoiceSessionOptions)
     r.onresult = (e) => {
       if (over || r !== rec) return;
       goLive();
-      ({ finals, interim } = readResults(e.results));
+      ({ finals, interim } = readResults(e.results, o.dropRepeats));
       o.dispatch({ type: "heard", text: [...chunks(false), interim].filter(Boolean).join(" ") });
     };
     r.onerror = (e) => {
@@ -298,7 +317,10 @@ export function startVoiceSession(Ctor: RecognitionCtor, o: VoiceSessionOptions)
       const ranOut = now() - startedAt >= (o.maxMs ?? VOICE_MAX_MS);
       // the browser ended the run itself after hearing something: keep it, and listen on
       if (live && !stopRequested && !err && heard && !ranOut && restarts < maxRestarts) {
-        kept.push(...joinFinals([...finals, ...(interim ? [interim] : [])]));
+        kept.push(...joinFinals([...finals, ...(interim ? [interim] : [])], o.dropRepeats));
+        // now in `kept`: cleared so a restart that fails can't add them twice
+        finals = [];
+        interim = "";
         restarts++;
         detach(r);
         if (run()) return;
