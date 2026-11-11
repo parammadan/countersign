@@ -71,7 +71,7 @@ const figureIn = (figure: string, text: string) => {
   const t = text.replace(/(?<=\d),(?=\d{3}\b)/g, "").toLowerCase();
   const num = figure.match(/\d+(?:\.\d+)?/)![0];
   // the number must appear, as itself (not inside a longer number), with its unit word when the figure had one
-  const unit = figure.replace(/[$€£\d.,%\s]|usd|eur|gbp/gi, "").replace(/s$/, "");
+  const unit = figure.replace(/[$€£\d.,%]|usd|eur|gbp/gi, "").replace(/\s+/g, " ").trim().replace(/s$/, ""); // "business day"
   const at = new RegExp(`(?<![\\d.])${num.replace(".", "\\.")}(?![\\d])`);
   if (!at.test(t)) return false;
   return !unit || t.includes(unit);

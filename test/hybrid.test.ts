@@ -150,3 +150,12 @@ describe("the hybrid run and the review gate", () => {
     }
   });
 });
+
+describe("review follow-ups from the real-Claude acceptance run", () => {
+  it("a figure with a multi-word unit is found in the clause ('10 business days')", () => {
+    const got = cleanCoverage({ items: [{ id: "r1", status: "included", clauses: ["acc"], note: "" }] },
+      [{ id: "r1", category: "obligations", quote: "The client has 10 business days after delivery to accept", summary: "acceptance" }],
+      [{ id: "acc", number: "9", heading: "Acceptance", text: "The Client will accept or reject each delivery within 10 business days." }]);
+    expect(got[0].status).toBe("included");
+  });
+});
