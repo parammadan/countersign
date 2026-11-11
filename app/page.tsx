@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { DemoVideo } from "@/components/landing/DemoVideo";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { getSession } from "@/lib/auth";
@@ -17,6 +18,7 @@ import {
   HOW,
   KNOWLEDGE,
   NAV,
+  DEMO,
   PHONE_SCAN,
   PHONE_SCAN_COPY,
   PHONE_SIGN,
@@ -185,6 +187,23 @@ export default async function Home() {
                 </span>
               ))}
             </p>
+          </div>
+        </section>
+
+        {/* ---------- demo video ---------- */}
+        <section id={DEMO.id} aria-labelledby="demo-heading" className="scroll-mt-16 border-t border-line bg-subtle/60">
+          <div className={cx(wrap, "py-16 sm:py-20")}>
+            <div className="mx-auto max-w-3xl text-center">
+              <Eyebrow>{DEMO.eyebrow}</Eyebrow>
+              <h2 id="demo-heading" className="mt-4 text-[2rem] leading-[1.1] font-semibold tracking-[-0.03em] text-balance text-ink sm:text-[2.6rem]">{DEMO.title}</h2>
+              <p className="mx-auto mt-4 max-w-2xl text-[16.5px] leading-relaxed text-ink-2">{DEMO.text}</p>
+            </div>
+            <div className="mx-auto mt-10 max-w-4xl">
+              <DemoVideo />
+              <p className="mt-3 text-center text-sm text-muted">
+                <a href={`https://youtu.be/${DEMO.videoId}`} target="_blank" rel="noopener noreferrer" className="rounded font-medium text-brand hover:underline">{DEMO.watchOnYouTube}</a>
+              </p>
+            </div>
           </div>
         </section>
 
