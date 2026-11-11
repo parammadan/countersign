@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import zlib from "node:zlib";
 import path from "node:path";
 import { PDFDocument } from "pdf-lib";
 import type { DatabaseSync } from "node:sqlite";
@@ -151,8 +152,8 @@ export async function createScan(o: Owner, at = Date.now()): Promise<{ id: strin
   await sweep(at);
   const prior = all<ScanRow>(`SELECT * FROM scan_sessions WHERE workspace_id = ? AND user_id = ? AND status IN ('waiting','connected')`, o.workspaceId, o.userId);
   for (const p of prior) {
-    run(`UPDATE scan_sessions SET status = 'cancelled' WHERE id = ? AND status IN ('waiting','connected')`, p.id);
-    await dropPages(p);
+    const r = run(`UPDATE scan_sessions SET status = 'cancelled' WHERE id = ? AND status IN ('waiting','connected')`, p.id);
+    if (Number(r.changes) === 1) await dropPages(p);
   }
   const sid = id("scan_");
   const tok = randomToken(32);
@@ -196,8 +197,9 @@ export async function scanStatus(o: Owner, sid: string, at = Date.now()): Promis
 export async function cancelScan(o: Owner, sid: string): Promise<DesktopStatus | null> {
   const s = ownSession(o, sid);
   if (!s) return null;
-  run(`UPDATE scan_sessions SET status = 'cancelled' WHERE id = ? AND status IN ('waiting','connected')`, s.id);
-  await dropPages(s);
+  // a scan already being built can't be cancelled (its pages are in use); it finishes into a draft as usual
+  const r = run(`UPDATE scan_sessions SET status = 'cancelled' WHERE id = ? AND status IN ('waiting','connected')`, s.id);
+  if (Number(r.changes) === 1) await dropPages(s);
   return scanStatus(o, sid);
 }
 
@@ -234,34 +236,143 @@ export async function phoneConnect(tok: string, at = Date.now()): Promise<PhoneL
   return { expiresAt: s.expires_at, maxPages: MAX_PAGES, maxPageBytes: MAX_PAGE_BYTES, maxTotalBytes: MAX_TOTAL_BYTES };
 }
 
+/**
+ * A copy that owns its whole ArrayBuffer. pdf-lib 1.17's JPEG parser reads `new DataView(data.buffer)` and ignores
+ * the view's offset, so a Buffer that is a slice of a larger pool (file reads, request bodies) would be parsed from
+ * the wrong bytes: the size it reports, and whether it accepts the image at all, would belong to other data.
+ */
+const exact = (d: Uint8Array) => new Uint8Array(d);
+
 export type Inspected = { kind: "jpeg" | "png"; width: number; height: number };
 
 /**
  * Is this really a JPEG or PNG we can put in a PDF? Judged by the bytes, never the name or declared type: the magic
- * number, the size limits, then pdf-lib must embed it. PNG dimensions are checked from the header before decoding,
- * so a small file that would decode to a huge bitmap is refused without decoding it.
+ * number, the size limits, a full structural check (pngDims / jpegDims), then pdf-lib must embed it and agree on its
+ * size. A PNG's pixel data is inflated with a hard cap at the size its header promises, so a small file that would
+ * decode to a huge bitmap is refused without decoding it.
  */
 export async function inspectImage(data: Uint8Array): Promise<Inspected> {
   if (data.byteLength === 0) throw new AppError("That photo is empty.", 422);
   if (data.byteLength > MAX_PAGE_BYTES) throw new AppError(`Each page can be up to ${MAX_PAGE_BYTES / 1024 / 1024} MB.`, 413);
-  const b = Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+  const b = Buffer.from(exact(data));
   const isJpeg = b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff;
-  const isPng = b.length > 24 && b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  const isPng = b.length > 8 && b.subarray(0, 8).equals(PNG_SIG);
   if (!isJpeg && !isPng) throw new AppError("Only JPEG or PNG photos can be used.", 415);
-  const tooBig = (w: number, h: number) => !(w > 0 && h > 0 && w <= MAX_SIDE && h <= MAX_SIDE);
-  if (isPng) {
-    if (b.subarray(12, 16).toString("latin1") !== "IHDR") throw new AppError("That photo couldn't be read.", 422);
-    if (tooBig(b.readUInt32BE(16), b.readUInt32BE(20))) throw new AppError(`Photos can be up to ${MAX_SIDE} pixels on each side.`, 422);
-  }
+  // our own structural check first: pdf-lib's PNG decoder never returns on some malformed files (a truncated one
+  // loops forever), so nothing reaches it that isn't a complete, consistent image of an allowed size
+  const dims = isJpeg ? jpegDims(b) : pngDims(b);
+  if (!dims) throw new AppError("That photo couldn't be read.", 422);
+  if (!(dims.width <= MAX_SIDE && dims.height <= MAX_SIDE)) throw new AppError(`Photos can be up to ${MAX_SIDE} pixels on each side.`, 422);
   let img: { width: number; height: number };
   try {
     const doc = await PDFDocument.create();
-    img = isJpeg ? await doc.embedJpg(b) : await doc.embedPng(b);
+    img = isJpeg ? await doc.embedJpg(exact(b)) : await doc.embedPng(exact(b));
   } catch {
     throw new AppError("That photo couldn't be read.", 422);
   }
-  if (tooBig(img.width, img.height)) throw new AppError(`Photos can be up to ${MAX_SIDE} pixels on each side.`, 422);
+  if (img.width !== dims.width || img.height !== dims.height) throw new AppError("That photo couldn't be read.", 422);
   return { kind: isJpeg ? "jpeg" : "png", width: img.width, height: img.height };
+}
+
+const PNG_SIG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const CRC_TABLE = Int32Array.from({ length: 256 }, (_, n) => {
+  let c = n;
+  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+  return c;
+});
+function crc32(b: Buffer) {
+  let c = -1;
+  for (let i = 0; i < b.length; i++) c = CRC_TABLE[(c ^ b[i]) & 255] ^ (c >>> 8);
+  return (c ^ -1) >>> 0;
+}
+// colour type → channels, and the bit depths PNG allows for it
+const PNG_TYPES: Record<number, { ch: number; depths: number[] }> = {
+  0: { ch: 1, depths: [1, 2, 4, 8, 16] },
+  2: { ch: 3, depths: [8, 16] },
+  3: { ch: 1, depths: [1, 2, 4, 8] },
+  4: { ch: 2, depths: [8, 16] },
+  6: { ch: 4, depths: [8, 16] },
+};
+
+/**
+ * A complete, non-interlaced PNG: every chunk whole with a correct CRC, IHDR first, IEND last with nothing after,
+ * and the image data inflating (with a hard output cap) to exactly the size its header promises, every row with a
+ * valid filter byte. Returns its size, or null.
+ */
+export function pngDims(b: Buffer): { width: number; height: number } | null {
+  if (!b.subarray(0, 8).equals(PNG_SIG)) return null;
+  let pos = 8;
+  let ihdr: { w: number; h: number; depth: number; type: number } | null = null;
+  let plte = false;
+  let ended = false;
+  const idat: Buffer[] = [];
+  while (pos < b.length) {
+    if (ended || pos + 12 > b.length) return null;
+    const len = b.readUInt32BE(pos);
+    if (len > b.length - pos - 12) return null;
+    const type = b.subarray(pos + 4, pos + 8).toString("latin1");
+    const body = b.subarray(pos + 8, pos + 8 + len);
+    if (crc32(b.subarray(pos + 4, pos + 8 + len)) !== b.readUInt32BE(pos + 8 + len)) return null;
+    if (!ihdr && type !== "IHDR") return null;
+    if (type === "IHDR") {
+      if (ihdr || len !== 13) return null;
+      const [depth, ctype, comp, filter, interlace] = [body[8], body[9], body[10], body[11], body[12]];
+      if (!PNG_TYPES[ctype]?.depths.includes(depth) || comp !== 0 || filter !== 0 || interlace !== 0) return null;
+      ihdr = { w: body.readUInt32BE(0), h: body.readUInt32BE(4), depth, type: ctype };
+      if (!(ihdr.w > 0 && ihdr.h > 0 && ihdr.w <= MAX_SIDE && ihdr.h <= MAX_SIDE)) return { width: ihdr.w || Infinity, height: ihdr.h || Infinity };
+    } else if (type === "PLTE") plte = true;
+    else if (type === "IDAT") idat.push(body);
+    else if (type === "IEND") ended = true;
+    pos += 12 + len;
+  }
+  if (!ihdr || !ended || !idat.length || (ihdr.type === 3 && !plte)) return null;
+  const stride = Math.ceil((ihdr.w * PNG_TYPES[ihdr.type].ch * ihdr.depth) / 8) + 1;
+  const want = stride * ihdr.h;
+  let raw: Buffer;
+  try {
+    raw = zlib.inflateSync(Buffer.concat(idat), { maxOutputLength: want + 1 });
+  } catch {
+    return null;
+  }
+  if (raw.length !== want) return null;
+  for (let r = 0; r < ihdr.h; r++) if (raw[r * stride] > 4) return null;
+  return { width: ihdr.w, height: ihdr.h };
+}
+
+/**
+ * A complete baseline or progressive JPEG: whole segments up to the start of scan, one frame header with 1, 3 or 4
+ * components, and the end-of-image marker as its last two bytes (nothing appended). Returns its size, or null.
+ */
+export function jpegDims(b: Buffer): { width: number; height: number } | null {
+  if (b.length < 4 || b[0] !== 0xff || b[1] !== 0xd8) return null;
+  let pos = 2;
+  let dims: { width: number; height: number } | null = null;
+  while (pos + 4 <= b.length) {
+    if (b[pos] !== 0xff) return null;
+    while (b[pos + 1] === 0xff && pos + 2 < b.length) pos++; // fill bytes
+    const m = b[pos + 1];
+    if (m === 0x01 || (m >= 0xd0 && m <= 0xd7)) {
+      pos += 2;
+      continue;
+    }
+    if (m === 0xd8 || m === 0xd9 || pos + 4 > b.length) return null;
+    const len = b.readUInt16BE(pos + 2);
+    if (len < 2 || pos + 2 + len > b.length) return null;
+    if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) {
+      // a frame header: only baseline and progressive (Huffman) DCT, the kinds PDF readers decode
+      if (dims || (m !== 0xc0 && m !== 0xc1 && m !== 0xc2) || len < 8) return null;
+      const comps = b[pos + 9];
+      if (b[pos + 4] !== 8 || ![1, 3, 4].includes(comps) || len !== 8 + 3 * comps) return null;
+      dims = { height: b.readUInt16BE(pos + 5), width: b.readUInt16BE(pos + 7) };
+      if (!dims.width || !dims.height) return null;
+    }
+    if (m === 0xda) {
+      if (!dims) return null;
+      return b[b.length - 2] === 0xff && b[b.length - 1] === 0xd9 && b.length > pos + 2 + len + 2 ? dims : null;
+    }
+    pos += 2 + len;
+  }
+  return null;
 }
 
 /** Add or replace page `idx` (0-based) of this session. */
@@ -329,7 +440,7 @@ export async function phoneDeletePage(tok: string, idx: number, at = Date.now())
 export async function buildScanPdf(images: { kind: "jpeg" | "png"; data: Uint8Array }[]): Promise<Buffer> {
   const doc = await PDFDocument.create();
   for (const im of images) {
-    const img = im.kind === "jpeg" ? await doc.embedJpg(im.data) : await doc.embedPng(im.data);
+    const img = im.kind === "jpeg" ? await doc.embedJpg(exact(im.data)) : await doc.embedPng(exact(im.data));
     const scale = PAGE_LONG_EDGE_PT / Math.max(img.width, img.height);
     const w = Math.round(img.width * scale * 100) / 100;
     const h = Math.round(img.height * scale * 100) / 100;
