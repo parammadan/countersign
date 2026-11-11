@@ -25,6 +25,12 @@ describe("fee basis is kept only when the description says it about the fee", ()
   it("'a fixed term of 6 months' is not a fixed fee", () => {
     expect(run("$12,000 for a fixed term of 6 months", [["feeBasis", "fixed"]]).terms.feeBasis).toBeUndefined();
   });
+  it("keeps the basis when a late fee or interest is in the same sentence", () => {
+    expect(run("$5,000 per month, with a 1.5% late fee.", [["feeBasis", "month"]]).terms.feeBasis).toBe("month");
+    expect(run("Consulting at $4,000 a month, with interest on overdue invoices.", [["feeBasis", "month"]]).terms.feeBasis).toBe("month");
+    expect(run("A $12,000 flat fee and a 1.5% monthly late fee.", [["feeBasis", "fixed"]]).terms.feeBasis).toBe("fixed");
+    expect(run("A $12,000 flat fee and a 1.5% monthly late fee.", [["feeBasis", "month"]]).terms.feeBasis).toBeUndefined();
+  });
   it("a month's notice is not a monthly fee", () => {
     expect(run("$5,000 total, give a month's notice", [["feeBasis", "month"]]).terms.feeBasis).toBeUndefined();
     expect(run("$5,000 a month, one month's notice", [["feeBasis", "month"]]).terms.feeBasis).toBe("month");

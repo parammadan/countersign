@@ -309,13 +309,14 @@ const BASIS_CUE: Record<string, RegExp> = {
   year: /\b(?:per|a|each|every)\s+(?:year|annum)\b|\b(?:yearly|annually|annual)\b|\bper\s+annum\b/i,
 };
 /**
- * The description with the parts that can't be about the fee's basis taken out: a sentence about a late fee or
+ * The description with the parts that can't be about the fee's basis taken out: a clause about a late fee or
  * interest ("1.5% per month"), a "fixed term/period/date" (a duration, not a fee), and a notice period ("a month's notice").
+ * Only the late-fee clause goes, not its whole sentence: "$5,000 per month, with a 1.5% late fee" still says monthly.
  */
 function basisText(description: string): string {
   return description
-    .split(/[;\n]|\.(?=\s|$)/)
-    .filter((sentence) => !/\b(?:late|overdue|interest|penalt\w*|default)\b/i.test(sentence))
+    .split(/[;\n]|\.(?=\s|$)|,(?=\s|$)|\s(?:and|with|plus|but)\s/i)
+    .filter((clause) => !/\b(?:late|overdue|interest|penalt\w*|default)\b/i.test(clause))
     .join(". ")
     .replace(/\bfixed[- ](?:term|period|date|length|duration|schedule)\b/gi, " ")
     .replace(/\b(?:a|one|1|each|every)\s+(?:month|quarter|year)(?:['’]s?)?\s+(?:written\s+)?notice\b/gi, " ")
