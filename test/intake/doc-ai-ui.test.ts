@@ -50,7 +50,7 @@ describe("Document Intelligence screens", () => {
     expect(DOC_AI_COPY.scope).toBe("This page: one document. Knowledge Hub: questions across all your agreements.");
     expect(DOC_AI_COPY.disclaimer).toBe("Informational, not legal advice");
     expect(CHAT_EXAMPLES).toEqual(["Explain this agreement in simple English.", "Can either party terminate early?", "Who owns the work product?", "What happens if payment is late?"]);
-    expect(Object.keys(DOC_AI_UNAVAILABLE).sort()).toEqual(["no_text", "off", "scan_incomplete", "spend_cap", "unverified"]);
+    expect(Object.keys(DOC_AI_UNAVAILABLE).sort()).toEqual(["empty", "no_text", "off", "scan_incomplete", "spend_cap", "unverified"]);
   });
 
   it("the analysis: quotes with pages, statuses, worth checking by kind, disagreements, disclaimer", () => {
