@@ -5,13 +5,33 @@ import { getSession } from "@/lib/auth";
 import { LinkButton, Logo, cx } from "@/components/ui";
 import { Icon } from "@/components/icons";
 import { BRAND } from "@/lib/brand";
-import { CLAUSES, CTA, DOC_INTEL, FEATURES_INTRO, FOOTER, HERO, HOW, KNOWLEDGE, NAV, SIGN, STEPS, STUDIO, type Feature } from "@/components/landing/copy";
+import {
+  CLAUSES,
+  CTA,
+  DOC_INTEL,
+  FEATURES_INTRO,
+  FOOTER,
+  HERO,
+  HOW,
+  KNOWLEDGE,
+  NAV,
+  PHONE_SCAN,
+  PHONE_SCAN_COPY,
+  PHONE_SIGN,
+  SIGN,
+  STEPS,
+  STUDIO,
+  VOICE_INPUT,
+  VOICE_INPUT_COPY,
+  type Feature,
+} from "@/components/landing/copy";
 import {
   ClausePreview,
   DocumentPreview,
   HeroStudioPreview,
   KnowledgePreview,
   NewFilePreview,
+  PhoneSignPreview,
   PhoneSigningPreview,
   SealedPreview,
   StudioDraftPreview,
@@ -50,6 +70,18 @@ function Points({ items, dark }: { items: readonly string[]; dark?: boolean }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+/** A short highlighted note under a feature, e.g. a capability behind a flag. */
+function Callout({ icon, label, dark, children }: { icon: Feature["icon"]; label: string; dark?: boolean; children: ReactNode }) {
+  return (
+    <p className={cx("mt-6 flex items-start gap-3 rounded-xl border px-4 py-3 text-[14px] leading-snug", dark ? "border-white/15 bg-white/5 text-slate-200" : "border-brand/20 bg-brand/[0.04] text-ink-2")}>
+      <span className={cx("grid h-7 w-7 shrink-0 place-items-center rounded-lg", dark ? "bg-white/10 text-indigo-100" : "bg-brand-soft text-brand")}><Icon name={icon} size={15} /></span>
+      <span className="min-w-0 pt-0.5">
+        <b className={dark ? "text-white" : "text-ink"}>{label}.</b> {children}
+      </span>
+    </p>
   );
 }
 
@@ -163,6 +195,7 @@ export default async function Home() {
                   </li>
                 ))}
               </ol>
+              {VOICE_INPUT && <Callout icon="spark" label={VOICE_INPUT_COPY.label}>{VOICE_INPUT_COPY.text}</Callout>}
             </FeatureText>
             <StudioDraftPreview />
           </section>
@@ -173,7 +206,7 @@ export default async function Home() {
               <div className="min-w-0 lg:order-2">
                 <FeatureText f={DOC_INTEL}>
                   <div className="mt-7 flex flex-wrap gap-2">
-                    {["Type", "Parties", "Amounts", "Dates", "Governing law", "Conflicts", "Quarantined instructions"].map((t) => (
+                    {DOC_INTEL.chips.map((t) => (
                       <span key={t} className="rounded-lg border border-line bg-white px-2.5 py-1 text-[12.5px] font-medium text-ink-2 shadow-1">{t}</span>
                     ))}
                   </div>
@@ -224,6 +257,23 @@ export default async function Home() {
                 </li>
               ))}
             </ol>
+            {PHONE_SCAN && (
+              <div className="mt-10 [&>p]:mx-auto [&>p]:max-w-2xl">
+                <Callout icon="upload" label={PHONE_SCAN_COPY.label} dark>{PHONE_SCAN_COPY.text}</Callout>
+              </div>
+            )}
+            <div id="sign-on-phone" className="mt-20 grid items-center gap-12 border-t border-white/10 pt-16 lg:grid-cols-[0.85fr_1.15fr] lg:gap-16">
+              <div className="min-w-0">
+                <p className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[12px] font-semibold tracking-[0.08em] text-indigo-100 uppercase">
+                  <Icon name="phone" size={14} />
+                  {PHONE_SIGN.eyebrow}
+                </p>
+                <h3 className="mt-4 text-[1.6rem] leading-tight font-semibold tracking-[-0.02em] text-balance text-white sm:text-[2rem]">{PHONE_SIGN.title}</h3>
+                <p className="mt-4 text-[16px] leading-relaxed text-slate-300">{PHONE_SIGN.text}</p>
+                <Points items={PHONE_SIGN.points} dark />
+              </div>
+              <PhoneSignPreview />
+            </div>
           </div>
         </section>
 

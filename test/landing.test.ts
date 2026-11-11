@@ -1,7 +1,7 @@
 // Public landing page: hero and calls to action for signed-out and signed-in visitors, the feature sections, the
 // workflow steps, labelled illustrative previews, one h1, Document Intelligence wording that follows its flag, and no
 // compliance claims, testimonials or metrics.
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 const getSession = vi.fn();
@@ -9,7 +9,7 @@ vi.mock("@/lib/auth", () => ({ getSession: () => getSession() }));
 
 const { default: Home } = await import("@/app/page");
 const copy = await import("@/components/landing/copy");
-const { FEATURES, HERO, STEPS, PREVIEW_LABEL, CTA, FOOTER, HOW, NAV, DOC_INTEL, DOC_INTEL_AI, DOC_INTEL_COPY } = copy;
+const { FEATURES, HERO, STEPS, PREVIEW_LABEL, CTA, FOOTER, HOW, NAV, DOC_INTEL, DOC_INTEL_AI, DOC_INTEL_COPY, PHONE_SIGN, PHONE_SCAN, PHONE_SCAN_COPY, VOICE_INPUT, VOICE_INPUT_COPY } = copy;
 
 const render = async () => renderToStaticMarkup(await Home());
 /** The text a visitor reads, tags stripped. */
@@ -96,7 +96,7 @@ describe("landing page", () => {
     it("labels every preview as illustrative and hides the mock-ups from assistive tech", async () => {
       const h = await render();
       const figures = h.match(/<figure[\s\S]*?<\/figure>/g) ?? [];
-      expect(figures.length).toBeGreaterThanOrEqual(8);
+      expect(figures.length).toBeGreaterThanOrEqual(9);
       for (const f of figures) {
         expect(text(f.match(/<figcaption[\s\S]*?<\/figcaption>/)![0])).toMatch(new RegExp(`^ ?(${PREVIEW_LABEL}|${HERO.caption.replace(/\./g, "\\.")}) ?:`));
         expect(f).toMatch(/<div aria-hidden="true" class="relative">/);
@@ -134,6 +134,36 @@ describe("landing page", () => {
       const ai = [DOC_INTEL_COPY.ai.text, ...DOC_INTEL_COPY.ai.points].join(" ");
       for (const w of [/AI summary/, /key terms/, /cited/, /chat with (that|this) one document/i, /Informational, not legal advice/]) expect(ai).toMatch(w);
       expect(DOC_INTEL_COPY.ai.id).toBe(DOC_INTEL_COPY.rules.id);
+      // the section, chips and preview show the AI analysis: summary, quoted key terms, one-document chat, Studio handoff
+      for (const p of DOC_INTEL_COPY.ai.points) expect(h).toContain(p);
+      for (const c of DOC_INTEL_COPY.ai.chips) expect(h).toContain(c);
+      for (const t of ["In plain English", "Key terms", "Chat with this document", "Start a draft in Agreement Studio", "Informational, not legal advice"]) expect(h).toContain(t);
+      expect(h).toMatch(/p\. 3: “either party may terminate/);
+      expect(h).not.toContain("Ignore previous instructions");
+    });
+
+    it("Sign on your phone: the live QR handoff is described, with its preview", async () => {
+      const h = await render();
+      const t = text(h);
+      expect(t).toContain(PHONE_SIGN.title);
+      expect(t).toContain(PHONE_SIGN.text);
+      for (const p of PHONE_SIGN.points) expect(t).toContain(p);
+      expect(PHONE_SIGN.text).toMatch(/QR code/);
+      expect(PHONE_SIGN.text).toMatch(/same signing link/);
+      expect(PHONE_SIGN.text).toMatch(/updates by itself/);
+      const fig = (h.match(/<figure[\s\S]*?<\/figure>/g) ?? []).find((f) => f.includes("Sign on your phone"))!;
+      expect(fig).toBeTruthy();
+      expect(fig).toContain("<svg");
+      expect(text(fig)).toContain("Scan with your phone's camera. You'll sign there; this page updates when you're done.");
+    });
+
+    it("unshipped features stay off the page while their flags are false", async () => {
+      expect(PHONE_SCAN).toBe(false);
+      expect(VOICE_INPUT).toBe(false);
+      const h = await render();
+      const t = text(h);
+      for (const x of [PHONE_SCAN_COPY.label, PHONE_SCAN_COPY.text, VOICE_INPUT_COPY.label, VOICE_INPUT_COPY.text]) expect(t).not.toContain(x);
+      expect(t).not.toMatch(/scan with phone|photograph the pages|voice input|out loud|microphone|dictat/i);
     });
 
     it("makes no compliance claims, testimonials, metrics or drafting claims anywhere in the copy", async () => {
@@ -163,6 +193,25 @@ describe("landing page", () => {
       const h = await render();
       for (const t of ["header", "main", "footer"]) expect(h).toContain(`<${t}`);
       expect(h).toContain("overflow-x-clip");
+    });
+  });
+
+  describe("when the phone scanning and voice input flags are flipped", () => {
+    afterEach(() => {
+      vi.doUnmock("@/components/landing/copy");
+      vi.resetModules();
+    });
+
+    it("each one's copy appears, once", async () => {
+      vi.resetModules();
+      vi.doMock("@/components/landing/copy", async (orig) => ({ ...(await orig<typeof copy>()), PHONE_SCAN: true, VOICE_INPUT: true }));
+      const { default: Flipped } = await import("@/app/page");
+      getSession.mockResolvedValue(null);
+      const t = text(renderToStaticMarkup(await Flipped()));
+      for (const x of [PHONE_SCAN_COPY.text, VOICE_INPUT_COPY.text]) expect(t.split(x)).toHaveLength(2);
+      expect(t).toContain(`${PHONE_SCAN_COPY.label}.`);
+      expect(t).toContain(`${VOICE_INPUT_COPY.label}.`);
+      expect(t).not.toMatch(FORBIDDEN);
     });
   });
 

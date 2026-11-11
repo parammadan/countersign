@@ -207,26 +207,63 @@ function ReadRow({ label, value, page, quote, tone }: { label: string; value: st
   );
 }
 
-/** Document Intelligence: what was read from an incoming document, with sources, a conflict and quarantined text. */
-export function DocumentPreview() {
+function DocHeader({ sub, badge }: { sub: string; badge?: ReactNode }) {
   return (
-    <Preview describe={`Document Intelligence's reading of an uploaded consulting agreement: type, parties, fee, start date and governing law, each with its page and quoted passage; a flagged conflict; one quarantined line of text; and a button to start a draft. Badge: ${DOC_INTEL.badge}.`}>
-      <Window title="Document Intelligence" right={<Badge tone={DOC_INTEL_AI ? "brand" : "neutral"} className="hidden sm:inline-flex">{DOC_INTEL.badge}</Badge>}>
-        <div className="flex items-center gap-3 border-b border-line px-4 py-3">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-soft text-brand"><Icon name="agreement" size={18} /></span>
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-semibold text-ink">northwind-acme-consulting.pdf</div>
-            <div className="truncate text-xs text-muted">Consulting agreement · 4 pages</div>
-          </div>
-          <Badge tone={DOC_INTEL_AI ? "brand" : "neutral"} className="sm:hidden">{DOC_INTEL.badge}</Badge>
-          <Badge tone="warn" icon="alert" className="hidden sm:inline-flex">Needs review</Badge>
+    <div className="flex items-center gap-3 border-b border-line px-4 py-3">
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-soft text-brand"><Icon name="agreement" size={18} /></span>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-semibold text-ink">northwind-acme-consulting.pdf</div>
+        <div className="truncate text-xs text-muted">{sub}</div>
+      </div>
+      {badge}
+    </div>
+  );
+}
+
+const sectionLabel = "text-[11px] font-semibold tracking-wide text-muted uppercase";
+
+/** Document Intelligence with AI: the plain-English summary, quoted key terms, a chat turn and the Studio handoff. */
+function DocumentAiPreview() {
+  return (
+    <Preview describe="Document Intelligence's AI analysis of an uploaded consulting agreement: a plain-English summary with its source page, key terms each quoted with their page, a chat question about this document answered with a quoted passage, and a button to start an Agreement Studio draft. Marked informational, not legal advice.">
+      <Window title="Document Intelligence" right={<Badge tone="ok" icon="spark" className="hidden sm:inline-flex">AI on</Badge>}>
+        <DocHeader sub="Consulting agreement · 4 pages · analyzed by Claude" badge={<Badge tone="neutral" className="hidden text-[11px] sm:inline-flex">{DOC_INTEL.badge}</Badge>} />
+        <div className="border-b border-line bg-brand/[0.035] px-4 py-3">
+          <div className={cx(sectionLabel, "flex items-center gap-1.5 text-brand")}><Icon name="spark" size={12} />In plain English</div>
+          <p className="mt-1.5 text-[13px] leading-relaxed text-ink">Northwind Advisory LLC will provide consulting services to Acme Widgets Inc for a one-time fixed fee of $12,000, under Delaware law.</p>
+          <div className="mt-1 text-[11.5px] text-brand">Source: page 1, 2</div>
         </div>
-        {DOC_INTEL_AI && (
-          <div className="border-b border-line bg-brand/[0.04] px-4 py-3 text-[13px] text-ink-2">
-            <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-brand uppercase"><Icon name="spark" size={12} />AI summary</div>
-            A consulting agreement for a one-time fixed fee of $12,000 under Delaware law.
+        <div className="px-4 pt-3">
+          <div className={sectionLabel}>Key terms</div>
+        </div>
+        <ul className="divide-y divide-line">
+          <ReadRow label="Fee" value="$12,000, one-time" page={2} quote="a one-time fixed fee of $12,000" />
+          <ReadRow label="Termination" value="30 days' notice" page={3} quote="either party may terminate on thirty (30) days' notice" />
+          <ReadRow label="Governing law" value="Delaware" page={4} quote="governed by the laws of Delaware" />
+        </ul>
+        <div className="space-y-2 border-t border-line bg-subtle/70 px-4 py-3">
+          <div className={sectionLabel}>Chat with this document</div>
+          <div className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-sm bg-brand px-3 py-1.5 text-[12.5px] text-white">Can either party terminate early?</div>
+          <div className="rounded-xl border border-line bg-white px-3 py-2 text-[12.5px] text-ink">
+            Yes. Either party can end it with 30 days&apos; notice.
+            <span className="mt-1 block truncate text-[11px] text-muted">p. 3: &ldquo;either party may terminate on thirty (30) days&apos; notice&rdquo;</span>
           </div>
-        )}
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-4 py-3">
+          <FakeButton icon="agreement" variant="secondary">Start a draft in Agreement Studio</FakeButton>
+          <span className="text-[11px] text-muted sm:hidden">{DOC_INTEL.badge}</span>
+        </div>
+      </Window>
+    </Preview>
+  );
+}
+
+/** Document Intelligence by rules: what was read, with sources, a conflict and quarantined text. */
+function DocumentRulesPreview() {
+  return (
+    <Preview describe={`Document Intelligence's reading of an uploaded consulting agreement: parties, fee and governing law, each with its page and quoted passage; a flagged conflict; one quarantined line of text; and a button to start a draft. Badge: ${DOC_INTEL.badge}.`}>
+      <Window title="Document Intelligence" right={<Badge tone="neutral" className="hidden sm:inline-flex">{DOC_INTEL.badge}</Badge>}>
+        <DocHeader sub="Consulting agreement · 4 pages" badge={<Badge tone="warn" icon="alert" className="hidden sm:inline-flex">Needs review</Badge>} />
         <ul className="divide-y divide-line">
           <ReadRow label="Consultant" value={SAMPLE.consultant} page={1} quote="Northwind Advisory LLC (“Consultant”)" />
           <ReadRow label="Client" value={SAMPLE.client} page={1} quote="Acme Widgets Inc (“Client”)" />
@@ -243,10 +280,16 @@ export function DocumentPreview() {
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-4 py-3">
           <FakeButton icon="agreement" variant="secondary">Start a draft in Agreement Studio</FakeButton>
+          <Badge tone="neutral" className="sm:hidden">{DOC_INTEL.badge}</Badge>
         </div>
       </Window>
     </Preview>
   );
+}
+
+/** Document Intelligence: the AI analysis or the rules' reading, following DOC_INTEL_AI. */
+export function DocumentPreview() {
+  return DOC_INTEL_AI ? <DocumentAiPreview /> : <DocumentRulesPreview />;
 }
 
 function Cite({ n }: { n: number }) {
@@ -409,6 +452,69 @@ export function SealedPreview() {
           </div>
         </div>
       </Window>
+    </Preview>
+  );
+}
+
+/** A decorative, non-scannable QR-like pattern: three finder squares and fixed pseudo-random modules. */
+function FakeQr({ size = 112 }: { size?: number }) {
+  const n = 21;
+  const finder = (x: number, y: number) => x < 8 && y < 8;
+  const inFinder = (x: number, y: number) => finder(x, y) || finder(n - 1 - x, y) || finder(x, n - 1 - y);
+  let d = "";
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (!inFinder(x, y) && ((x * 7 + y * 13 + x * y * 3) % 5 < 2)) d += `M${x} ${y}h1v1h-1z`;
+  const box = (x: number, y: number) => `M${x} ${y}h7v7h-7zM${x + 1} ${y + 1}v5h5v-5zM${x + 2} ${y + 2}h3v3h-3z`;
+  return (
+    <svg width={size} height={size} viewBox={`-1 -1 ${n + 2} ${n + 2}`} className="rounded-md bg-white" shapeRendering="crispEdges">
+      <path d={box(0, 0) + box(n - 7, 0) + box(0, n - 7)} fill="var(--ink)" fillRule="evenodd" />
+      <path d={d} fill="var(--ink)" />
+    </svg>
+  );
+}
+
+/** "Sign on your phone": the signing page on a computer shows a QR code; the client signs on the phone. */
+export function PhoneSignPreview() {
+  return (
+    <Preview dark glow={false} describe="the client's signing page on a computer with the “Sign on your phone” dialog open, showing a QR code of the same signing link and a Copy link button, and next to it the phone that opened it, with a “Review and sign” button.">
+      <div className="relative pb-4 sm:pr-24">
+        <Window title="Consulting Agreement · Northwind Advisory LLC">
+          <div className="relative bg-bg px-4 py-5 sm:px-6">
+            <div className="space-y-2 rounded-lg border border-line bg-white p-4 opacity-60">
+              <div className="h-2 w-1/3 rounded bg-line-strong" />
+              <div className="h-1.5 w-full rounded bg-line" />
+              <div className="h-1.5 w-11/12 rounded bg-line" />
+              <div className="h-1.5 w-4/5 rounded bg-line" />
+              <div className="h-1.5 w-full rounded bg-line" />
+              <div className="h-1.5 w-2/3 rounded bg-line" />
+            </div>
+            <div className="absolute inset-0 grid place-items-center bg-ink/25 p-4">
+              <div className="w-full max-w-[300px] rounded-xl border border-line bg-white p-4 text-center shadow-3">
+                <div className="text-[14px] font-semibold text-ink">Sign on your phone</div>
+                <div className="mt-3 flex justify-center"><FakeQr /></div>
+                <p className="mt-3 text-[11.5px] leading-snug text-ink-2">Scan with your phone&apos;s camera. You&apos;ll sign there; this page updates when you&apos;re done.</p>
+                <div className="mt-3 flex justify-center"><FakeButton variant="secondary" icon="copy" className="h-7 text-xs">Copy link</FakeButton></div>
+              </div>
+            </div>
+          </div>
+        </Window>
+        <div className="absolute right-0 bottom-0 hidden w-[150px] rounded-[1.8rem] border border-white/15 bg-[#0b1020] p-1.5 shadow-[0_24px_60px_-16px_rgba(31,79,209,.6)] sm:block">
+          <div className="overflow-hidden rounded-[1.45rem] bg-white">
+            <div className="flex justify-center pt-1.5"><span className="h-1 w-10 rounded-full bg-[#e5e7eb]" /></div>
+            <div className="border-b border-line px-3 py-2">
+              <div className="truncate text-[9px] text-muted">{SAMPLE.consultant}</div>
+              <div className="truncate text-[11px] font-semibold text-ink">Consulting Agreement</div>
+            </div>
+            <div className="space-y-2 px-3 py-3">
+              <div className="rounded-lg border border-dashed border-line-strong bg-subtle px-2 py-1.5">
+                <div className="text-[7.5px] font-semibold tracking-wide text-muted">CLIENT</div>
+                <div className="truncate border-b border-gray-400 font-[cursive] text-[12px] text-brand italic">Jordan Sample</div>
+              </div>
+              <span className="flex h-7 items-center justify-center rounded-md bg-brand text-[10.5px] font-medium text-white">Review and sign</span>
+              <div className="flex items-center justify-center gap-1 pb-0.5 text-[8.5px] text-muted"><Icon name="shield" size={10} />Same signing link</div>
+            </div>
+          </div>
+        </div>
+      </div>
     </Preview>
   );
 }

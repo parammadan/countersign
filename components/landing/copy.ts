@@ -52,8 +52,8 @@ export const STUDIO: Feature = {
 };
 
 /**
- * Document Intelligence's wording. The deployed version reads documents with rules only; an AI version is being built
- * separately. Flip this one flag when it ships, and the landing page's section, badge and preview change together.
+ * Document Intelligence's wording: the AI version (Claude explains one document, every point quoted and checked) or the
+ * rules-only reading. This one flag switches the landing page's section, chips, badge and preview together.
  */
 export const DOC_INTEL_AI = true;
 
@@ -70,21 +70,24 @@ export const DOC_INTEL_COPY = {
       "When it's ready, start a pre-filled Agreement Studio draft and confirm each value.",
     ],
     badge: "Rules only: no AI",
+    chips: ["Type", "Parties", "Amounts", "Dates", "Governing law", "Conflicts", "Quarantined instructions"],
   },
   ai: {
     id: "documents",
     icon: "agreement",
     eyebrow: "Document Intelligence",
-    title: "Know what a document says before you act on it.",
-    text: "Upload a document and get an AI summary and its key terms, each with the passage it's cited from. Then chat with that one document to ask what it says.",
+    title: "Understand any document before you act on it.",
+    text: "Upload a PDF or Word document and Claude explains it: an AI summary in plain English and the key terms, each cited with the passage and page it comes from and checked against the document's text. Then chat with that one document, or start an Agreement Studio draft from it.",
     points: [
-      "Key terms quote the passage and page they come from.",
-      "Chat with this one document: answers stay within it.",
+      "Every point quotes its passage and page, so you can check it in the document.",
+      "Chat with this one document: answers quote the passages they rely on, and one that can't be confirmed is withheld.",
+      "Start a pre-filled Agreement Studio draft and check every value before you generate.",
       "Informational, not legal advice.",
     ],
-    badge: "AI summary: informational",
+    badge: "Informational, not legal advice",
+    chips: ["Plain-English summary", "Key terms", "Quoted pages", "Chat with this document", "Studio draft", "Quarantined instructions"],
   },
-} as const satisfies Record<"rules" | "ai", Feature & { badge: string }>;
+} as const satisfies Record<"rules" | "ai", Feature & { badge: string; chips: readonly string[] }>;
 
 export const DOC_INTEL = DOC_INTEL_AI ? DOC_INTEL_COPY.ai : DOC_INTEL_COPY.rules;
 
@@ -113,6 +116,34 @@ export const SIGN: Feature = {
     "Anyone can check a sealed PDF on the public verify page.",
   ],
 };
+
+/** "Sign on your phone" (live): the signing page on a computer shows a QR code of the same signing link. */
+export const PHONE_SIGN = {
+  eyebrow: "Sign on your phone",
+  title: "Started on a computer? Finish on the phone.",
+  text: "On a computer, your client's signing page shows a QR code that opens the same signing link on their phone. They sign there, and the page on the computer updates by itself.",
+  points: ["Scan with the phone's camera: no app to install.", "If the agreement needs an emailed code, the phone asks for it too.", "The computer shows “Signed on your phone” when they're done."],
+} as const;
+
+/**
+ * Phone document scanning in the agreement upload. Not shipped yet: false keeps every mention of it off the page.
+ * Flip it when "Scan with phone" is live, and check the wording against the shipped feature.
+ */
+export const PHONE_SCAN = false;
+export const PHONE_SCAN_COPY = {
+  label: "Scan with phone",
+  text: "Only have it on paper? Open a QR code on your computer, photograph the pages with your phone, and they arrive as a PDF in the agreement upload, ready for the field editor.",
+} as const;
+
+/**
+ * Voice input in Agreement Studio. Being built: false keeps every mention of it off the page. Flip it when it ships,
+ * and check the wording against the shipped feature.
+ */
+export const VOICE_INPUT = false;
+export const VOICE_INPUT_COPY = {
+  label: "Voice input",
+  text: "Prefer to talk? Describe the agreement out loud in Agreement Studio, check the words, then let Claude fill in the template.",
+} as const;
 
 export const CLAUSES: Feature = {
   id: "clauses",
