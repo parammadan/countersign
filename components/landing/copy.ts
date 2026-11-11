@@ -136,8 +136,8 @@ export const PHONE_SCAN_COPY = {
 } as const;
 
 /**
- * Voice input in Agreement Studio. Being built: false keeps every mention of it off the page. Flip it when it ships,
- * and check the wording against the shipped feature.
+ * Voice input in Agreement Studio (live: the description box takes dictation, and nothing goes to Claude until the
+ * person stops and checks it). false keeps every mention of it off the page.
  */
 export const VOICE_INPUT = true;
 export const VOICE_INPUT_COPY = {

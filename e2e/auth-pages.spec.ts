@@ -40,6 +40,10 @@ test("wrong password shows an error, keeps the email and marks the fields", asyn
   await expect(p.getByRole("alert").filter({ hasText: "Email or password" })).toContainText("Email or password is wrong.");
   await expect(p.getByLabel("Work email")).toHaveValue(email);
   await expect(p.getByLabel("Password")).toHaveAttribute("aria-invalid", "true");
+  // the error says what to do next, and the reset and sign-up links are on the page
+  await expect(p.getByRole("alert").getByRole("link", { name: "reset your password" })).toHaveAttribute("href", "/forgot");
+  await expect(p.getByRole("link", { name: "Forgot your password?" })).toHaveAttribute("href", "/forgot");
+  await expect(p.getByRole("link", { name: "Create a workspace" })).toHaveAttribute("href", "/signup");
   await ctx.close();
 });
 

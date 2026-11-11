@@ -30,6 +30,19 @@ test("landing page fits every width", async ({ browser }) => {
     await onScreen(page, page.getByRole("heading", { level: 1 }), `${size.name}: headline`);
     await onScreen(page, page.getByRole("main").getByRole("link", { name: "Create workspace" }).first(), `${size.name}: primary call to action`);
     await onScreen(page, page.getByRole("banner").getByRole("link", { name: "Sign in" }), `${size.name}: header sign in`);
+    // below md the section links live in the menu: it opens, every link stays on screen, and a link closes it
+    const menuBtn = page.getByRole("banner").getByRole("button", { name: "Menu" });
+    if (page.viewportSize()!.width < 768) {
+      await menuBtn.click();
+      const menu = page.locator("#landing-menu");
+      for (const name of ["Features", "Agreement Studio", "Document Intelligence", "E-signatures", "How it works", "Verify document"]) await onScreen(page, menu.getByRole("link", { name }), `${size.name}: menu ${name}`);
+      expect(await overflow(page), `${size.name}: open menu scrolls sideways`).toBeLessThanOrEqual(0);
+      await menu.getByRole("link", { name: "Document Intelligence" }).click();
+      await expect(menu).toBeHidden();
+      await expect(page).toHaveURL(/#documents$/);
+    } else {
+      await expect(menuBtn).toBeHidden();
+    }
     await ctx.close();
   }
 });

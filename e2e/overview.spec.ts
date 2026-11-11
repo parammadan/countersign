@@ -10,6 +10,13 @@ const attention = (page: Page) => page.locator("#attention");
 test("overview follows the real workflow: setup, attention, countersign, ready for work", async ({ page, browser }) => {
   await signup(page, "Northwind Advisory", "Northwind Advisory, LLC");
 
+  // brand new: "Start here" links to the real screens
+  const start = page.getByRole("list", { name: "Start here" });
+  await expect(start.getByRole("link")).toHaveText(["Try a sample agreement", "Fill details with AI", "Upload an agreement", "Ask the Knowledge Hub"]);
+  await start.getByRole("link", { name: "Try a sample agreement" }).click();
+  await expect(page.getByRole("button", { name: "Try a sample agreement" })).toBeVisible();
+  await page.goto("/app");
+
   // brand new: the next step is the first setup step, nothing is counted
   const next = page.getByRole("region", { name: "Upload your client agreement" });
   await expect(next).toBeVisible();
@@ -21,6 +28,7 @@ test("overview follows the real workflow: setup, attention, countersign, ready f
 
   await uploadAndPublish(page, "02-msa-two-column.pdf");
   await page.goto("/app");
+  await expect(page.getByRole("list", { name: "Start here" })).toHaveCount(0); // not new any more
   await expect(page.getByRole("list").filter({ hasText: "Agreement published" })).toContainText("Agreement uploaded");
   await expect(page.getByRole("region", { name: "Adopt your firm's countersignature" })).toBeVisible();
   await expect(stat(page, "Live agreements")).toContainText("1");
