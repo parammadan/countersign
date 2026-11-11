@@ -709,6 +709,16 @@ export function analyzeDocument(input: IntakeInput): IntakeRecord {
   return analyzeWith(input).rec;
 }
 
+/**
+ * The text a model may read: the same pages the rules read, with every quarantined line blanked (instructions aimed
+ * at an AI, split or disguised, never reach a model). `complete` is false when the split-injection scan ran out of its
+ * work budget: such a document is never sent to a model.
+ */
+export function pagesForModel(input: IntakeInput): { pages: string[]; complete: boolean } {
+  const p = prepare(input && typeof input === "object" ? input : { pages: [] });
+  return { pages: p.clean, complete: !p.scanIncomplete };
+}
+
 /** The analysis and the prepared text it used (so intakeDocument does not prepare the document twice). */
 function analyzeWith(input: IntakeInput): { rec: IntakeRecord; p: Prepared } {
   if (!input || typeof input !== "object") input = { pages: [] };
