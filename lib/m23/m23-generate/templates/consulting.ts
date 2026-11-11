@@ -17,6 +17,8 @@ export const consulting: AgreementTemplate = {
     C.termEnd(doc),
     C.fee("fees", "Fees", "Client", "Consultant", "a fee", "services", true),
     C.payment("Consultant", "Client"),
+    // the Services Agreement's reviewed late-payment wording, used as is
+    { id: "late_fee", heading: "Late Payment", required: false, when: "lateFeePercent", text: "Overdue amounts carry a late fee of {{term:lateFeePercent}} {{term:lateFeePeriod}}." },
     {
       id: "ip", heading: "Intellectual Property", required: true,
       text: "Each party keeps the intellectual property it owned before this Agreement. Intellectual property that the Consultant creates in performing the services belongs to the {{term:ipOwner}}.",
