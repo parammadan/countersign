@@ -60,3 +60,16 @@ describe("client owns deliverables except the consultant's tools", () => {
     expect(s.clarifications.unsupported[0].text).toMatch(/won't be in the agreement/);
   });
 });
+
+describe("numbers attached to words", () => {
+  it("takes 30 from 'net-30' and '30-day notice', and 1.5 from '1.5%'", () => {
+    expect(run("Payable net-30.", [["paymentDays", "30"]], "services").terms.paymentDays).toBe("30");
+    expect(run("Either side may end it on 30-day notice.", [["noticeDays", "30"]]).terms.noticeDays).toBe("30");
+    expect(run("Late fee of 1.5% per month.", [["lateFeePercent", "1.5"]], "services").terms.lateFeePercent).toBe("1.5");
+  });
+  it("still refuses partial numbers", () => {
+    expect(run("Late fee of 11.5% per month.", [["lateFeePercent", "1.5"]], "services").terms.lateFeePercent).toBeUndefined();
+    expect(run("Payable net-30.", [["paymentDays", "3"]], "services").terms.paymentDays).toBeUndefined();
+    expect(run("Payable net-300.", [["paymentDays", "30"]], "services").terms.paymentDays).toBeUndefined();
+  });
+});

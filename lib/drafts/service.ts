@@ -225,7 +225,7 @@ export async function suggestFromDescription(
 const MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
 const own = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k);
 /** The text as lower-case tokens joined by single spaces, with separators padded so whole-token matching works. */
-const tokens = (x: string) => ` ${x.toLowerCase().normalize("NFKC").replace(/(?<=\d)[,\u00a0'’](?=\d{3}\b)/g, "").replace(/[^\p{L}\p{N}$€£¥.%-]+/gu, " ").replace(/(?<!\d)\.|\.(?!\d)/g, " ").replace(/\s+/g, " ").trim()} `;
+const tokens = (x: string) => ` ${x.toLowerCase().normalize("NFKC").replace(/(?<=\d)[,\u00a0'’](?=\d{3}\b)/g, "").replace(/(?<=\d)-(?=\p{L})|(?<=\p{L})-(?=\d)/gu, " ").replace(/[^\p{L}\p{N}$€£¥.%-]+/gu, " ").replace(/(?<!\d)\.|\.(?!\d)/g, " ").replace(/\s+/g, " ").trim()} `;
 /** Every ISO date written in the description, as written ("2027-01-15") or as "January 15, 2027" / "15 January 2027". */
 function datesIn(description: string): Set<string> {
   const out = new Set<string>();
@@ -381,7 +381,7 @@ export function cleanSuggestion(raw: unknown, description: string, o: { source?:
     const key = t.key as TermKey;
     const choices = own(CHOICES, key) ? CHOICES[key] : undefined;
     const type = TERM_TYPES[key];
-    const ok = choices ? own(choices, t.value) : type === "date" ? dates.has(t.value) : said(t.value) || (type === "money" && shorthand.has(moneyKey(t.value)));
+    const ok = choices ? own(choices, t.value) : type === "date" ? dates.has(t.value) : said(t.value) || (type === "percent" && /^\d{1,2}(?:\.\d{1,2})?$/.test(t.value) && said(`${t.value}%`)) || (type === "money" && shorthand.has(moneyKey(t.value)));
     // a stated value this kind has no place for, or a choice none of the options means: say so, never coerce it
     if (ok && (key === "feeBasis" || key === "feePeriod") && !(own(BASIS_CUE, t.value) && BASIS_CUE[t.value].test(basisText(description)))) continue;
     if (!accepts(key)) { if (ok) addUnsupported(key, ""); continue; }
