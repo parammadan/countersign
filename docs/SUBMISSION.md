@@ -78,7 +78,7 @@ Create a workspace at `/signup`, upload an agreement (or use "Try a sample one")
 - Field detection is rule-based and will miss or mislabel some fields on unfamiliar layouts. The admin corrects them in the editor. The README reports precision and recall on fake documents, and notes that the held-out sets are no longer unseen.
 - One client signer per file, plus the firm. Agreement text is fixed; only the blanks change per file.
 - Studio fills the reviewed templates only. It does not write free-form clauses, and what a template cannot include is listed, not added.
-- Q&A and Knowledge Hub may withhold an answer or abstain, and then show passages only. Answers are only as good as the extracted text,. Scanned pages are flagged by the detector.
+- Q&A and Knowledge Hub may withhold an answer or abstain, and then show passages only. Answers are only as good as the extracted text. Scanned pages are flagged by the detector.
 - Voice input needs a browser with speech recognition; elsewhere the control is not offered.
 - AI is capped daily, so it can be unavailable for the rest of the day once the cap is reached.
 - Clause Library compares user ids, so one person with two accounts in a workspace could approve their own text. It is recorded in the audit log.
