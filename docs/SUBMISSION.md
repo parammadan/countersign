@@ -56,7 +56,7 @@ AgreementOS is a multi-tenant web app (Next.js 16, SQLite through `node:sqlite`)
 - **Workspace isolation**: every query is scoped by the workspace from the server session, never from request input. Another workspace's record is reported as "not found".
 - **Roles**: owner, admin, staff. Staff cannot see admin pages, approve drafts or clauses, or publish (`lib/nav.ts`, `lib/drafts/roles.ts`, `lib/clauses/`).
 - **Tokens and keys are hashed**: session ids, API keys, invite and signing tokens are stored as SHA-256 hashes (`lib/auth.ts`, `lib/http.ts`, `lib/files.ts`). Signing tokens are also stored encrypted with `APP_SECRET` (`lib/secret.ts`).
-- **Rate limits**: sign-in, sign-up, invites, password reset, email codes, signing codes, per-user AI questions and indexing, and a daily file cap (`lib/ratelimit.ts`, `app/actions.ts`). Mutating requests have CSRF and origin checks (`lib/http.ts`).
+- **Rate limits**: sign-in, sign-up, invites, password reset, email codes, signing codes, per-user AI questions and indexing, a daily file cap and a per-workspace 24-hour cap on client invitations (`lib/ratelimit.ts`, `lib/sendcap.ts`, `app/actions.ts`). Mutating requests have CSRF and origin checks (`lib/http.ts`).
 - **Webhooks** are signed and checked against SSRF (`lib/webhooks.ts`, `lib/ssrf.ts`).
 
 ## Run locally
