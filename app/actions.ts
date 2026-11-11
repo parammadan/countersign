@@ -16,6 +16,7 @@ import { draftFromVersion } from "@/lib/templates";
 import { WEBHOOK_EVENTS } from "@/lib/webhooks";
 import { emailMode, layout, sendEmail } from "@/lib/email";
 import { appUrl } from "@/lib/paths";
+import { rotateInboundToken } from "@/lib/inbound";
 import { escapeHtml } from "@/lib/util";
 import { checkWebhookUrl } from "@/lib/ssrf";
 import { confirmEmail, sendVerification, userVerified, verificationRequired, workspaceVerified } from "@/lib/emailverify";
@@ -462,10 +463,16 @@ export async function webhookAction(_: FormState, fd: FormData): Promise<FormSta
   }
 }
 
-export async function rotateInboundAction() {
-  const sess = await requireAdmin();
-  run("UPDATE workspaces SET inbound_token = ? WHERE id = ?", token(18), sess.workspaceId);
-  revalidatePath("/app/developers");
+export async function rotateInboundAction(_?: FormState, __?: FormData): Promise<FormState> {
+  try {
+    const sess = await requireAdmin();
+    const t = rotateInboundToken(sess.workspaceId);
+    audit(sess.workspaceId, null, "inbound.rotated", sess.userEmail, {}, {});
+    revalidatePath("/app/developers");
+    return { ok: "New inbound URL created. Copy it now and update your automation: the old URL has stopped working.", secret: `${appUrl()}/api/inbound/${t}` };
+  } catch (e) {
+    return fail(e);
+  }
 }
 
 // ---------- password reset ----------

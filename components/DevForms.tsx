@@ -2,7 +2,7 @@
 
 import { ActionForm } from "./ActionForm";
 import { useActionState, useId } from "react";
-import { apiKeyAction, webhookAction, type FormState } from "@/app/actions";
+import { apiKeyAction, rotateInboundAction, webhookAction, type FormState } from "@/app/actions";
 import { Button, Input, Notice } from "./ui";
 import { CopyButton } from "./FileActions";
 
@@ -43,6 +43,16 @@ export function NewKeyForm() {
           <Button name="op" value="create" disabled={pending} className="shrink-0 whitespace-nowrap">Create API key</Button>
         </div>
       </div>
+    </ActionForm>
+  );
+}
+
+export function RotateInboundForm() {
+  const [st, act, pending] = useActionState<FormState, FormData>(rotateInboundAction, undefined);
+  return (
+    <ActionForm action={act} className="space-y-3">
+      <Result st={st} />
+      <Button variant="ghost" disabled={pending}>Rotate</Button>
     </ActionForm>
   );
 }
