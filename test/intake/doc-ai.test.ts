@@ -11,6 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import type { ModelProvider, ModelRequest } from "@/lib/understand/model";
 import { approveAll } from "../support/stub-verifier";
+import { linesFromText } from "@/lib/understand/text";
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cs-doc-ai-"));
 process.env.DATA_DIR = dir;
@@ -168,8 +169,9 @@ describe("Document Intelligence with AI", () => {
     expect(got.warnings.join(" ")).toMatch(/couldn't be found in the document's text/);
     expect(got.warnings.join(" ")).toMatch(/not confirmed/);
     expect(got.warnings.join(" ")).toMatch(/sentences? stated something the quoted text doesn't support/);
-    // a draft value its own quote doesn't contain never reaches Studio
-    expect(got.draft!.suggestion.terms.paymentDays).toBe("30");
+    // two different values for one field (30 and 45, both quoting real text): neither is pre-filled, the person decides
+    expect(got.draft!.suggestion.terms.paymentDays).toBeUndefined();
+    expect(got.draft!.suggestion.clarifications.needed.find((x) => x.key === "paymentDays")?.text).toMatch(/more than one value: “30”.*“45”/);
   });
 
   it("missing clauses: reported as missing with no value; a 'missing' item the rules found becomes a disagreement", async () => {
@@ -187,6 +189,9 @@ describe("Document Intelligence with AI", () => {
     };
     await ai.analyzeIntake(fresh(), id, analyst(() => out).provider);
     const got = svc.latestDocAnalysis("ws_a", id)!.analysis;
+    // a summary sentence with no quote is never kept, however harmless it reads
+    expect(got.summary).toEqual([]);
+    expect(got.warnings.join(" ")).toMatch(/1 summary sentence came with no quote/);
     const missing = got.worthChecking.filter((w) => w.kind === "missing");
     expect(missing.map((w) => w.label)).toEqual(["Termination", "Liability cap"]);
     expect(missing.every((w) => w.evidence.length === 0)).toBe(true);
@@ -269,6 +274,76 @@ describe("Document Intelligence with AI", () => {
     expect(got.worthChecking[0]).toMatchObject({ kind: "ambiguous", note: expect.stringMatching(/instruction to software/) });
   });
 
+  it("review: a summary sentence needs a quote that is in the document", () => {
+    const pages = sampleLines();
+    const got = A.groundAnalysis({ summary: [{ text: "The consultant keeps ownership of all work product.", evidence: [] }, { text: "Either party can walk away at any time.", evidence: [] }, { text: "This is a consulting agreement.", evidence: [q(1, "This Consulting Agreement is entered into")] }], findings: [], worth_checking: [], draft: null }, pages, null);
+    expect(got.summary.map((x) => x.text)).toEqual(["This is a consulting agreement."]);
+  });
+
+  it("review: a choice is pre-filled only when its quote says it; numbers need words about their term", () => {
+    const pages = sampleLines();
+    const ip = "Work product that Consultant creates in performing the Services belongs to Client.";
+    const got = A.groundAnalysis({ summary: [], findings: [], worth_checking: [], draft: { kind: "consulting", parties: [], terms: [
+      { key: "ipOwner", value: "Consultant", page: 2, quote: ip },
+      { key: "noticeDays", value: "30", page: 1, quote: "Client will pay each invoice within 30 days of receipt." },
+      { key: "confidentialityYears", value: "12", page: 2, quote: "During the term and for 12 months after it, neither party will solicit the other party's employees." },
+    ], not_supported: [] } }, pages, null);
+    const sg = got.draft!.suggestion;
+    expect(sg.terms).toEqual({});
+    expect(sg.clarifications.needed.find((x) => x.key === "ipOwner")?.text).toMatch(/Claude read “Consultant”, but the quoted text doesn't clearly say so \(p\. 2: “Work product/);
+    expect(got.draft!.sources).toEqual([]);
+    // the same quote supports the party it names as owner
+    const ok = A.groundAnalysis({ summary: [], findings: [], worth_checking: [], draft: { kind: "consulting", parties: [], terms: [{ key: "ipOwner", value: "Client", page: 2, quote: ip }, { key: "noticeDays", value: "30", page: 1, quote: "Either party may terminate this Agreement on 30 days' written notice to the other party." }], not_supported: [] } }, pages, null);
+    expect(ok.draft!.suggestion.terms).toEqual({ ipOwner: "Client", noticeDays: "30" });
+    expect(A.quoteSupportsTerm("exclusivity", "exclusive", "The Licensor grants a non-exclusive licence.")).toBe(false);
+    expect(A.quoteSupportsTerm("exclusivity", "non-exclusive", "The Licensor grants a non-exclusive licence.")).toBe(true);
+    expect(A.quoteSupportsTerm("subletting", "permitted", "Subletting is not permitted.")).toBe(false);
+    expect(A.quoteSupportsTerm("fee", "1.5%", "Late payments accrue interest at 1.5% per month.")).toBe(false);
+  });
+
+  it("review: more than one value for a field is never guessed between; sources are one per field, exact values only", () => {
+    const pages = sampleLines();
+    const fee = "Client will pay Consultant a fixed fee of $12,000 for the Services.";
+    const got = A.groundAnalysis({ summary: [], findings: [], worth_checking: [], draft: { kind: "consulting", parties: [
+      { role: "Client", name: "Example Widgets Inc.", page: 1, quote: 'Example Widgets Inc. ("Client")' },
+      { role: "Client", name: "Northwind Advisory LLC", page: 1, quote: "Northwind Advisory LLC, a Delaware limited liability company" },
+    ], terms: [
+      { key: "fee", value: "$12,000", page: 1, quote: fee },
+      { key: "fee", value: "1.5%", page: 1, quote: "Late payments accrue interest at 1.5% per month." },
+      { key: "startDate", value: "2027-01-15", page: 1, quote: "Effective Date: January 15, 2027" },
+      { key: "startDate", value: "2027-01-15", page: 1, quote: "Effective Date: January 15, 2027" },
+    ], not_supported: [] } }, pages, null);
+    const sg = got.draft!.suggestion;
+    expect(sg.terms).toEqual({ startDate: "2027-01-15" });
+    expect(sg.parties).toEqual([]);
+    const needed = Object.fromEntries(sg.clarifications.needed.map((x) => [x.key, x.text]));
+    expect(needed.fee).toMatch(/more than one value: “\$12,000”.*“1\.5%”/);
+    expect(needed["party:Client"]).toMatch(/more than one value/);
+    expect(got.draft!.sources.map((x) => x.key)).toEqual(["term:startDate"]);
+  });
+
+  it("review: a can't-include note may not state what its quote doesn't", () => {
+    const pages = sampleLines();
+    const cap = "Each party's total liability under this Agreement is limited to the fees paid under it.";
+    const got = A.groundAnalysis({ summary: [], findings: [], worth_checking: [], draft: { kind: "consulting", parties: [], terms: [], not_supported: [
+      { key: "other", note: "Liability is capped at $2,000,000.", page: 2, quote: cap },
+      { key: "other", note: "Liability is capped at the fees paid.", page: 2, quote: cap },
+    ] } }, pages, null);
+    const texts = got.draft!.suggestion.clarifications.unsupported.map((u) => u.text).join(" ");
+    expect(texts).not.toContain("2,000,000");
+    expect(texts).toMatch(/capped at the fees paid/);
+  });
+
+  it("review: a 'missing' point on a topic Claude also quoted is flagged", () => {
+    const pages = sampleLines();
+    const got = A.groundAnalysis({ summary: [], findings: [{ topic: "termination", label: "Early termination", value: "30 days' written notice", explanation: "", rule_field: "none", evidence: [q(1, "Either party may terminate this Agreement on 30 days' written notice to the other party.")] }], worth_checking: [
+      { kind: "missing", topic: "termination", label: "Termination", text: "", rule_field: "none", evidence: [] },
+      { kind: "missing", topic: "other", label: "Insurance", text: "", rule_field: "none", evidence: [] },
+    ], draft: null }, pages, null);
+    expect(got.worthChecking[0].note).toMatch(/also quoted the document on termination \(Early termination\): check whether this is really missing/);
+    expect(got.worthChecking[1].note).toBeUndefined();
+  });
+
   it("unsupported model output is rejected as a whole only when it isn't an object; malformed items are dropped", () => {
     expect(() => A.groundAnalysis("not json", [], null)).toThrow(/unexpected format/);
     const got = A.groundAnalysis({ summary: [{ nope: 1 }], findings: [{ topic: "made_up" }], worth_checking: "x" }, [{ page: 1, lines: ["Hello there."], textLayer: true }], null);
@@ -340,6 +415,30 @@ describe("Document Intelligence with AI", () => {
     expect(calls[1].document).toContain("<earlier_turns>");
     // someone else can't continue it
     expect(await ai.askIntakeQuestion(fresh(), id, "And the fee?", r.threadId, null, null)).toEqual({ ok: false, code: "thread" });
+  });
+
+  it("review: a follow-up is answered with the LATEST turns, and the file name is never sent to the model", async () => {
+    const id = await read(ownerA, SAMPLE, "Confidential name of the file.pdf");
+    const who = fresh();
+    const calls: ModelRequest[] = [];
+    const first = await ai.askIntakeQuestion(who, id, "Question one about the fee?", null, answerer(calls, "fee"), approveAll());
+    if (!first.ok) throw new Error("not ok");
+    // a long conversation: 55 more finished turns, oldest first
+    // older than a day, so they do not count toward the daily allowance
+    const base = Date.now() - 2 * 86_400_000;
+    for (let i = 1; i <= 55; i++)
+      db.run("INSERT INTO intake_questions (id, workspace_id, intake_id, thread_id, question, result_json, mode, asked_by, asked_email, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)", `dq_turn${i}xx`, "ws_a", id, first.threadId, `Earlier question number ${i}?`, JSON.stringify({ status: "partial", answer: `Answer ${i}.`, citations: [], mode: "passages", warnings: [] }), "passages", who.userId, who.userEmail, new Date(base + i * 1000).toISOString());
+    db.run("UPDATE intake_questions SET created_at = ? WHERE id = ?", new Date(base).toISOString(), first.id);
+    const next: ModelRequest[] = [];
+    expect((await ai.askIntakeQuestion(who, id, "And the latest follow-up about the fee?", first.threadId, answerer(next, "fee"), approveAll())).ok).toBe(true);
+    const ctx = next[0].document;
+    for (const n of [52, 53, 54, 55]) expect(ctx).toContain(`Earlier question number ${n}?`);
+    expect(ctx).not.toContain("Earlier question number 50?");
+    for (const c of [...calls, ...next]) {
+      expect(c.context).not.toContain("Confidential name of the file");
+      expect(c.context).toMatch(/^<agreement title="Document">/);
+    }
+    db.run("DELETE FROM intake_questions WHERE id LIKE 'dq_turn%'");
   });
 
   it("chat: an unsupported question says the document doesn't address it", async () => {
@@ -474,6 +573,11 @@ describe("Document Intelligence with AI", () => {
     expect(names).toEqual(["intake_ai_analyses", "intake_questions", "intake_results"]);
   });
 });
+
+/** The sample agreement as the model's pages. */
+function sampleLines() {
+  return linesFromText(SAMPLE.split("\f"));
+}
 
 /** A fake Claude for chat: answers from the passage that mentions `term`, quoting its first sentence. */
 function answerer(calls: ModelRequest[], term: string): ModelProvider {

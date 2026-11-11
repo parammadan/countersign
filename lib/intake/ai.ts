@@ -19,6 +19,7 @@ import type { PageLines } from "../understand/text";
 import { unsupportedFacts } from "../qa/answer";
 import { numbersIn } from "../qa/numbers";
 import { CHOICE_MEANING, cleanSuggestion, kindSpecs, TERM_MEANING, type Suggestion } from "../drafts/service";
+import { termName } from "../drafts/labels";
 import { KINDS } from "../m23/m23-generate";
 import { TERM_TYPES } from "../m23/m23-generate/terms";
 import type { TermKey } from "../m23/m23-generate/types";
@@ -222,6 +223,7 @@ export function groundAnalysis(raw: unknown, pages: PageLines[], record: IntakeR
   let removed = 0; // points whose quotes aren't in the document
   let unconfirmed = 0;
   let trimmed = 0; // sentences that stated what their quotes don't
+  let unquoted = 0; // summary sentences with no quote at all
 
   // ---- findings: grounded with M2.1's evidence check (exact topics strictly) ----
   const asFinding = (f: z.infer<typeof RawFinding>, i: number): Finding => ({ id: `f${i}`, category: CATEGORY[f.topic], label: clip(f.label).slice(0, 80), value: clip(f.value).slice(0, 300) || null, status: "stated", evidence: f.evidence });
@@ -246,13 +248,14 @@ export function groundAnalysis(raw: unknown, pages: PageLines[], record: IntakeR
     findings.push({ id: `f${findings.length + 1}`, topic: f.topic, label: g.label, value: g.value, ...(explanation && { explanation }), status, ...(status !== "confirmed" && g.note && { note: g.note }), ruleField: f.rule_field, evidence: g.evidence });
   });
 
-  // ---- summary: each sentence must be supported by its own quotes ----
+  // ---- summary: each sentence needs at least one quote that is in the document, and must say only what its quotes do ----
   const summary: DocAnalysis["summary"] = [];
   for (const s of out.summary) {
     const ev = checkedQuotes(s.evidence, pages);
     const t = clip(s.text);
-    if (s.evidence.length && !ev.length) {
-      removed++;
+    if (!ev.length) {
+      if (s.evidence.length) removed++;
+      else unquoted++;
       continue;
     }
     if (!supported(t, ev.map((e) => e.quote))) {
@@ -276,7 +279,10 @@ export function groundAnalysis(raw: unknown, pages: PageLines[], record: IntakeR
         continue;
       }
       const t = clip(w.text);
-      worth.push({ kind: "missing", topic: w.topic, label, text: supported(t, []) ? t : "", evidence: [] });
+      // Claude also quoted the document on this topic: say so, so a reader doesn't take "missing" at face value
+      const quoted = w.topic !== "other" ? findings.filter((f) => f.topic === w.topic && f.status === "confirmed") : [];
+      const note = quoted.length ? `Claude also quoted the document on ${TOPIC_LABEL[w.topic].toLowerCase()} (${quoted.slice(0, 3).map((f) => f.label).join(", ")}): check whether this is really missing.` : undefined;
+      worth.push({ kind: "missing", topic: w.topic, label, text: supported(t, []) ? t : "", ...(note && { note }), evidence: [] });
       continue;
     }
     const ev = checkedQuotes(w.evidence, pages);
@@ -306,6 +312,7 @@ export function groundAnalysis(raw: unknown, pages: PageLines[], record: IntakeR
   if (removed) warnings.push(`${plural(removed, "point", "points")} Claude made couldn't be found in the document's text and ${removed === 1 ? "was" : "were"} removed.`);
   if (unconfirmed) warnings.push(`${plural(unconfirmed, "point is", "points are")} shown as not confirmed: the quoted text doesn't say ${unconfirmed === 1 ? "it" : "them"} in so many words.`);
   if (trimmed) warnings.push(`${plural(trimmed, "sentence", "sentences")} stated something the quoted text doesn't support, or read as advice, and ${trimmed === 1 ? "was" : "were"} removed.`);
+  if (unquoted) warnings.push(`${plural(unquoted, "summary sentence", "summary sentences")} came with no quote from the document and ${unquoted === 1 ? "was" : "were"} removed.`);
   if (info.truncated) warnings.push("The document is longer than Claude reads at once: only the first part was analyzed.");
   return { schema: 1, model: info.model, summary, findings, worthChecking: worth, disagreements, draft, warnings, truncated: !!info.truncated, pages: pages.length, ms: info.ms ?? 0 };
 }
@@ -360,6 +367,53 @@ function compareWithRules(findings: DocFinding[], rules: RuleValues): Disagreeme
 
 // ---- Agreement Studio fields: each in its own quote, then Studio's own checks ----
 const own = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k);
+const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** Words a quote must use for a number, date or text term to be about that term ("30 days" alone could be anything). */
+const TERM_CUE: Partial<Record<TermKey, RegExp>> = {
+  fee: /\b(?:fees?|pay|pays|paid|payable|price|charge[sd]?|compensat\w*|retainer)\b/i,
+  rent: /\brent\b/i,
+  deposit: /\bdeposit\b/i,
+  paymentDays: /\b(?:invoices?|payments?|pay|pays|paid|payable|due)\b/i,
+  noticeDays: /\b(?:notice|terminat\w*)\b/i,
+  confidentialityYears: /\bconfidential\w*\b/i,
+  lateFeePercent: /\b(?:late|overdue|interest)\b/i,
+  startDate: /\b(?:effective|start\w*|commenc\w*|begin\w*)\b/i,
+  endDate: /\b(?:end\w*|expir\w*|terminat\w*|until)\b/i,
+  governingLaw: /\b(?:laws?|govern\w*)\b/i,
+};
+const MONEY = /[$€£¥]|\b(?:usd|eur|gbp|cad|aud)\b/i;
+/**
+ * Whether a quote supports a Studio value beyond containing it: money has a currency, numbers and dates appear with
+ * words about their term, and a choice is stated in so many words (not negated; for who owns the work product, the
+ * quote names that party as the owner). Fails closed: when unsure, the value isn't pre-filled.
+ */
+export function quoteSupportsTerm(key: TermKey, value: string, quote: string): boolean {
+  const qt = normalize(quote);
+  const v = value.trim();
+  if (TERM_TYPES[key] === "money" && !MONEY.test(v)) return false;
+  const cue = TERM_CUE[key];
+  if (cue && !cue.test(qt)) return false;
+  if (TERM_TYPES[key] !== "choice") return true;
+  const w = esc(normalize(v));
+  if (key === "ipOwner") {
+    const owner = new RegExp(`\\b(?:belongs?|belonging)\\s+to\\s+(?:the\\s+)?${w}\\b|\\b(?:owned\\s+by|property\\s+of|vests?\\s+in|vested\\s+in)\\s+(?:the\\s+)?${w}\\b|\\b${w}\\s+(?:owns|will\\s+own|shall\\s+own|retains?\\s+ownership)\\b`);
+    return owner.test(qt);
+  }
+  // feeBasis and feePeriod: Studio's own cue check (lib/drafts/service BASIS_CUE) runs on the quote
+  if (key === "feeBasis" || key === "feePeriod") return true;
+  // the choice's own words, not negated ("not permitted" is not "permitted", "non-exclusive" is not "exclusive")
+  return new RegExp(`(?<!\\bnot\\s|\\bno\\s|\\bnon-|\\bnon\\s)\\b${w}\\b`).test(qt);
+}
+
+/** Two readings of one field are the same value: the same figures when either has one, else the same words. */
+function sameDraftValue(a: string, b: string): boolean {
+  const na = numbersIn(a);
+  const nb = numbersIn(b);
+  if (na.size || nb.size) return na.size === nb.size && [...na].every((n) => nb.has(n));
+  const w = (x: string) => normalize(x).replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  return w(a) === w(b);
+}
+
 function groundDraft(raw: unknown, pages: PageLines[]): DocDraft | null {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
   const r = raw as Record<string, unknown>;
@@ -370,37 +424,79 @@ function groundDraft(raw: unknown, pages: PageLines[]): DocDraft | null {
     if (!c.success) return null;
     return checkedQuotes([c.data], pages)[0] ?? null;
   };
-  const sources: DraftSource[] = [];
-  const parties: { role: string; name: string }[] = [];
+  /** What to tell the person about a field Claude read but that isn't pre-filled: shown under "needed". */
+  const held: { key: string; label: string; text: string }[] = [];
+  const shown = (xs: { value: string; q: Cite }[]) => xs.map((x) => `“${x.value}” (p. ${x.q.page}: “${x.q.quote}”)`).join(", ");
+
+  // every value whose quote is in the document, grouped by field: more than one different value is never guessed between
+  type Read = { field: string; value: string; q: Cite; item: Record<string, unknown> };
+  const reads: Read[] = [];
   for (const p of list("parties")) {
-    if (typeof p.role !== "string" || typeof p.name !== "string") continue;
+    if (typeof p.role !== "string" || typeof p.name !== "string" || !p.role.trim()) continue;
     const q = quoteOf(p);
-    // the name must be a complete name in its own quote (Studio's check, with the quote as the description)
-    if (!q || cleanSuggestion({ kind: null, parties: [{ role: p.role, name: p.name }], terms: [] }, q.quote, { source: "document" }).parties.length !== 1) continue;
-    parties.push({ role: p.role, name: p.name });
-    sources.push({ key: `role:${p.role.trim()}`, value: p.name.trim(), page: q.page, quote: q.quote });
+    if (q) reads.push({ field: `role:${p.role.trim().toLowerCase()}`, value: p.name.trim(), q, item: p });
   }
-  const terms: { key: string; value: string }[] = [];
   for (const t of list("terms")) {
     if (typeof t.key !== "string" || typeof t.value !== "string" || !own(TERM_TYPES, t.key)) continue;
     const q = quoteOf(t);
-    if (!q || cleanSuggestion({ kind: null, parties: [], terms: [{ key: t.key, value: t.value }] }, q.quote, { source: "document" }).terms[t.key as TermKey] === undefined) continue;
-    terms.push({ key: t.key, value: t.value });
-    sources.push({ key: `term:${t.key}`, value: t.value.trim(), page: q.page, quote: q.quote });
+    if (q) reads.push({ field: `term:${t.key}`, value: t.value.trim(), q, item: t });
   }
+  const fields = new Map<string, Read[]>();
+  for (const x of reads) fields.set(x.field, [...(fields.get(x.field) ?? []), x]);
+
+  const sources: DraftSource[] = [];
+  const parties: { role: string; name: string }[] = [];
+  const terms: { key: string; value: string }[] = [];
+  for (const [field, xs] of fields) {
+    const role = field.startsWith("role:") ? String(xs[0].item.role).trim() : null;
+    const key = role ? `party:${role}` : field.slice(5);
+    const label = role ? `${role}'s legal name` : termName(key);
+    if (xs.some((x) => !sameDraftValue(x.value, xs[0].value))) {
+      held.push({ key, label, text: `Claude read more than one value: ${shown(xs)}. Check the document and fill it in.` });
+      continue;
+    }
+    const x = xs[0];
+    if (role) {
+      // the name must be a complete name in its own quote (Studio's check, with the quote as the description)
+      if (cleanSuggestion({ kind: null, parties: [{ role, name: x.value }], terms: [] }, x.q.quote, { source: "document" }).parties.length !== 1) continue;
+      parties.push({ role, name: x.value });
+      sources.push({ key: `role:${role}`, value: x.value, page: x.q.page, quote: x.q.quote });
+      continue;
+    }
+    const tk = key as TermKey;
+    const passes = cleanSuggestion({ kind: null, parties: [], terms: [{ key: tk, value: x.value }] }, x.q.quote, { source: "document" }).terms[tk] !== undefined;
+    if (!passes) continue;
+    if (!quoteSupportsTerm(tk, x.value, x.q.quote)) {
+      // a real value, but its quote doesn't say it clearly: the person decides, with the quote in front of them
+      if (TERM_TYPES[tk] === "choice") held.push({ key, label, text: `Claude read “${x.value}”, but the quoted text doesn't clearly say so (p. ${x.q.page}: “${x.q.quote}”). Check the document and choose.` });
+      continue;
+    }
+    terms.push({ key: tk, value: x.value });
+    sources.push({ key: `term:${tk}`, value: x.value, page: x.q.page, quote: x.q.quote });
+  }
+
   const clarifications: { key: string; status: "not_supported"; note: string }[] = [];
   for (const n of list("not_supported")) {
     if (typeof n.key !== "string" || typeof n.note !== "string") continue;
-    // something the document says: only with a quote that is in it
-    if (!quoteOf(n)) continue;
+    // something the document says: only with a quote that is in it, and a note that says only what the quote does
+    const q = quoteOf(n);
+    if (!q || !supported(clip(n.note), [q.quote])) continue;
     clarifications.push({ key: n.key, status: "not_supported", note: n.note });
   }
-  if (!kind && !parties.length && !terms.length && !clarifications.length) return null;
-  const quotes = sources.map((s) => s.quote).join("\n");
-  const suggestion = cleanSuggestion({ kind, parties, terms, clarifications }, quotes, { source: "document" });
-  // only the sources of values Studio kept
-  const kept = sources.filter((s) => (s.key.startsWith("role:") ? suggestion.parties.some((p) => `role:${p.role.trim()}` === s.key && p.name === s.value) : suggestion.terms[s.key.slice(5) as TermKey] !== undefined));
-  return { suggestion, sources: kept };
+  if (!kind && !parties.length && !terms.length && !clarifications.length && !held.length) return null;
+  const suggestion = cleanSuggestion({ kind, parties, terms, clarifications }, sources.map((x) => x.quote).join("\n"), { source: "document" });
+  // what Claude read but isn't pre-filled goes under "needed", with what it read and where (replacing a blank item)
+  for (const h of held) {
+    const i = suggestion.clarifications.needed.findIndex((x) => x.key === h.key);
+    if (i >= 0) suggestion.clarifications.needed[i] = { ...suggestion.clarifications.needed[i], text: h.text };
+    else suggestion.clarifications.needed.push(h);
+    suggestion.clarifications.optional = suggestion.clarifications.optional.filter((x) => x.key !== h.key);
+  }
+  // only the sources of the exact values Studio kept, one per field
+  const kept = sources.filter((x) =>
+    x.key.startsWith("role:") ? suggestion.parties.some((p) => p.role.trim() === x.key.slice(5) && p.name === x.value) : (suggestion.terms[x.key.slice(5) as TermKey] ?? "").trim() === x.value,
+  );
+  return { suggestion, sources: kept.filter((x, i) => kept.findIndex((y) => y.key === x.key) === i) };
 }
 
 /** Claude reads the document once; the answer is checked (groundAnalysis) before anything is returned. */
