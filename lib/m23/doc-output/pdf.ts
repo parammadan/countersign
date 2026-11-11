@@ -1,10 +1,14 @@
-import { PDFDocument, StandardFonts, type PDFFont, type PDFPage } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb, setCharacterSpacing, type PDFFont, type PDFPage } from "pdf-lib";
 import { clauseLabel, type DraftDocument } from "./types";
 import { DraftValidationError, LIMITS, oneLine, prepareDraft } from "./validate";
 import { pdfEquivalents } from "./pdf-text";
 
-const W = 612, H = 792, M = 72;
-const BODY = 11, LEAD = 15, HEAD = 12, TITLE = 20;
+// US Letter, 1" side margins; the bottom margin leaves room for the footer (title and "Page X of N").
+const W = 612, H = 792, M = 72, TOP = 66, BOTTOM = 78;
+const BODY = 10.5, LEAD = 14.5, HEAD = 11.5, TITLE = 19, LABEL = 7.5;
+const INK = rgb(0.09, 0.11, 0.15), MUTED = rgb(0.42, 0.45, 0.5), RULE = rgb(0.8, 0.82, 0.86), ACCENT = rgb(0.12, 0.23, 0.5);
+/** A list item line in a clause ("(a) Data analytics consulting"): drawn with a hanging indent. */
+const ITEM = /^\(([a-z])\)\s+/;
 
 // Standard fonts only encode WinAnsi. Typographic characters with a WinAnsi equivalent print as that (pdf-text.ts);
 // anything else is replaced with "?" so rendering never throws (and is visible, not silently dropped). Callers
@@ -42,26 +46,29 @@ export async function renderPdf(input: DraftDocument): Promise<Uint8Array> {
   pdf.setKeywords([]);
   pdf.setCreationDate(epoch);
   pdf.setModificationDate(epoch);
-  const font = await pdf.embedFont(StandardFonts.Helvetica);
-  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  // a serif body for reading, a sans for small labels and the footer
+  const serif = await pdf.embedFont(StandardFonts.TimesRoman);
+  const serifBold = await pdf.embedFont(StandardFonts.TimesRomanBold);
+  const sans = await pdf.embedFont(StandardFonts.Helvetica);
+  const sansBold = await pdf.embedFont(StandardFonts.HelveticaBold);
 
   let page: PDFPage = pdf.addPage([W, H]);
-  let y = H - M;
+  let y = H - TOP;
   let pages = 1;
   const newPage = () => {
     if (++pages > LIMITS.maxPages) throw new DraftValidationError(`document is longer than ${LIMITS.maxPages} pages`, "too_large");
     page = pdf.addPage([W, H]);
-    y = H - M;
+    y = H - TOP;
   };
   let dry = false; // dry run: measure layout height without drawing or paginating
-  const ensure = (h: number) => { if (!dry && y - h < M) newPage(); };
+  const ensure = (h: number) => { if (!dry && y - h < BOTTOM) newPage(); };
   const eol = (t: string) => t.replace(/\r\n|\r/g, "\n");
   const one = oneLine; // single-line fields (prepareDraft has already flattened the input ones)
+  const TEXT_W = W - 2 * M;
 
-  // Greedy word wrap; a single word wider than the line is hard-broken at the line width.
-  function wrap(text: string, f: PDFFont, size: number): string[] {
+  // Greedy word wrap to `max` points; a single word wider than the line is hard-broken at the line width.
+  function wrap(text: string, f: PDFFont, size: number, max = TEXT_W): string[] {
     const t = winAnsi(text, f);
-    const max = W - 2 * M;
     const fits = (s: string) => f.widthOfTextAtSize(s, size) <= max;
     // Longest prefix of s.slice(from) that fits (at least one character). Exponential then binary search over
     // prefix lengths: each probe is at most twice the fitting length, so breaking an n-character word costs
@@ -104,55 +111,124 @@ export async function renderPdf(input: DraftDocument): Promise<Uint8Array> {
     lines.push(cur);
     return lines;
   }
-  function draw(text: string, f: PDFFont, size: number, lead = LEAD) {
-    for (const line of wrap(text, f, size)) {
+  type Style = { font: PDFFont; size: number; lead?: number; color?: ReturnType<typeof rgb>; x?: number; max?: number; spacing?: number; center?: boolean };
+  function text(line: string, st: Style) {
+    if (dry || !line) return;
+    const x = st.center ? (W - st.font.widthOfTextAtSize(line, st.size) - (st.spacing ?? 0) * Math.max(0, line.length - 1)) / 2 : st.x ?? M;
+    if (st.spacing) page.pushOperators(setCharacterSpacing(st.spacing));
+    page.drawText(line, { x, y: y + 3, size: st.size, font: st.font, color: st.color ?? INK });
+    if (st.spacing) page.pushOperators(setCharacterSpacing(0));
+  }
+  function draw(s: string, st: Style) {
+    const lead = st.lead ?? LEAD;
+    for (const line of wrap(s, st.font, st.size, st.max)) {
       ensure(lead);
       y -= lead;
-      if (line && !dry) page.drawText(line, { x: M, y: y + 3, size, font: f });
+      text(line, st);
     }
   }
+  const rule = (x1 = M, x2 = W - M, color = RULE, thickness = 0.6) => { if (!dry) page.drawLine({ start: { x: x1, y }, end: { x: x2, y }, thickness, color }); };
+  const bodyLines = (para: string) => (ITEM.test(para) ? wrap(para, serif, BODY, TEXT_W - 18).length : wrap(para, serif, BODY).length);
 
-  draw(one(doc.title), bold, TITLE, 26);
+  // ---- title block: the agreement's name, centred, over an accent rule ----
   y -= 8;
+  for (const line of wrap(one(doc.title).toUpperCase(), serifBold, TITLE, TEXT_W)) { y -= 24; text(line, { font: serifBold, size: TITLE, center: true, spacing: 1.2 }); }
+  y -= 12;
+  if (!dry) page.drawLine({ start: { x: W / 2 - 36, y }, end: { x: W / 2 + 36, y }, thickness: 1.4, color: ACCENT });
+  y -= 18;
+
+  // ---- parties: a two-column table (role label, legal name, defined term) ----
   if (doc.parties.length) {
-    draw("Parties", bold, HEAD);
-    for (const p of doc.parties) draw(one(`${p.role}: ${p.name}`), font, BODY);
-    y -= 8;
+    draw("Parties", { font: sansBold, size: LABEL, color: MUTED, lead: 12 });
+    y -= 6;
+    const colW = (TEXT_W - 24) / 2;
+    for (let r = 0; r < doc.parties.length; r += 2) {
+      const row = doc.parties.slice(r, r + 2);
+      const cells = row.map((p) => ({ role: one(p.role), name: wrap(one(p.name), serifBold, 12.5, colW) }));
+      const h = 14 + Math.max(...cells.map((c) => c.name.length)) * 16 + 16;
+      ensure(h + 8);
+      if (!dry) page.drawRectangle({ x: M, y: y - h, width: TEXT_W, height: h, color: rgb(0.965, 0.97, 0.98) });
+      const top = y;
+      cells.forEach((c, k) => {
+        const x = M + 12 + k * (colW + 24);
+        y = top - 14;
+        // labels without letter-spacing: spaced text extracts as "P a r t i e s", which breaks search and copying
+        text(c.role.toUpperCase(), { font: sansBold, size: LABEL, color: MUTED, x });
+        for (const line of c.name) { y -= 16; text(line, { font: serifBold, size: 12.5, x }); }
+        y -= 13;
+        text(`(the \u201c${c.role}\u201d)`, { font: serif, size: 9, color: MUTED, x });
+      });
+      y = top - h - 10;
+    }
+    y -= 6;
+    rule();
+    y -= 6;
   }
+
+  // ---- clauses: numbered headings kept with their first lines; list items with a hanging indent ----
   doc.clauses.forEach((c, i) => {
     const label = clauseLabel(c, i);
     const head = one(c.heading ? `${label} ${c.heading}` : label);
-    ensure(wrap(head, bold, HEAD).length * LEAD + LEAD + 6); // keep a heading with a line of its body
-    y -= 6;
-    draw(head, bold, HEAD);
-    for (const para of eol(c.text).split("\n")) draw(para, font, BODY);
+    const paras = eol(c.text).split("\n");
+    const first = Math.min(2, paras.reduce((n, p) => n + bodyLines(p), 0));
+    ensure(wrap(head, serifBold, HEAD).length * 16 + 10 + first * LEAD); // no heading alone at the foot of a page
+    y -= 10;
+    draw(head, { font: serifBold, size: HEAD, lead: 16 });
+    y -= 2;
+    for (const para of paras) {
+      const m = ITEM.exec(para);
+      if (!m) { draw(para, { font: serif, size: BODY }); continue; }
+      // "(a) item": the marker in the margin column, wrapped lines aligned with the item's first word
+      const indent = 18;
+      const lines = wrap(para, serif, BODY, TEXT_W - indent);
+      const markerW = serif.widthOfTextAtSize(winAnsi(m[0], serif), BODY);
+      lines.forEach((line, k) => {
+        ensure(LEAD);
+        y -= LEAD;
+        text(line, { font: serif, size: BODY, x: M + indent + (k === 0 ? 0 : markerW) });
+      });
+    }
   });
 
-  // Locked signature block: measured with a dry run, then kept together on one page when it fits on one.
+  // Locked signature block: measured with a dry run, then kept together on one page when it fits on one. The
+  // labels ("Signed for", "Signature", "Name:", "Date:") are what field detection reads on a published draft.
   const sigBlock = () => {
+    // the same vertical geometry as before the redesign (gaps, rule position, line heights): field detection on a
+    // published draft depends on it, e.g. the caption's distance from the rule merges the two into one signature field
     y -= 16;
-    draw("Signatures", bold, HEAD);
+    draw("Signatures", { font: serifBold, size: 12, lead: 15 });
     for (const p of doc.parties) {
       y -= 22;
-      draw(one(`Signed for ${p.name} (${p.role})`), bold, BODY);
+      draw(one(`Signed for ${p.name} (${p.role})`), { font: serifBold, size: 11, lead: 15 });
       y -= 18;
       ensure(40);
-      if (!dry) page.drawLine({ start: { x: M, y }, end: { x: M + 260, y }, thickness: 0.75 });
+      rule(M, M + 260, INK, 0.75);
       y -= 12;
-      draw("Signature", font, 9, 11);
+      draw("Signature", { font: sans, size: 9, color: MUTED, lead: 11 });
       y -= 14;
-      draw(one(`Name: ${p.name}`), font, BODY);
-      draw("Date: ____________________", font, BODY);
+      draw(one(`Name: ${p.name}`), { font: serif, size: 11, lead: 15 });
+      draw("Date: ____________________", { font: serif, size: 11, lead: 15 });
     }
   };
-  if (!doc.parties.length) return pdf.save({ useObjectStreams: false });
-  const y0 = y;
-  dry = true;
-  sigBlock();
-  const used = y0 - y;
-  dry = false;
-  y = y0;
-  if (y - used < M && used <= H - 2 * M) newPage(); // a block taller than a page must split (very many parties)
-  sigBlock();
+  if (doc.parties.length) {
+    const y0 = y;
+    dry = true;
+    sigBlock();
+    const used = y0 - y;
+    dry = false;
+    y = y0;
+    if (y - used < BOTTOM && used <= H - TOP - BOTTOM) newPage(); // a block taller than a page must split (very many parties)
+    sigBlock();
+  }
+
+  // ---- footer on every page: the agreement's name and "Page X of N" ----
+  const all = pdf.getPages();
+  const footTitle = winAnsi(one(doc.title), sans);
+  all.forEach((pg, k) => {
+    pg.drawLine({ start: { x: M, y: 52 }, end: { x: W - M, y: 52 }, thickness: 0.5, color: RULE });
+    pg.drawText(footTitle, { x: M, y: 38, size: 8, font: sans, color: MUTED });
+    const num = `Page ${k + 1} of ${all.length}`;
+    pg.drawText(num, { x: W - M - sans.widthOfTextAtSize(num, 8), y: 38, size: 8, font: sans, color: MUTED });
+  });
   return pdf.save({ useObjectStreams: false });
 }

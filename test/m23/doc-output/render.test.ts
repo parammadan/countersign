@@ -68,7 +68,9 @@ describe("PDF", () => {
 
   it("has a party block and a signature block after the last clause", async () => {
     const { all } = await pdfText(await renderPdf(doc));
-    expect(all).toContain("Firm: Example Firm LLP");
+    // the party table: each role as a label over its legal name and defined term, before the first clause
+    expect(all).toContain("FIRM Example Firm LLP (the \u201cFirm\u201d)");
+    expect(all).toContain("CLIENT Alex Example (the \u201cClient\u201d)");
     expect(all.indexOf("Parties")).toBeLessThan(all.indexOf("1. Scope"));
     const sig = all.indexOf("Signatures");
     expect(sig).toBeGreaterThan(all.indexOf(norm(doc.clauses[3].text)));
