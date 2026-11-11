@@ -41,3 +41,38 @@ export function phoneOrigin(req: Request) {
   } catch {}
   if (!ok) throw new AppError("Cross-site request blocked.", 403);
 }
+
+/** How long a page upload's body may take to arrive (then 408, and its upload slot is freed). */
+export const PAGE_READ_MS = { value: 30_000 };
+
+/**
+ * Read a body of at most `max` bytes, all of it within `deadlineMs` (a slow trickle can't hold an upload slot for
+ * minutes). Like lib/http.ts readCapped, plus the deadline.
+ */
+export async function readBodyWithin(req: Request, max: number, deadlineMs: number): Promise<Buffer> {
+  if (!req.body) return Buffer.alloc(0);
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<"late">((res) => (timer = setTimeout(() => res("late"), deadlineMs)));
+  try {
+    for (;;) {
+      const r = await Promise.race([reader.read(), late]);
+      if (r === "late") {
+        await reader.cancel().catch(() => {});
+        throw new AppError("The page took too long to arrive. Try again.", 408);
+      }
+      if (r.done) break;
+      total += r.value.byteLength;
+      if (total > max) {
+        await reader.cancel().catch(() => {});
+        throw new AppError("Request too large.", 413);
+      }
+      chunks.push(r.value);
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+  return Buffer.concat(chunks);
+}

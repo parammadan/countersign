@@ -132,6 +132,7 @@ describe("scan with phone", () => {
   const OTHER_ADMIN: Sess = { userId: "u_admin2", userName: "Riley Example", userEmail: "riley@example.com", workspaceId: "ws_a", role: "admin" };
   const STAFF: Sess = { userId: "u_staff", userName: "Sam Placeholder", userEmail: "sam@example.com", workspaceId: "ws_a", role: "staff" };
   const LIMIT_ADMIN: Sess = { userId: "u_admin3", userName: "Jordan Sample", userEmail: "jordan@example.com", workspaceId: "ws_a", role: "admin" };
+  const SPARE_ADMIN: Sess = { userId: "u_admin4", userName: "Casey Placeholder", userEmail: "casey@example.com", workspaceId: "ws_a", role: "admin" };
   const OTHER_WS: Sess = { userId: "u_admin", userName: "Avery Tester", userEmail: "avery@example.com", workspaceId: "ws_b", role: "owner" };
 
   const req = (url: string, init: RequestInit = {}) => new Request(`http://localhost:3000${url}`, { ...init, headers: { "x-forwarded-for": ip(), ...(init.headers as Record<string, string>) } });
@@ -180,8 +181,8 @@ describe("scan with phone", () => {
       ["ws_b", "Contoso", "Contoso Partners, LLC", "inb_b"],
     ])
       db.run("INSERT INTO workspaces (id, name, legal_name, sender_name, inbound_token, created_at) VALUES (?,?,?,?,?,?)", id, name, legal, name, inb, t);
-    for (const u of [ADMIN, OTHER_ADMIN, STAFF, LIMIT_ADMIN]) db.run("INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?,?,?,?,?)", u.userId, u.userEmail, u.userName, "x", t);
-    for (const u of [ADMIN, OTHER_ADMIN, STAFF, LIMIT_ADMIN, OTHER_WS]) db.run("INSERT INTO members (workspace_id, user_id, role, created_at) VALUES (?,?,?,?)", u.workspaceId, u.userId, u.role, t);
+    for (const u of [ADMIN, OTHER_ADMIN, STAFF, LIMIT_ADMIN, SPARE_ADMIN]) db.run("INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?,?,?,?,?)", u.userId, u.userEmail, u.userName, "x", t);
+    for (const u of [ADMIN, OTHER_ADMIN, STAFF, LIMIT_ADMIN, SPARE_ADMIN, OTHER_WS]) db.run("INSERT INTO members (workspace_id, user_id, role, created_at) VALUES (?,?,?,?)", u.workspaceId, u.userId, u.role, t);
   });
   beforeEach(() => {
     ingestCalls.length = 0;
@@ -498,7 +499,7 @@ describe("scan with phone", () => {
     expect((await hello(s2.token)).status).toBe(200);
   });
 
-  it("checks the token, the declared length and the server's upload slots before reading any page body", async () => {
+  it("checks the token and the declared length before reading any page body", async () => {
     const big = Buffer.alloc(9 * 1024 * 1024);
     const raw = (token: string, body: BodyInit, h: Record<string, string>) =>
       new Request(`http://localhost:3000/api/scan/phone/${token}/pages/0`, { method: "PUT", body, headers: { "x-forwarded-for": ip(), ...h }, duplex: "half" } as RequestInit);
@@ -525,23 +526,83 @@ describe("scan with phone", () => {
     const r5 = raw(s.token, new Uint8Array(JPG[0]), { "content-length": "100" });
     expect((await pages.PUT(r5, np(s.token, 0))).status).toBe(413);
 
-    // at most 4 uploads are read at once: four slow ones hold the slots, the fifth is told to retry
-    const ctrls: ReadableStreamDefaultController<Uint8Array>[] = [];
-    const slow = [0, 1, 2, 3].map((i) => {
-      const body = new ReadableStream<Uint8Array>({ start: (c) => void ctrls.push(c) });
-      return pages.PUT(raw(s.token, body, { "content-length": String(JPG[i % 3].length) }), np(s.token, i));
+    expect((await put(s.token, 0, JPG[0])).status).toBe(200);
+  });
+
+  describe("upload slots", () => {
+    const raw = (token: string, n: number, body: BodyInit, len: number, from = ip()) =>
+      pages.PUT(
+        new Request(`http://localhost:3000/api/scan/phone/${token}/pages/${n}`, { method: "PUT", body, headers: { "x-forwarded-for": from, "content-length": String(len) }, duplex: "half" } as RequestInit),
+        np(token, n),
+      );
+    /** an upload whose body arrives only when `send()` is called */
+    function held(token: string, n: number, jpg: Buffer, from = ip()) {
+      let c!: ReadableStreamDefaultController<Uint8Array>;
+      const body = new ReadableStream<Uint8Array>({ start: (x) => void (c = x) });
+      const res = raw(token, n, body, jpg.length, from);
+      return { res, send: () => (c.enqueue(new Uint8Array(jpg)), c.close()) };
+    }
+    const tick = () => new Promise((r) => setTimeout(r, 30));
+    const busy = async (r: Response) => {
+      expect(r.status).toBe(503);
+      expect(((await r.json()) as { error: string }).error).toBe("Busy, retry in a moment.");
+    };
+
+    it("at most 4 at once across the server: a fifth scan is told to retry, and gets in once one finishes", async () => {
+      const scans = [];
+      for (const who of [ADMIN, OTHER_WS, OTHER_ADMIN, LIMIT_ADMIN, SPARE_ADMIN]) scans.push(await start(who));
+      const slow = scans.slice(0, 4).map((s, i) => held(s.token, 0, JPG[i % 3]));
+      await tick();
+      await busy(await put(scans[4].token, 0, JPG[0]));
+      slow.forEach((h) => h.send());
+      expect((await Promise.all(slow.map((h) => h.res))).map((r) => r.status)).toEqual([200, 200, 200, 200]);
+      expect((await put(scans[4].token, 0, JPG[0])).status).toBe(200);
     });
-    await new Promise((r) => setTimeout(r, 50));
-    const fifth = await put(s.token, 4, JPG[0]);
-    expect(fifth.status).toBe(503);
-    expect(((await fifth.json()) as { error: string }).error).toMatch(/Busy, retry/);
-    ctrls.forEach((c, i) => {
-      c.enqueue(new Uint8Array(JPG[i % 3]));
-      c.close();
+
+    it("1 at once per scan token and 2 per address", async () => {
+      const a = await start(ADMIN);
+      const b = await start(OTHER_ADMIN);
+      const c = await start(LIMIT_ADMIN);
+      // the same token, from another address: 503 while its first upload is still arriving
+      const first = held(a.token, 0, JPG[0]);
+      await tick();
+      await busy(await put(a.token, 1, JPG[1]));
+      first.send();
+      expect((await first.res).status).toBe(200);
+      expect((await put(a.token, 1, JPG[1])).status).toBe(200); // free again
+      // one address, three scans: the third is told to retry
+      const home = "198.51.100.200";
+      const x = held(a.token, 2, JPG[0], home);
+      const y = held(b.token, 0, JPG[1], home);
+      await tick();
+      await busy(await raw(c.token, 0, new Uint8Array(JPG[2]), JPG[2].length, home));
+      expect((await raw(c.token, 0, new Uint8Array(JPG[2]), JPG[2].length, "198.51.100.201")).status).toBe(200); // another address is fine
+      x.send();
+      y.send();
+      expect([(await x.res).status, (await y.res).status]).toEqual([200, 200]);
+      expect((await raw(c.token, 1, new Uint8Array(JPG[2]), JPG[2].length, home)).status).toBe(200);
     });
-    expect((await Promise.all(slow)).map((r) => r.status)).toEqual([200, 200, 200, 200]);
-    expect((await put(s.token, 4, JPG[0])).status).toBe(200); // the slots are free again
-    expect(scan._pagesOf(s.id)).toHaveLength(5);
+
+    it("a body that stalls is cut off at the deadline (408) and its slots are freed", async () => {
+      const { PAGE_READ_MS } = await import("../lib/scan-http");
+      const was = PAGE_READ_MS.value;
+      PAGE_READ_MS.value = 300; // 30 s in production
+      try {
+        const s = await start();
+        const home = "198.51.100.210";
+        // half a page arrives, then nothing
+        const body = new ReadableStream<Uint8Array>({ start: (c) => c.enqueue(new Uint8Array(JPG[0].subarray(0, 500))) });
+        const t0 = Date.now();
+        const r = await raw(s.token, 0, body, JPG[0].length, home);
+        expect(r.status).toBe(408);
+        expect(Date.now() - t0).toBeLessThan(2000);
+        expect(scan._pagesOf(s.id)).toHaveLength(0);
+        // the token's and the address's slots are free at once
+        expect((await raw(s.token, 0, new Uint8Array(JPG[0]), JPG[0].length, home)).status).toBe(200);
+      } finally {
+        PAGE_READ_MS.value = was;
+      }
+    });
   });
 
   it("a sweep while a PDF is being built leaves it alone, and a build closed meanwhile never turns into done", async () => {
