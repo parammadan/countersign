@@ -267,9 +267,19 @@ export function mergeAiPrefill(record: IntakeRecord, draft: DocDraft | null): Pr
   const names = { ...base.names };
   const terms: Partial<Record<TermKey, string>> = { ...base.terms };
   const ai: NonNullable<Prefill["ai"]> = { names: {}, terms: {}, sources: draft.sources };
+  // what Claude read that this template has no field for is listed, never dropped
+  const unsupported = [...sg.clarifications.unsupported];
+  const cannot = (key: string, label: string, value: string) => {
+    if (!unsupported.some((u) => u.key === key)) unsupported.push({ key, label, text: `The document says “${value}”, but the ${TEMPLATES[kind].title} template has no place for it, so it won't be in the agreement.` });
+  };
+  const accepts = new Set(kindSpecs().find((k) => k.kind === kind)?.terms.map((t) => t.key) ?? []);
   for (const p of sg.parties) {
     const role = templateRoleOf(kind, p.role);
-    if (!role || held.has(`role:${role}`) || ai.names[role]) continue;
+    if (!role) {
+      cannot(`party:${p.role}`, `${p.role.slice(0, 40)} (a party)`, p.name);
+      continue;
+    }
+    if (held.has(`role:${role}`) || ai.names[role]) continue;
     const rules = base.names[role];
     if (rules) {
       if (!sameReading(rules, p.name)) {
@@ -283,6 +293,10 @@ export function mergeAiPrefill(record: IntakeRecord, draft: DocDraft | null): Pr
   }
   for (const [key, value] of Object.entries(sg.terms) as [TermKey, string][]) {
     if (!value || held.has(`term:${key}`)) continue;
+    if (!accepts.has(key)) {
+      cannot(key, termName(key), value);
+      continue;
+    }
     const rules = base.terms[key];
     if (rules) {
       if (!sameReading(rules, value)) {
@@ -294,7 +308,7 @@ export function mergeAiPrefill(record: IntakeRecord, draft: DocDraft | null): Pr
     terms[key] = value;
     ai.terms[key] = value;
   }
-  return { kind, names, terms, notes, ai, clarifications: sg.clarifications };
+  return { kind, names, terms, notes, ai, clarifications: { ...sg.clarifications, unsupported: unsupported.slice(0, 16) } };
 }
 
 /** The latest AI analysis of a read document in this workspace (null when there is none). */
