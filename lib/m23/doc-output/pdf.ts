@@ -170,7 +170,8 @@ export async function renderPdf(input: DraftDocument): Promise<Uint8Array> {
     const label = clauseLabel(c, i);
     const head = one(c.heading ? `${label} ${c.heading}` : label);
     const paras = eol(c.text).split("\n");
-    const first = Math.min(2, paras.reduce((n, p) => n + bodyLines(p), 0));
+    // the first two body lines: wrapping the first paragraph is enough (a long clause isn't re-wrapped here)
+    const first = Math.min(2, bodyLines(paras[0]) + (paras.length > 1 ? 1 : 0));
     ensure(wrap(head, serifBold, HEAD).length * 16 + 10 + first * LEAD); // no heading alone at the foot of a page
     y -= 10;
     draw(head, { font: serifBold, size: HEAD, lead: 16 });
