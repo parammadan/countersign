@@ -48,6 +48,7 @@ const CHAT_ERRORS: Record<string, string> = {
   thread: "That conversation wasn't found, or it isn't yours to continue. Start a new one.",
   no_text: DOC_AI_UNAVAILABLE.no_text,
   empty: DOC_AI_UNAVAILABLE.empty,
+  all_quarantined: DOC_AI_UNAVAILABLE.all_quarantined,
   failed: "Something went wrong. Try again.",
 };
 
@@ -70,7 +71,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const turns = threadId ? documentConversation(s, result.id, threadId) : [];
   const mine = turns.length > 0 && turns[0].askedById === s.userId;
   const others = documentConversations(s, result.id).filter((t) => t.id !== threadId);
-  const canChat = ai.available || (ai.reason !== "no_text" && ai.reason !== "empty");
+  const canChat = ai.available || !["no_text", "empty", "all_quarantined"].includes(ai.reason);
   const verifyHelp = !ai.available && ai.reason === "unverified" && verificationRequired();
   return (
     <>

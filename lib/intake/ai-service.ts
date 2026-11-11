@@ -22,7 +22,7 @@ import { cleanQuestion, QA_LIMITS, type QaResult, type Turn } from "../qa/answer
 import { answerPages, QA_DAILY, QA_PER_USER_PER_MINUTE } from "../qa/store";
 import { analyzeDocumentWithModel, DOC_LIMITS } from "./ai";
 import { getIntake, latestDocAnalysis, type SessionLike } from "./service";
-import { analysesSince, finishQuestion, getModelPages, insertAnalysis, insertQuestion, latestTurns, ownThread, questionsSince, threadQuestions, threadsOf } from "./store";
+import { analysesSince, finishQuestion, getModelPages, getResult, insertAnalysis, insertQuestion, latestTurns, ownThread, questionsSince, threadQuestions, threadsOf } from "./store";
 
 /** A rough cost of one analysis, for deciding up front (each call is reserved at its real size). */
 export const DOC_TYPICAL_USD = estimateUsd(20_000, DOC_LIMITS.maxOutputTokens);
@@ -31,9 +31,11 @@ export const ANALYSES_PER_HOUR = 20;
 export const ANALYSES_PER_USER_PER_MINUTE = 3;
 
 /** Why there is no AI for a document, beyond the workspace's AI state: no stored text, or an unfinished injection scan. */
-export type DocAiReason = Exclude<AiState["reason"], undefined> | "no_text" | "scan_incomplete" | "empty";
+export type DocAiReason = Exclude<AiState["reason"], undefined> | "no_text" | "scan_incomplete" | "empty" | "all_quarantined";
 /** No readable text at all (a scanned image, an empty file): nothing for a model to read, so no call is made. */
 const blank = (pages: string[]) => !pages.some((p) => p.replace(INVISIBLE, "").trim().length > 0);
+/** Why a document with nothing left for a model has nothing: every line quarantined, or no text in the first place. */
+const blankReason = (r: { injection: unknown[] }): "all_quarantined" | "empty" => (r.injection.length > 0 ? "all_quarantined" : "empty");
 export type DocAi = { available: true } | { available: false; reason: DocAiReason };
 
 /** Whether AI would run for this workspace now (no model call, nothing reserved): for showing the page. */
@@ -46,7 +48,10 @@ export function documentAi(s: Pick<SessionLike, "workspaceId">, intakeId: string
   const text = getModelPages(s.workspaceId, intakeId);
   if (!text) return { available: false, reason: "no_text" };
   if (!text.complete) return { available: false, reason: "scan_incomplete" };
-  if (blank(text.pages)) return { available: false, reason: "empty" };
+  if (blank(text.pages)) {
+    const r = getResult(s.workspaceId, intakeId);
+    return { available: false, reason: r ? blankReason(r.record) : "empty" };
+  }
   const st = documentAiState(s, env);
   return st.available ? { available: true } : { available: false, reason: st.reason };
 }
@@ -64,6 +69,7 @@ export const ANALYZE_MESSAGE: Record<AnalyzeCode, string> = {
   no_text: "This document was read before AI analysis was available. Read it again to analyze it with AI.",
   scan_incomplete: "This document couldn't be fully checked for hidden instructions aimed at an AI, so it isn't sent to AI. The rules' reading is below.",
   empty: "This document has no text we can read (it may be a scanned image), so there is nothing for AI to analyze. Upload a PDF with selectable text, or paste the text.",
+  all_quarantined: "All of this document's text was set aside as possible instructions to an AI, so it can't be analysed.",
   limit: `This workspace has analyzed ${ANALYSES_PER_HOUR} documents with AI in the last hour, the current limit. Try again later.`,
   failed: "Claude didn't finish the analysis. Try again in a moment; the rules' reading is below.",
 };
@@ -78,7 +84,7 @@ export async function analyzeIntake(s: SessionLike, intakeId: string, provider: 
   const text = getModelPages(ws, g.result.id);
   if (!text) return failure("no_text");
   if (!text.complete) return failure("scan_incomplete");
-  if (blank(text.pages)) return failure("empty");
+  if (blank(text.pages)) return failure(blankReason(g.result.record));
   if (!provider) return failure("off");
   if (limited(`doc-ai-user:${s.userId}`, ANALYSES_PER_USER_PER_MINUTE, 60_000)) return failure("limit");
   // checked and reserved synchronously, so concurrent requests can't all pass the hourly limit
@@ -113,7 +119,7 @@ export function documentAnalysis(s: SessionLike, intakeId: string) {
 
 // ---------- chat with this document ----------
 
-export type AskCode = "forbidden" | "notfound" | "question" | "thread" | "slow" | "limit" | "no_text" | "empty";
+export type AskCode = "forbidden" | "notfound" | "question" | "thread" | "slow" | "limit" | "no_text" | "empty" | "all_quarantined";
 export type AskResult = { ok: true; id: string; threadId: string } | { ok: false; code: AskCode };
 export const DOC_THREAD_ID = /^dq_[A-Za-z0-9_-]{6,50}$/;
 
@@ -151,7 +157,7 @@ export async function askIntakeQuestion(
   if (limited(`qa-user:${s.userId}`, QA_PER_USER_PER_MINUTE, 60_000)) return { ok: false, code: "slow" };
   const text = getModelPages(ws, docId);
   if (!text) return { ok: false, code: "no_text" };
-  if (blank(text.pages)) return { ok: false, code: "empty" };
+  if (blank(text.pages)) return { ok: false, code: blankReason(g.result.record) };
 
   const notes: string[] = [];
   let answerer: ModelProvider | null = null;

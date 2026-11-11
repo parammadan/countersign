@@ -1,4 +1,4 @@
-import { termName } from "@/lib/drafts/labels";
+import { TERM_LABEL, termName } from "@/lib/drafts/labels";
 
 export const DECISION_LABEL = { ready_to_prepare: "Ready to prepare", needs_review: "Needs review", unsupported: "Unsupported" } as const;
 export const DECISION_TONE = { ready_to_prepare: "ok", needs_review: "warn", unsupported: "neutral" } as const;
@@ -44,6 +44,6 @@ export function aiOnlyValues(ai: AiValues | undefined): { key: string; label: st
   if (!ai) return [];
   return [
     ...Object.entries(ai.names).map(([role, value]) => ({ key: `role:${role}`, label: `${role} (legal name)`, value, source: ai.sources.find((x) => x.key.startsWith("role:") && x.value === value) })),
-    ...Object.entries(ai.terms).filter((e): e is [string, string] => typeof e[1] === "string" && e[1] !== "").map(([key, value]) => ({ key: `term:${key}`, label: termName(key), value, source: ai.sources.find((x) => x.key === `term:${key}`) })),
+    ...Object.entries(ai.terms).filter((e): e is [string, string] => typeof e[1] === "string" && e[1] !== "").map(([key, value]) => ({ key: `term:${key}`, label: TERM_LABEL[key] ?? termName(key), value, source: ai.sources.find((x) => x.key === `term:${key}`) })),
   ];
 }
