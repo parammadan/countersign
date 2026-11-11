@@ -296,9 +296,45 @@ describe("Document Intelligence with AI", () => {
     const ok = A.groundAnalysis({ summary: [], findings: [], worth_checking: [], draft: { kind: "consulting", parties: [], terms: [{ key: "ipOwner", value: "Client", page: 2, quote: ip }, { key: "noticeDays", value: "30", page: 1, quote: "Either party may terminate this Agreement on 30 days' written notice to the other party." }], not_supported: [] } }, pages, null);
     expect(ok.draft!.suggestion.terms).toEqual({ ipOwner: "Client", noticeDays: "30" });
     expect(A.quoteSupportsTerm("exclusivity", "exclusive", "The Licensor grants a non-exclusive licence.")).toBe(false);
-    expect(A.quoteSupportsTerm("exclusivity", "non-exclusive", "The Licensor grants a non-exclusive licence.")).toBe(true);
+    expect(A.quoteSupportsTerm("exclusivity", "non-exclusive", "The Licensor grants a non-exclusive licence.")).toBe(false); // choices other than who owns the work product are never pre-filled from AI
     expect(A.quoteSupportsTerm("subletting", "permitted", "Subletting is not permitted.")).toBe(false);
     expect(A.quoteSupportsTerm("fee", "1.5%", "Late payments accrue interest at 1.5% per month.")).toBe(false);
+  });
+
+  it("review: choices are never pre-filled from AI (a negation or condition can reverse them); they're listed under needed with the quote", () => {
+    const cases: [string, string, string, string][] = [
+      ["lease", "subletting", "permitted", "Tenant shall not be permitted to sublet the Premises."],
+      ["lease", "subletting", "permitted", "Subletting is permitted only with the Landlord's written consent."],
+      ["licence", "exclusivity", "exclusive", "This licence is not an exclusive licence."],
+    ];
+    for (const [kind, key, value, quote] of cases) {
+      const got = A.groundAnalysis({ summary: [], findings: [], worth_checking: [], draft: { kind, parties: [], terms: [{ key, value, page: 1, quote }], not_supported: [] } }, linesFromText([quote]), null);
+      const sg = got.draft!.suggestion;
+      expect(sg.terms).toEqual({});
+      expect(sg.clarifications.needed.find((x) => x.key === key)?.text).toBe(`Claude read “${value}” from p. 1: “${quote}”. Options like this are never filled in by AI: check the document and choose.`);
+      expect(got.draft!.sources).toEqual([]);
+    }
+  });
+
+  it("review: parties are grouped by the template's role, so two names for one role are never guessed between", async () => {
+    const doc = 'CONSULTING AGREEMENT\nThis Agreement is between Northwind Advisory LLC ("Consultant") and Example Widgets Inc. ("Client").\nThe services provider is Southwind Partners LLC.\nClient will pay Consultant a fixed fee of $12,000.';
+    const got = A.groundAnalysis({ summary: [], findings: [], worth_checking: [], draft: { kind: "consulting", parties: [
+      { role: "Consultant", name: "Northwind Advisory LLC", page: 1, quote: 'This Agreement is between Northwind Advisory LLC ("Consultant") and Example Widgets Inc. ("Client").' },
+      { role: "Provider", name: "Southwind Partners LLC", page: 1, quote: "The services provider is Southwind Partners LLC." },
+    ], terms: [], not_supported: [] } }, linesFromText([doc]), null);
+    expect(got.draft!.suggestion.parties).toEqual([]);
+    expect(got.draft!.suggestion.clarifications.needed.find((x) => x.key === "party:Consultant")?.text).toMatch(/more than one value: “Northwind Advisory LLC”.*“Southwind Partners LLC”/);
+    // and the Studio merge never keeps the first of two names for one role either
+    const id = await read(ownerA, "CONSULTING AGREEMENT\nFees. Client will pay a fee of $1,000.");
+    const rec = svc.getIntake(ownerA, id);
+    if (!rec.ok) throw new Error("setup");
+    const pf = svc.mergeAiPrefill(rec.result.record, {
+      suggestion: { kind: "consulting", parties: [{ role: "Consultant", name: "Northwind Advisory LLC" }, { role: "Provider", name: "Southwind Partners LLC" }], terms: {}, clarifications: { needed: [], optional: [], unsupported: [] } },
+      sources: [],
+    });
+    expect(pf.names.Consultant).toBeUndefined();
+    expect(pf.ai?.names.Consultant).toBeUndefined();
+    expect(pf.notes.join(" ")).toMatch(/Consultant: Claude read more than one name \(“Northwind Advisory LLC” and “Southwind Partners LLC”\), so it was left empty/);
   });
 
   it("review: more than one value for a field is never guessed between; sources are one per field, exact values only", () => {

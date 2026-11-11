@@ -20,9 +20,10 @@ import { unsupportedFacts } from "../qa/answer";
 import { numbersIn } from "../qa/numbers";
 import { CHOICE_MEANING, cleanSuggestion, kindSpecs, TERM_MEANING, type Suggestion } from "../drafts/service";
 import { termName } from "../drafts/labels";
+import { templateRoleOf } from "./roles";
 import { KINDS } from "../m23/m23-generate";
 import { TERM_TYPES } from "../m23/m23-generate/terms";
-import type { TermKey } from "../m23/m23-generate/types";
+import type { Kind, TermKey } from "../m23/m23-generate/types";
 import type { IntakeRecord } from "./types";
 
 export const TOPICS = ["type", "parties", "dates", "amounts", "payment", "governing_law", "obligations", "termination", "confidentiality", "ip", "liability", "other"] as const;
@@ -383,9 +384,10 @@ const TERM_CUE: Partial<Record<TermKey, RegExp>> = {
 };
 const MONEY = /[$€£¥]|\b(?:usd|eur|gbp|cad|aud)\b/i;
 /**
- * Whether a quote supports a Studio value beyond containing it: money has a currency, numbers and dates appear with
- * words about their term, and a choice is stated in so many words (not negated; for who owns the work product, the
- * quote names that party as the owner). Fails closed: when unsure, the value isn't pre-filled.
+ * Whether a quote supports a Studio value beyond containing it: money has a currency, and numbers and dates appear
+ * with words about their term. Choices are never pre-filled from AI (a negation or condition anywhere in the sentence
+ * can reverse them), except who owns the work product when the quote names that party as owner, and how the fee is
+ * charged (Studio's own cue check). Fails closed: when unsure, the value isn't pre-filled.
  */
 export function quoteSupportsTerm(key: TermKey, value: string, quote: string): boolean {
   const qt = normalize(quote);
@@ -400,9 +402,7 @@ export function quoteSupportsTerm(key: TermKey, value: string, quote: string): b
     return owner.test(qt);
   }
   // feeBasis and feePeriod: Studio's own cue check (lib/drafts/service BASIS_CUE) runs on the quote
-  if (key === "feeBasis" || key === "feePeriod") return true;
-  // the choice's own words, not negated ("not permitted" is not "permitted", "non-exclusive" is not "exclusive")
-  return new RegExp(`(?<!\\bnot\\s|\\bno\\s|\\bnon-|\\bnon\\s)\\b${w}\\b`).test(qt);
+  return key === "feeBasis" || key === "feePeriod";
 }
 
 /** Two readings of one field are the same value: the same figures when either has one, else the same words. */
@@ -434,7 +434,9 @@ function groundDraft(raw: unknown, pages: PageLines[]): DocDraft | null {
   for (const p of list("parties")) {
     if (typeof p.role !== "string" || typeof p.name !== "string" || !p.role.trim()) continue;
     const q = quoteOf(p);
-    if (q) reads.push({ field: `role:${p.role.trim().toLowerCase()}`, value: p.name.trim(), q, item: p });
+    // grouped by the template's role when the template is known ("Provider" and "Consultant" are one party)
+    const role = (kind && templateRoleOf(kind as Kind, p.role)) || p.role.trim();
+    if (q) reads.push({ field: `role:${role.toLowerCase()}`, value: p.name.trim(), q, item: { ...p, role } });
   }
   for (const t of list("terms")) {
     if (typeof t.key !== "string" || typeof t.value !== "string" || !own(TERM_TYPES, t.key)) continue;
@@ -468,7 +470,14 @@ function groundDraft(raw: unknown, pages: PageLines[]): DocDraft | null {
     if (!passes) continue;
     if (!quoteSupportsTerm(tk, x.value, x.q.quote)) {
       // a real value, but its quote doesn't say it clearly: the person decides, with the quote in front of them
-      if (TERM_TYPES[tk] === "choice") held.push({ key, label, text: `Claude read “${x.value}”, but the quoted text doesn't clearly say so (p. ${x.q.page}: “${x.q.quote}”). Check the document and choose.` });
+      if (TERM_TYPES[tk] === "choice")
+        held.push({
+          key,
+          label,
+          text: tk === "ipOwner" || tk === "feeBasis" || tk === "feePeriod"
+            ? `Claude read “${x.value}”, but the quoted text doesn't clearly say so (p. ${x.q.page}: “${x.q.quote}”). Check the document and choose.`
+            : `Claude read “${x.value}” from p. ${x.q.page}: “${x.q.quote}”. Options like this are never filled in by AI: check the document and choose.`,
+        });
       continue;
     }
     terms.push({ key: tk, value: x.value });
