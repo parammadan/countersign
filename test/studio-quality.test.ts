@@ -113,3 +113,26 @@ describe("party names in common description formats", () => {
     expect(kept("Northern Harborline Analytics LLC will provide the services.", [["Provider", "Harborline Analytics LLC"]])).toEqual([]);
   });
 });
+
+describe("IP ownership conditions the Consulting template can't express", () => {
+  const run = (desc: string, kind = "consulting") =>
+    cleanSuggestion({ kind, parties: [], terms: [{ key: "ipOwner", value: "Client" }], clarifications: [] }, desc);
+  const flagged = (desc: string, kind = "consulting") => run(desc, kind).clarifications.unsupported.some((u) => u.label === "Ownership only after payment");
+  it("warns when ownership passes only after full payment, and still fills the owner", () => {
+    const desc = "Client owns new project deliverables only after full payment. Consultant retains pre-existing IP and tools.";
+    const s = run(desc);
+    expect(s.terms.ipOwner).toBe("Client");
+    expect(s.clarifications.unsupported.find((u) => u.label === "Ownership only after payment")!.text).toMatch(/won't be in the agreement.*Pre-existing intellectual property and tools are covered/);
+    for (const d of ["Title to the deliverables transfers to the Client upon payment in full.", "Once paid in full, the client owns all work product.", "Deliverables belong to the Client subject to payment of all fees."]) expect(flagged(d), d).toBe(true);
+  });
+  it("says nothing when ownership has no payment condition, or for other templates", () => {
+    expect(flagged("The client owns the deliverables. Payment is due in 30 days.")).toBe(false);
+    expect(flagged("Client owns deliverables only after full payment.", "services")).toBe(false);
+  });
+  it("the template itself keeps pre-existing IP with each party and has no payment condition (what the note says)", async () => {
+    const { TEMPLATES } = await import("@/lib/m23/m23-generate/templates");
+    const ip = TEMPLATES.consulting.clauses.find((c: { id: string }) => c.id === "ip") as { text: string };
+    expect(ip.text).toMatch(/Each party keeps the intellectual property it owned before this Agreement/);
+    expect(ip.text).not.toMatch(/pay/i);
+  });
+});

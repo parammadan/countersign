@@ -348,6 +348,10 @@ export type SuggestionSource = "description" | "document";
 const SOURCE_TEXT: Record<SuggestionSource, string> = { description: "your description", document: "the document" };
 /** A note about a party keeping its own tools / background IP: the consulting template already says that. */
 const PRE_EXISTING_IP = /\b(?:pre-?existing|prior|background|existing)\b[^.]{0,60}\b(?:ip|intellectual property|tools?|materials?|code|software|methods?|templates?)\b|\b(?:keeps?|retains?|owns?)\b[^.]{0,30}\b(?:own|its|their)\b[^.]{0,20}\b(?:ip|intellectual property|tools?|materials?|code|software|methods?|templates?)\b|\b(?:ip|intellectual property|tools?|materials?|code|software|methods?|templates?)\b[^.]{0,30}\b(?:before|already owned)\b/i;
+/** Ownership of the work tied to payment ("owns the deliverables only after full payment", "title passes upon payment in full"). */
+const PAYMENT_CONDITIONED_IP = /\b(?:own|owns|owned|ownership|title|rights?|transfer|transfers|vest|vests|assign|assigns|belong|belongs)\b[^.\n]{0,80}\b(?:after|upon|on|once|until|following|subject to|conditional on|contingent on)\b[^.\n]{0,30}\b(?:payment|paid)\b|\b(?:paid|payment) in full\b[^.\n]{0,80}\b(?:own|owns|ownership|title|rights?|transfer|vest|assign|belong)/i;
+const IP_PAYMENT_NOTE =
+  "The Consulting Agreement gives the work product to the owner you choose with no payment condition, so “only after full payment” won't be in the agreement. Pre-existing intellectual property and tools are covered: each party keeps what it owned before the agreement.";
 /** What happens instead, for something the description states that the template can't include. */
 function insteadText(kind: Kind | null, key: string, said: string, unmatched: boolean, source: SuggestionSource = "description"): string {
   if (!kind) return "None of the templates can include this, so it won't be in the agreement.";
@@ -436,6 +440,11 @@ export function cleanSuggestion(raw: unknown, description: string, o: { source?:
     }
     // "missing" items: worked out from the template below, not taken from the model
   }
+  // a material IP condition the template can't express, flagged whatever the model said: ownership that passes only
+  // once the client has paid ("Client owns the deliverables only after full payment"). The Consulting Agreement's
+  // clause gives the work product to the chosen owner outright, so the condition would otherwise vanish unnoticed.
+  if (kind === "consulting" && PAYMENT_CONDITIONED_IP.test(description) && !unsupported.some((u) => /\bpa(id|yment)\b/i.test(u.text) && /\bown/i.test(u.text)))
+    unsupported.push({ key: "other", label: "Ownership only after payment", text: IP_PAYMENT_NOTE });
 
   const needed: Clarification[] = [];
   const optional: Clarification[] = [];
