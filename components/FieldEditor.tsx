@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PdfPages, pct } from "./PdfPages";
 import { Modal } from "./SignaturePad";
+import { statusAfterSave } from "./fieldEditorSave";
 import { Button, Notice, cx, inputCls } from "./ui";
 import {
   BUILTIN_PREFILL,
@@ -125,7 +126,7 @@ export function FieldEditor({
         setErr(e instanceof TypeError ? "Couldn't reach the server, so your last change isn't saved." : (e as Error).message);
         return false;
       }
-      setSaved("saved");
+      setSaved(statusAfterSave(fs, current.current, true) === "saved" ? "saved" : "dirty");
       setErr(null);
       return true;
     },
