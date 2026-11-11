@@ -18,6 +18,7 @@ describe("every route authenticates or rate limits itself", () => {
     it(r, () => {
       const src = fs.readFileSync(r, "utf8");
       if (r.startsWith("app/api/sign/")) return expect(src).toMatch(/rateLimit\(|limited\(/); // token links: limited per IP
+      if (r.startsWith("app/api/scan/phone/")) return expect(src).toMatch(/phoneLimit\(/); // phone scan: token link, limited per IP and token
       if (PUBLIC_ROUTES.has(r)) return expect(src).toMatch(/rateLimit\(|ok: true/);
       expect(src, "needs sessionOr401 or apiAuth").toMatch(/sessionOr401\(|apiAuth\(/);
       expect(src).toMatch(AUTH);
