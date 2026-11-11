@@ -231,14 +231,17 @@ function datesIn(description: string): Set<string> {
   const out = new Set<string>();
   const d = description.toLowerCase();
   for (const m of d.matchAll(/\b(\d{4})-(\d{2})-(\d{2})\b/g)) out.add(`${m[1]}-${m[2]}-${m[3]}`);
-  const mon = MONTHS.join("|");
+  // full names and the usual abbreviations ("Jan 15, 2027", "15 Sept. 2027")
+  const names: [string, number][] = MONTHS.flatMap((m, i): [string, number][] => [[m, i + 1], [m.slice(0, 3), i + 1], ...(m === "september" ? ([["sept", 9]] as [string, number][]) : [])]);
+  const idx = new Map(names);
+  const mon = [...idx.keys()].sort((a, b) => b.length - a.length).join("|");
   const add = (y: string, mo: string, day: string) => {
-    const n = MONTHS.indexOf(mo) + 1;
+    const n = idx.get(mo) ?? 0;
     const dd = Number(day);
     if (n > 0 && dd >= 1 && dd <= 31) out.add(`${y}-${String(n).padStart(2, "0")}-${String(dd).padStart(2, "0")}`);
   };
-  for (const m of d.matchAll(new RegExp(`\\b(${mon})\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})\\b`, "g"))) add(m[3], m[1], m[2]);
-  for (const m of d.matchAll(new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(${mon}),?\\s+(\\d{4})\\b`, "g"))) add(m[3], m[2], m[1]);
+  for (const m of d.matchAll(new RegExp(`\\b(${mon})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})\\b`, "g"))) add(m[3], m[1], m[2]);
+  for (const m of d.matchAll(new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?(${mon})\\.?,?\\s+(\\d{4})\\b`, "g"))) add(m[3], m[2], m[1]);
   return out;
 }
 
