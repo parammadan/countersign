@@ -512,6 +512,8 @@ export type DraftFallback = "unverified" | "spend_cap" | "hourly_limit" | "provi
 export type DraftLanding = "template" | "model" | "model_unchanged" | "template_fallback";
 
 export async function createDraft(s: SessionLike, input: GenerateInput, model: ModelProvider | null = configuredProvider()) {
+  // the general agreement is part of hybrid drafting: refused outright while it is off, before anything is metered
+  if (!(KINDS as readonly string[]).includes(input?.kind)) return { ok: false as const, status: "invalid" as const, issues: ["That agreement type isn't available."] };
   // the model step is optional: without it (or when it fails) the draft is the template alone, and that is said
   let provider: GenerationProvider | undefined;
   let skipped: DraftFallback | undefined;

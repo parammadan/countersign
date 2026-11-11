@@ -28,6 +28,8 @@ let ready = false;
 const ensure = () => {
   if (!ready) { for (const s of DDL) db().exec(s); ready = true; }
 };
+// reads never create the tables: with the flag off (production) nothing here changes the database
+const present = () => ready || !!db().prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'hybrid_clauses'").get();
 const now = () => new Date().toISOString();
 
 export type HybridRun = { description: string; requirements: Requirement[]; coverage: CoverageItem[]; updatedAt: string };
@@ -35,7 +37,7 @@ export type AiClause = { clauseId: string; requirementIds: string[]; reviewed: b
 
 /** The last run for a draft in this workspace (null when none). */
 export function hybridRun(workspaceId: string, draftId: string): HybridRun | null {
-  ensure();
+  if (!present()) return null;
   const r = db().prepare("SELECT description, requirements_json, coverage_json, updated_at FROM hybrid_runs WHERE draft_id = ? AND workspace_id = ?").get(draftId, workspaceId) as
     | { description: string; requirements_json: string; coverage_json: string; updated_at: string } | undefined;
   if (!r) return null;
@@ -48,10 +50,10 @@ export function hybridRun(workspaceId: string, draftId: string): HybridRun | nul
 
 /** AI-proposed clauses recorded for a draft, limited to the ones still in the given document. */
 export function aiClauses(workspaceId: string, draftId: string, doc: DraftDocument): AiClause[] {
-  ensure();
-  const present = new Set(doc.clauses.map((c) => c.id));
+  if (!present()) return [];
+  const inDoc = new Set(doc.clauses.map((c) => c.id));
   return (db().prepare("SELECT clause_id, requirement_ids_json, reviewed_at FROM hybrid_clauses WHERE draft_id = ? AND workspace_id = ? ORDER BY proposed_at").all(draftId, workspaceId) as { clause_id: string; requirement_ids_json: string; reviewed_at: string | null }[])
-    .filter((r) => present.has(r.clause_id))
+    .filter((r) => inDoc.has(r.clause_id))
     .map((r) => ({ clauseId: r.clause_id, requirementIds: JSON.parse(r.requirement_ids_json), reviewed: !!r.reviewed_at, reviewedAt: r.reviewed_at }));
 }
 
@@ -127,6 +129,7 @@ export async function runHybrid(s: Session, draftId: string, description: string
 
 /** An owner or admin marks an AI-proposed clause as reviewed (it stays editable; the review is recorded). */
 export function reviewAiClause(s: Session, draftId: string, clauseId: string, drafts: Drafts): { ok: true } | { ok: false; message: string } {
+  if (!hybridEnabled()) return { ok: false, message: "Requirement checking isn't switched on for this server." };
   if (s.role === "staff") return { ok: false, message: "Only an owner or admin can review AI-proposed clauses." };
   const g = drafts.getDraft(s as never, draftId);
   if (!g.ok) return { ok: false, message: "That draft wasn't found." };

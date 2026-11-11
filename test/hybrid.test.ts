@@ -95,6 +95,16 @@ describe("the hybrid run and the review gate", () => {
     const c = await svc.createDraft(owner, licence, null);
     if (!c.ok) throw new Error("draft");
     expect(await H.runHybrid(owner, c.draftId, DESC, model, svc)).toMatchObject({ ok: false, code: "off" });
+    // inert while off: no review, no general agreement, and approving touches no hybrid table
+    expect(H.reviewAiClause(owner, c.draftId, "fees", svc)).toMatchObject({ ok: false, message: expect.stringContaining("isn't switched on") });
+    const general = await svc.createDraft(owner, { kind: "general", parties: [{ role: "First Party", name: "A Example LLC" }, { role: "Second Party", name: "B Example LLC" }], terms: { agreementTitle: "Sponsorship Agreement", startDate: "2027-01-01", noticeDays: 30, governingLaw: "New York" } } as never, null);
+    expect(general).toMatchObject({ ok: false, status: "invalid" });
+    const g = svc.getDraft(owner, c.draftId);
+    if (!g.ok) throw new Error("get");
+    expect(svc.submitDraft(owner, c.draftId, g.version.number).ok).toBe(true);
+    await svc.approveDraft(admin, c.draftId, g.version.number);
+    const db = await import("@/lib/db");
+    expect(db.all("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'hybrid_%'")).toEqual([]);
   });
 
   it("proposes a clause for what the template can't state, then blocks approval until an owner or admin reviews it", async () => {
