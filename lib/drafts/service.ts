@@ -15,7 +15,7 @@ import { DRAFTS_DDL_IF_NOT_EXISTS } from "./schema";
 import { draftStore, type ContentCheck } from "./store";
 import { auditLibraryUse, verifyLibraryUse } from "../clauses/app/service";
 import { id as newId, now } from "../util";
-import { generationProvider, generationProviderFrom, GENERATION_LIMITS, type GenerationProvider } from "./provider";
+import { GenerationError, generationProvider, generationProviderFrom, GENERATION_LIMITS, type GenerationProvider } from "./provider";
 import { configuredProvider } from "../ai/anthropic";
 import { aiGate, aiState, estimateUsd, type AiState } from "../ai/budget";
 import type { ModelProvider } from "../understand/model";
@@ -192,10 +192,12 @@ export type Clarifications = { needed: Clarification[]; optional: Clarification[
 export type Suggestion = { kind: Kind | null; parties: { role: string; name: string }[]; terms: Partial<Record<TermKey, string>>; clarifications: Clarifications };
 
 /** Rough costs of one call, for deciding up front (each call is reserved at its real size). */
-const SUGGEST_TYPICAL_USD = estimateUsd(6_000, 1_000);
+// output room: a long description fills many fields and notes; 1,000 tokens cut real answers off (2026-11-11, production)
+const SUGGEST_MAX_OUTPUT_TOKENS = 3_000;
+const SUGGEST_TYPICAL_USD = estimateUsd(6_000, SUGGEST_MAX_OUTPUT_TOKENS);
 const DRAFT_TYPICAL_USD = estimateUsd(10_000, GENERATION_LIMITS.maxOutputTokens);
 
-export type SuggestFailure = "ai_off" | "unverified" | "spend_cap" | "limit" | "invalid" | "failed";
+export type SuggestFailure = "ai_off" | "unverified" | "spend_cap" | "limit" | "invalid" | "failed" | "cut_off" | "timeout" | "busy" | "unavailable";
 
 export async function suggestFromDescription(
   s: SessionLike,
@@ -208,7 +210,7 @@ export async function suggestFromDescription(
   // only for a confirmed workspace and within the server's daily spending limit
   const gate = aiGate("studio_suggest", s.workspaceId, model, SUGGEST_TYPICAL_USD);
   if (!gate.provider) return { ok: false, code: gate.reason ?? "ai_off" };
-  const provider = generationProviderFrom(gate.provider, { maxOutputTokens: 1_000 });
+  const provider = generationProviderFrom(gate.provider, { maxOutputTokens: SUGGEST_MAX_OUTPUT_TOKENS });
   const now = Date.now();
   const hits = (recentSuggest.get(s.workspaceId) ?? []).filter((t) => now - t < 3_600_000);
   if (hits.length >= SUGGEST_PER_HOUR) return { ok: false, code: "limit" };
@@ -216,8 +218,10 @@ export async function suggestFromDescription(
   let raw: unknown;
   try {
     raw = await provider.complete({ system: SUGGEST_SYSTEM, prompt: JSON.stringify({ description: text }), schema: SUGGEST_SCHEMA });
-  } catch {
-    return { ok: false, code: gate.capped() ? "spend_cap" : "failed" };
+  } catch (e) {
+    if (gate.capped()) return { ok: false, code: "spend_cap" };
+    const kind = e instanceof GenerationError ? e.kind : "failed";
+    return { ok: false, code: kind === "cut_off" || kind === "timeout" || kind === "busy" || kind === "unavailable" ? kind : "failed" };
   }
   return { ok: true, suggestion: cleanSuggestion(raw, text) };
 }

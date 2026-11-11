@@ -12,7 +12,7 @@
 // The answer is NOT validated here: the provider is asked to follow the schema, but (as in M2.1 and M2.2) the
 // caller must parse the result with its own zod schema before using it.
 // AI stays off by default: generationProvider() is null unless the server configures a provider.
-import { callModel, LIMITS, type ModelProvider } from "../understand/model";
+import { AnalysisError, callModel, LIMITS, type FailureKind, type ModelProvider } from "../understand/model";
 import { configuredProvider } from "../ai/anthropic";
 
 export type GenerationRequest = { system: string; prompt: string; schema?: unknown };
@@ -48,7 +48,7 @@ export const GENERATION_LIMITS = {
 /** The only error complete() throws; its message is one of the fixed ones below, never provider or prompt text. */
 export class GenerationError extends Error {
   /** what the failed call cost, when the provider reported it before failing */
-  constructor(message: string, readonly usage?: Usage) {
+  constructor(message: string, readonly usage?: Usage, readonly kind: FailureKind = "failed") {
     super(message);
   }
 }
@@ -123,10 +123,10 @@ export function generationProviderFrom(provider: ModelProvider, opts: Generation
           },
           timeoutMs,
         );
-      } catch {
+      } catch (e) {
         // callModel already replaces provider errors with fixed text; this keeps one message for the generator,
-        // with no cause attached
-        throw new GenerationError(MSG.failed, usage);
+        // with no cause attached, only the kind of failure (from the error's type and status)
+        throw new GenerationError(MSG.failed, usage, e instanceof AnalysisError ? e.kind : "failed");
       }
     },
   };

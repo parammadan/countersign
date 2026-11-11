@@ -9,7 +9,11 @@ export const AI_MODEL_DEFAULT = "claude-opus-5-5";
 type Effort = "low" | "medium" | "high";
 
 /** Thrown for a refusal, a cut-off answer or non-JSON output. Never carries provider or document text. */
-export class ProviderError extends Error {}
+export class ProviderError extends Error {
+  constructor(message: string, readonly kind: "refused" | "cut_off" | "unreadable") {
+    super(message);
+  }
+}
 
 export function configuredProvider(env: Record<string, string | undefined> = process.env): ModelProvider | null {
   if (env.AI_PROVIDER !== "anthropic" || !env.ANTHROPIC_API_KEY) return null;
@@ -85,15 +89,15 @@ export function anthropicProvider(o: { apiKey?: string; model: string; effort?: 
         cacheReadTokens: sum("cache_read_input_tokens"),
         model: typeof res.model === "string" ? res.model : undefined,
       });
-      if (res.stop_reason === "refusal") throw new ProviderError("The model declined this request.");
-      if (res.stop_reason === "max_tokens") throw new ProviderError("The answer was cut off.");
+      if (res.stop_reason === "refusal") throw new ProviderError("The model declined this request.", "refused");
+      if (res.stop_reason === "max_tokens") throw new ProviderError("The answer was cut off.", "cut_off");
       // after a server-side fallback, only what follows the last fallback block is the answer
       const last = res.content.map((b) => b.type).lastIndexOf("fallback");
       const text = res.content.slice(last + 1).map((b) => (b.type === "text" ? b.text : "")).join("");
       try {
         return JSON.parse(text);
       } catch {
-        throw new ProviderError("The answer wasn't valid JSON.");
+        throw new ProviderError("The answer wasn't valid JSON.", "unreadable");
       }
     },
   };
