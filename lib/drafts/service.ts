@@ -245,6 +245,20 @@ function datesIn(description: string): Set<string> {
   return out;
 }
 
+/** Amounts written with a k/m suffix ("$12k", "USD 3.5k"), as currency + whole amount: "$12000". */
+function shorthandAmounts(description: string): Set<string> {
+  const out = new Set<string>();
+  for (const m of description.matchAll(/(?<![\p{L}\p{N}])(usd|eur|gbp|cad|[$€£])\s?(\d{1,3}(?:\.\d{1,3})?)\s?([km])(?![\p{L}\p{N}])/giu)) {
+    const [whole, frac = ""] = m[2].split(".");
+    const unit = m[3].toLowerCase() === "k" ? 3 : 6;
+    if (frac.length > unit) continue;
+    const amount = `${whole}${frac.padEnd(unit, "0")}`.replace(/^0+(?=\d)/, "");
+    out.add(`${m[1].toUpperCase()}${amount}`);
+  }
+  return out;
+}
+const moneyKey = (v: string) => v.trim().replace(/^(usd|eur|gbp|cad)\s?/i, (c) => c.trim().toUpperCase()).replace(/,/g, "").replace(/\s/g, "");
+
 /** The name appears in the description as a complete name: not with another capitalised word right before or after it. */
 function wholeName(description: string, name: string): boolean {
   const esc = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
@@ -338,6 +352,7 @@ export function cleanSuggestion(raw: unknown, description: string, o: { source?:
   const r = (typeof raw === "object" && raw !== null && !Array.isArray(raw) ? raw : {}) as Record<string, unknown>;
   const desc = tokens(description);
   const dates = datesIn(description);
+  const shorthand = shorthandAmounts(description);
   const said = (v: string, min = 1) => {
     const t = tokens(v).trim();
     return t.length >= min && v.length <= 200 && desc.includes(` ${t} `);
@@ -362,7 +377,7 @@ export function cleanSuggestion(raw: unknown, description: string, o: { source?:
     const key = t.key as TermKey;
     const choices = own(CHOICES, key) ? CHOICES[key] : undefined;
     const type = TERM_TYPES[key];
-    const ok = choices ? own(choices, t.value) : type === "date" ? dates.has(t.value) : said(t.value);
+    const ok = choices ? own(choices, t.value) : type === "date" ? dates.has(t.value) : said(t.value) || (type === "money" && shorthand.has(moneyKey(t.value)));
     // a stated value this kind has no place for, or a choice none of the options means: say so, never coerce it
     if (ok && (key === "feeBasis" || key === "feePeriod") && !(own(BASIS_CUE, t.value) && BASIS_CUE[t.value].test(basisText(description)))) continue;
     if (!accepts(key)) { if (ok) addUnsupported(key, ""); continue; }

@@ -30,3 +30,17 @@ describe("fee basis is kept only when the description says it about the fee", ()
     expect(run("$5,000 a month, one month's notice", [["feeBasis", "month"]]).terms.feeBasis).toBe("month");
   });
 });
+
+describe("amounts written as shorthand", () => {
+  it("accepts the exact expansion of $12k / USD 3.5k, same currency", () => {
+    expect(run("Flat fee of $12k.", [["fee", "$12,000"]]).terms.fee).toBe("$12,000");
+    expect(run("fee USD 3.5k", [["fee", "USD 3,500"]]).terms.fee).toBe("USD 3,500");
+    expect(run("fee $1.2m", [["fee", "$1,200,000"]]).terms.fee).toBe("$1,200,000");
+  });
+  it("drops any other amount or currency", () => {
+    expect(run("Flat fee of $12k.", [["fee", "$120,000"]]).terms.fee).toBeUndefined();
+    expect(run("Flat fee of $12k.", [["fee", "$12,001"]]).terms.fee).toBeUndefined();
+    expect(run("Flat fee of $12k.", [["fee", "EUR 12,000"]]).terms.fee).toBeUndefined();
+    expect(run("fee $3.5k", [["fee", "$35,000"]]).terms.fee).toBeUndefined();
+  });
+});
