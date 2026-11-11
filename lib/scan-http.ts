@@ -23,9 +23,10 @@ export function scanHandle<A extends unknown[]>(fn: (req: Request, ...a: A) => P
 }
 
 /** The phone routes' own limits: per token and per address, apart from every other route's buckets. */
-export function phoneLimit(req: Request, tok: string) {
+export function phoneLimit(req: Request | Headers, tok: string) {
   const t = typeof tok === "string" ? sha256(tok).slice(0, 32) : "none";
-  if (limited(`scanphone:t:${t}`, 150, 10 * 60_000) || limited(`scanphone:ip:${clientIp(req.headers)}`, 400, 10 * 60_000))
+  const h = req instanceof Headers ? req : req.headers;
+  if (limited(`scanphone:t:${t}`, 150, 10 * 60_000) || limited(`scanphone:ip:${clientIp(h)}`, 400, 10 * 60_000))
     throw new AppError("Too many requests. Wait a minute and try again.", 429);
 }
 
