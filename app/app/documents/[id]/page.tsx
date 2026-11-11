@@ -10,7 +10,7 @@ import { EMAIL_HELP } from "@/lib/email-guidance";
 import { askDocumentAction } from "@/app/intake-actions";
 import { Badge, Card, CardHeader, LinkButton, Notice, PageHeader, timeAgo } from "@/components/ui";
 import { Icon } from "@/components/icons";
-import { DECISION_LABEL, DECISION_TONE, TYPE_LABEL } from "@/components/intake/labels";
+import { DECISION_LABEL, DECISION_TONE, TYPE_LABEL, dateKindLabel, fieldText, reasonText } from "@/components/intake/labels";
 import { DocumentAnalysis } from "@/components/intake/DocumentAnalysis";
 import { AnalyzeButton } from "@/components/intake/AnalyzeButton";
 import { CHAT_EXAMPLES, DOC_AI_COPY, DOC_AI_UNAVAILABLE } from "@/components/intake/ai-copy";
@@ -47,6 +47,8 @@ const CHAT_ERRORS: Record<string, string> = {
   limit: `This workspace has reached today's question limit (${QA_DAILY.model} with the AI assistant, ${QA_DAILY.passages} without). Try again tomorrow.`,
   thread: "That conversation wasn't found, or it isn't yours to continue. Start a new one.",
   no_text: DOC_AI_UNAVAILABLE.no_text,
+  empty: DOC_AI_UNAVAILABLE.empty,
+  all_quarantined: DOC_AI_UNAVAILABLE.all_quarantined,
   failed: "Something went wrong. Try again.",
 };
 
@@ -69,7 +71,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const turns = threadId ? documentConversation(s, result.id, threadId) : [];
   const mine = turns.length > 0 && turns[0].askedById === s.userId;
   const others = documentConversations(s, result.id).filter((t) => t.id !== threadId);
-  const canChat = ai.available || (ai.reason !== "no_text");
+  const canChat = ai.available || !["no_text", "empty", "all_quarantined"].includes(ai.reason);
   const verifyHelp = !ai.available && ai.reason === "unverified" && verificationRequired();
   return (
     <>
@@ -84,11 +86,10 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         <CardHeader
           title={<span id="ai-analysis" className="flex items-center gap-2"><Icon name="spark" size={18} className="text-brand" />AI analysis</span>}
           description="Claude reads this document and explains it in plain English. Every point quotes the text it relies on; a point whose quote isn't in the document is removed."
-          action={latest && ai.available ? <AnalyzeButton intakeId={result.id} again /> : undefined}
         />
         {aiError && <div className="px-5 pt-4"><Notice tone="warn">{aiError}</Notice></div>}
         {latest ? (
-          <DocumentAnalysis analysis={latest.analysis} createdAt={latest.createdAt} />
+          <DocumentAnalysis analysis={latest.analysis} createdAt={latest.createdAt} action={ai.available ? <AnalyzeButton intakeId={result.id} again /> : undefined} />
         ) : ai.available ? (
           <div className="px-5 py-5">
             <p className="mb-3 text-sm text-ink-2">Get a plain-English summary, the key terms with their quotes, and what&apos;s worth checking.</p>
@@ -115,7 +116,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         <div className="space-y-4 px-5 py-4">
           {q.chat_error && <Notice tone="error">{Object.hasOwn(CHAT_ERRORS, q.chat_error) ? CHAT_ERRORS[q.chat_error] : CHAT_ERRORS.failed}</Notice>}
           {!canChat ? (
-            <p className="text-sm text-muted">{DOC_AI_UNAVAILABLE.no_text}</p>
+            <p className="text-sm text-muted">{DOC_AI_UNAVAILABLE[ai.available ? "no_text" : ai.reason]}</p>
           ) : (
             <>
               {!ai.available && <p className="text-[13px] text-muted">{DOC_AI_UNAVAILABLE[ai.reason]} You&apos;ll see the most relevant passages instead of an AI answer.</p>}
@@ -161,10 +162,10 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         {decision === "needs_review" && (
           <Notice tone="warn">
             A person needs to review this document before anything is prepared:
-            <ul className="mt-1 list-disc pl-5">{r.routing.reasons.map((x) => <li key={x}>{x}</li>)}</ul>
+            <ul className="mt-1 list-disc pl-5">{r.routing.reasons.map((x) => <li key={x}>{reasonText(x)}</li>)}</ul>
           </Notice>
         )}
-        {decision === "unsupported" && <Notice tone="info">{r.routing.reasons.join("; ")}. Nothing can be prepared from it.</Notice>}
+        {decision === "unsupported" && <Notice tone="info">{r.routing.reasons.map(reasonText).join("; ")}. Nothing can be prepared from it.</Notice>}
         {result.draft_id && (
           <Notice tone="info">
             A draft was started from this document {timeAgo(result.confirmed_at)} after the values were confirmed: <Link className="underline" href={`/app/studio/${result.draft_id}`}>open the draft</Link>.
@@ -200,7 +201,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         </Card>
       )}
 
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 [&>*]:min-w-0">
         <Card>
           <CardHeader title="Classification" description={r.documentType.ambiguous ? "Ambiguous between candidates." : `Decided by ${r.documentType.decidedBy}.`} />
           <Rows rows={r.documentType.reasons.map((x) => ({ label: "Why", value: x.text, source: x.source }))} />
@@ -214,7 +215,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         </Card>
         <Card>
           <CardHeader title="Dates" />
-          <Rows rows={r.dates.map((d) => ({ label: d.value.kind, value: d.value.iso, source: d.source }))} />
+          <Rows rows={r.dates.map((d) => ({ label: dateKindLabel(d.value.kind), value: d.value.iso, source: d.source }))} />
         </Card>
         <Card>
           <CardHeader title="Amounts" />
@@ -230,8 +231,8 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         <Card>
           <CardHeader title="Conflicts, missing values and warnings" />
           <Rows rows={[
-            ...r.conflicts.map((c) => ({ label: `Conflict: ${c.field}`, value: c.values.map((v) => v.value).join(" vs ") })),
-            ...r.missing.map((m) => ({ label: "Missing", value: m })),
+            ...r.conflicts.map((c) => ({ label: `Conflict: ${fieldText(c.field)}`, value: c.values.map((v) => v.value).join(" vs ") })),
+            ...r.missing.map((m) => ({ label: "Missing", value: fieldText(m) })),
             ...r.warnings.map((w) => ({ label: "Warning", value: w })),
           ]} />
         </Card>

@@ -31,6 +31,8 @@ export const DOC_AI_UNAVAILABLE: Record<DocAiReason, string> = {
   spend_cap: "The AI assistant has reached today's spending limit, so documents are read by rules only until it resets.",
   no_text: "This document was read before AI analysis was available. Read it again to analyze it with AI.",
   scan_incomplete: "This document couldn't be fully checked for hidden instructions aimed at an AI, so it isn't sent to AI.",
+  empty: "This document has no text we can read (it may be a scanned image), so there is nothing to analyze or ask about. Upload a PDF with selectable text, or paste the text.",
+  all_quarantined: "All of this document's text was set aside as possible instructions to an AI, so it can't be analysed.",
 };
 
 export const CHAT_EXAMPLES = [

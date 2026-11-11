@@ -2,6 +2,7 @@
 // the key terms by topic (each with the quote that supports it), what's worth checking (missing / unclear /
 // conflicting), and where Claude's reading and the rules' reading disagree. Display only: what is shown, dropped or
 // marked unconfirmed was decided on the server.
+import type { ReactNode } from "react";
 import { Badge, timeAgo } from "@/components/ui";
 import { Icon } from "@/components/icons";
 import { CHECK_KINDS, TOPICS, TOPIC_LABEL, type Cite, type CheckKind, type DocAnalysis, type DocFinding } from "@/lib/intake/ai";
@@ -31,17 +32,16 @@ export function Quotes({ cites, label = "Where the document says it" }: { cites:
   );
 }
 
+/** One key term: its label and status on one line, the value below it (left-aligned, so a long value reads as text). */
 function Finding({ f }: { f: DocFinding }) {
   const st = STATUS[f.status];
   return (
     <li className="py-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <span className="text-[13px] text-muted">{f.label}</span>
-        <span className="flex items-center gap-2">
-          {f.value && <span className="text-right text-[14px] font-medium break-words text-ink">{f.value}</span>}
-          <Badge tone={st.tone} icon={st.icon}>{st.label}</Badge>
-        </span>
+      <div className="flex items-center justify-between gap-3">
+        <span className="min-w-0 text-[13px] text-muted">{f.label}</span>
+        <Badge tone={st.tone} icon={st.icon} className="shrink-0">{st.label}</Badge>
       </div>
+      {f.value && <p className="mt-0.5 text-[14px] font-medium break-words text-ink">{f.value}</p>}
       {f.explanation && <p className="mt-1 text-[13px] leading-relaxed text-ink-2">{f.explanation}</p>}
       {f.note && <p className="mt-1 text-[12px] text-warn">{f.note}</p>}
       <Quotes cites={f.evidence} />
@@ -49,7 +49,8 @@ function Finding({ f }: { f: DocFinding }) {
   );
 }
 
-export function DocumentAnalysis({ analysis: a, createdAt }: { analysis: DocAnalysis; createdAt: string }) {
+/** `action`: shown in the analysis's own header row (e.g. "Analyze again"), where it has room at any width. */
+export function DocumentAnalysis({ analysis: a, createdAt, action }: { analysis: DocAnalysis; createdAt: string; action?: ReactNode }) {
   const topics = TOPICS.filter((t) => a.findings.some((f) => f.topic === t));
   return (
     <div className="divide-y divide-line">
@@ -57,6 +58,7 @@ export function DocumentAnalysis({ analysis: a, createdAt }: { analysis: DocAnal
         <Badge tone="brand" icon="spark">Claude ({a.model})</Badge>
         <span>Analyzed {timeAgo(createdAt)} · every point checked against the document&apos;s text</span>
         <Badge tone="neutral" icon="info">{DOC_AI_COPY.disclaimer}</Badge>
+        {action && <div className="w-full sm:ml-auto sm:w-auto">{action}</div>}
       </div>
 
       <section aria-labelledby="ai-summary" className="px-5 py-4">
@@ -105,7 +107,7 @@ export function DocumentAnalysis({ analysis: a, createdAt }: { analysis: DocAnal
       <section aria-labelledby="ai-terms" className="px-5 py-4">
         <h3 id="ai-terms" className="text-xs font-semibold tracking-wide text-muted uppercase">Key terms</h3>
         {topics.length ? (
-          <div className="mt-1 grid gap-x-8 md:grid-cols-2">
+          <div className="mt-1 grid grid-cols-1 gap-x-8 md:grid-cols-2">
             {topics.map((t) => (
               <div key={t} className="min-w-0">
                 <h4 className="mt-3 text-[13px] font-semibold text-ink">{TOPIC_LABEL[t]}</h4>

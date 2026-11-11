@@ -28,7 +28,8 @@ export const M3_PER_USER_PER_MINUTE = QA_PER_USER_PER_MINUTE;
 export const M3_TYPICAL_USD = estimateUsd(M3_LIMITS.maxContextChars + 2_000, M3_LIMITS.maxOutputTokens);
 
 export type Principal = Pick<Session, "userId" | "userEmail" | "workspaceId" | "role">;
-export type M3Entry = { id: string; question: string; result: M3Result; askedBy: string; createdAt: string };
+/** `stale`: an agreement the answer cites has since been archived or has a newer version than the one quoted. */
+export type M3Entry = { id: string; question: string; result: M3Result; askedBy: string; createdAt: string; stale: boolean };
 
 /** The security layer's user, from the session only: one membership, in the session's workspace, with its role. */
 export function principalOf(s: Principal): User {
@@ -199,26 +200,41 @@ export async function askAcrossAgreements(s: Principal, rawQuestion: string, pro
  * them, and every agreement it names as ignored, is re-checked against the viewer's access now; an entry that
  * touches any agreement the viewer can't read is left out entirely (question included).
  */
-export function recentQuestions(viewer: Principal, limit = 20): M3Entry[] {
+export function recentQuestions(viewer: Principal, limit = 20, offset = 0): M3Entry[] {
   appIndex();
   const readable = new Map<string, boolean>();
   const can = (documentId: string) => {
     if (!readable.has(documentId)) readable.set(documentId, viewerCanRead(viewer, documentId));
     return readable.get(documentId)!;
   };
+  const current = new Map(workspaceAgreements(viewer.workspaceId).map((d) => [d.templateId, d.versionId]));
   const out: M3Entry[] = [];
-  for (const r of all<{ id: string; question: string; result_json: string; asked_by: string; created_at: string }>(
-    "SELECT id, question, result_json, asked_by, created_at FROM m3_questions WHERE workspace_id = ? AND mode IN ('passages', 'model', 'model_failed') ORDER BY created_at DESC, rowid DESC LIMIT ?",
-    viewer.workspaceId,
-    limit * 5,
-  )) {
-    const result = JSON.parse(r.result_json) as M3Result;
-    // every agreement the answer was built from (all retrieved evidence, whatever went to the model), not only the
-    // ones it cites; entries stored before `sources` existed fall back to what they show
-    const docs = [...(result.sources ?? []), ...(result.citations ?? []).map((c) => c.documentId), ...(result.flagged ?? []).map((c) => c.documentId), ...(result.ignored ?? []).map((x) => x.documentId)];
-    if (docs.some((d) => typeof d !== "string" || !can(d))) continue;
-    out.push({ id: r.id, question: r.question, result, askedBy: r.asked_by, createdAt: r.created_at });
-    if (out.length >= limit) break;
+  let skip = Math.max(0, Math.floor(offset));
+  // page through the stored questions in chunks, so entries hidden from this viewer never starve the page or shift it
+  const CHUNK = 100;
+  for (let at = 0; out.length < limit; at += CHUNK) {
+    const rows = all<{ id: string; question: string; result_json: string; asked_by: string; created_at: string }>(
+      "SELECT id, question, result_json, asked_by, created_at FROM m3_questions WHERE workspace_id = ? AND mode IN ('passages', 'model', 'model_failed') ORDER BY created_at DESC, rowid DESC LIMIT ? OFFSET ?",
+      viewer.workspaceId,
+      CHUNK,
+      at,
+    );
+    for (const r of rows) {
+      const result = JSON.parse(r.result_json) as M3Result;
+      // every agreement the answer was built from (all retrieved evidence, whatever went to the model), not only the
+      // ones it cites; entries stored before `sources` existed fall back to what they show
+      const shown = [...(result.citations ?? []), ...(result.flagged ?? [])];
+      const docs = [...(result.sources ?? []), ...shown.map((c) => c.documentId), ...(result.ignored ?? []).map((x) => x.documentId)];
+      if (docs.some((d) => typeof d !== "string" || !can(d))) continue;
+      if (skip > 0) {
+        skip--;
+        continue;
+      }
+      const stale = shown.some((c) => current.get(c.documentId) !== c.versionId);
+      out.push({ id: r.id, question: r.question, result, askedBy: r.asked_by, createdAt: r.created_at, stale });
+      if (out.length >= limit) break;
+    }
+    if (rows.length < CHUNK) break;
   }
   return out;
 }

@@ -15,6 +15,7 @@ import type { FileRow, Template, TemplateVersion, Workspace } from "./types";
 
 import { AppError } from "./errors";
 import { assertCanSendTo } from "./emailverify";
+import { assertInviteCap } from "./sendcap";
 import { BRAND } from "./brand";
 export { AppError };
 
@@ -99,7 +100,10 @@ const DAILY_FILE_CAP = Number(process.env.DAILY_FILE_CAP || 300);
 export async function createFile(ws: Workspace, input: NewFile, actor: Actor, ctx: Ctx, send = true): Promise<FileRow> {
   const today = one<{ n: number }>("SELECT COUNT(*) n FROM files WHERE workspace_id = ? AND created_at > ?", ws.id, new Date(Date.now() - 86400_000).toISOString())?.n ?? 0;
   if (today >= DAILY_FILE_CAP) throw new AppError(`This workspace has opened ${DAILY_FILE_CAP} files in the last 24 hours, the current limit. Contact support to raise it.`, 429);
-  if (send) assertCanSendTo(ws.id, input.clientEmail);
+  if (send) {
+    assertCanSendTo(ws.id, input.clientEmail);
+    assertInviteCap(ws.id); // before the file exists: a refused create-and-send leaves nothing behind
+  }
   const { template, version } = resolveTemplate(ws.id, input.templateId);
   assertPrintableFile(input, ws, template, version);
   if (input.ref && one("SELECT 1 FROM files WHERE workspace_id = ? AND ref = ? AND status NOT IN ('voided','declined')", ws.id, input.ref)) {
@@ -217,6 +221,7 @@ export async function sendFile(f: FileRow, ws: Workspace, kind: "invite" | "rese
   if (["completed", "voided", "signed"].includes(f.status)) throw new AppError(`This file is ${f.status}; it can't be sent again.`, 409);
   if (f.status === "declined" && kind !== "resend") throw new AppError("This file was declined. Use Send again.", 409);
   assertCanSendTo(ws.id, f.client_email);
+  if (kind !== "reminder") assertInviteCap(ws.id); // reminders are exempt (see lib/sendcap.ts)
   // the link first (the token never changes): if it can't be built, e.g. APP_SECRET missing or changed, nothing is
   // marked sent and nothing is emailed
   const link = signingLink(f);
@@ -307,9 +312,12 @@ export function loadByToken(tok: string) {
 
 export function expireIfDue(f: FileRow, ws: Workspace): FileRow {
   if ((f.status === "sent" || f.status === "viewed") && f.expires_at && f.expires_at < now()) {
-    run("UPDATE files SET status = 'expired' WHERE id = ? AND status IN ('sent','viewed')", f.id);
-    audit(ws.id, f.id, "file.expired", "system");
+    const u = run("UPDATE files SET status = 'expired' WHERE id = ? AND status IN ('sent','viewed')", f.id);
     const nf = getFile(ws.id, f.id);
+    // the row we were handed can be stale (the worker holds one across awaits): if the file was signed, voided or
+    // expired by someone else meanwhile, nothing changed here, so nothing is logged or announced
+    if (Number(u.changes) !== 1) return nf;
+    audit(ws.id, f.id, "file.expired", "system");
     emit(ws.id, "file.expired", fileJson(nf));
     return nf;
   }

@@ -50,11 +50,28 @@ export const VOICE_COPY = {
   done: "Added to the box above — check it, then press Fill details with AI",
   truncated: "Some of what you said didn't fit: the box holds up to 4,000 characters, so the rest was left out.",
   autoStopped: "Stopped after 60 seconds.",
+  /** a later run failed after earlier ones heard something: {reason} is one of `reasons` */
+  stoppedEarly: "Voice input stopped early: {reason}. What was heard before it stopped was added.",
+  reasons: {
+    "not-allowed": "microphone access was blocked",
+    "service-not-allowed": "speech recognition was turned off on this device",
+    "language-not-supported": "your browser's language isn't supported",
+    "no-speech": "no more speech was heard",
+    "audio-capture": "the microphone stopped working",
+    network: "your browser's speech service couldn't be reached",
+    aborted: "it was interrupted",
+    other: "something went wrong",
+  },
   unsupported: "Voice input isn't supported in this browser — type instead.",
   privacy: "Your browser may send your voice to its maker's speech service (for example Google, in Chrome) to turn it into text. AgreementOS never receives audio, only the text you choose to send.",
   heard: "Heard so far",
+  /** shown instead of the button when the browser says the microphone is blocked for this site */
+  blocked: "Microphone access is blocked for this site. Allow it in your browser's site settings to speak instead, or type.",
   errors: {
     "not-allowed": "Microphone access was blocked. Allow it in your browser's site settings, or type instead.",
+    // Safari with Siri / Dictation turned off (or speech recognition blocked on the device)
+    "service-not-allowed": "Speech recognition is turned off on this device. Turn on Dictation in your device settings, or type instead.",
+    "language-not-supported": "Voice input doesn't support your browser's language yet. Change the language in your browser settings, or type instead.",
     "no-speech": "No speech was heard. Check your microphone and try again, or type instead.",
     "audio-capture": "No microphone was found. Connect one and try again, or type instead.",
     network: "Your browser's speech service couldn't be reached. Check your connection and try again, or type instead.",

@@ -5,10 +5,12 @@ import { getSession } from "@/lib/auth";
 import { LinkButton, Logo, cx } from "@/components/ui";
 import { Icon } from "@/components/icons";
 import { BRAND } from "@/lib/brand";
+import { MobileMenu, type MenuItem } from "@/components/landing/MobileMenu";
 import {
   CLAUSES,
   CTA,
   DOC_INTEL,
+  FEATURES,
   FEATURES_INTRO,
   FOOTER,
   HERO,
@@ -99,7 +101,18 @@ function FeatureText({ f, dark, points = true, children, className }: { f: Featu
   );
 }
 
-// Server component, no client JS. Signed-in visitors see "Open app" instead of the sign-up and sign-in buttons; "/"
+/** The phone menu: every section, the verify page, and the account links the header has no room for. */
+function menuItems(signedIn: boolean): MenuItem[] {
+  return [
+    { href: "#features", label: NAV.features },
+    ...FEATURES.map((f) => ({ href: `#${f.id}`, label: f.eyebrow })),
+    { href: "#how-it-works", label: NAV.how },
+    { href: "/verify", label: NAV.verify },
+    ...(signedIn ? [{ href: "/app", label: NAV.openApp, primary: true }] : [{ href: "/signup", label: NAV.create, primary: true }]),
+  ];
+}
+
+// Server component; the only client JS is the phone menu. Signed-in visitors see "Open app" instead of the sign-up and sign-in buttons; "/"
 // itself never redirects.
 export default async function Home() {
   const s = await getSession();
@@ -127,12 +140,11 @@ export default async function Home() {
             ) : (
               <>
                 <Link href="/login" className={navLink}>{NAV.signIn}</Link>
-                {/* phones: a compact button, and none below 380px (the hero's is just below) */}
-                <span className="ml-1 hidden min-[380px]:inline-flex sm:ml-1.5">
-                  <LinkButton href="/signup" size="sm" className="sm:h-9 sm:gap-2 sm:rounded-lg sm:px-3.5 sm:text-sm">{NAV.create}</LinkButton>
-                </span>
+                {/* phones: in the menu instead (and the hero's button is just below) */}
+                <span className="ml-1.5 hidden sm:inline-flex"><LinkButton href="/signup">{NAV.create}</LinkButton></span>
               </>
             )}
+            <MobileMenu items={menuItems(!!s)} />
           </nav>
         </div>
       </header>
@@ -182,6 +194,14 @@ export default async function Home() {
             <Eyebrow>{FEATURES_INTRO.eyebrow}</Eyebrow>
             <h2 id="features-heading" className="mx-auto mt-4 max-w-3xl text-[2rem] leading-[1.1] font-semibold tracking-[-0.03em] text-balance text-ink sm:text-5xl">{FEATURES_INTRO.title}</h2>
             <p className="mx-auto mt-5 max-w-2xl text-[17px] leading-relaxed text-ink-2">{FEATURES_INTRO.text}</p>
+            <nav aria-label="Features" className="mx-auto mt-8 flex max-w-3xl flex-wrap justify-center gap-2">
+              {FEATURES.map((f) => (
+                <a key={f.id} href={`#${f.id}`} className="inline-flex items-center gap-2 rounded-full border border-line bg-white px-3.5 py-1.5 text-[13.5px] font-medium text-ink-2 shadow-1 transition-colors hover:border-brand/40 hover:text-ink">
+                  <Icon name={f.icon} size={15} className="text-brand" />
+                  {f.eyebrow}
+                </a>
+              ))}
+            </nav>
           </div>
 
           {/* Agreement Studio: text left, the draft under review right */}

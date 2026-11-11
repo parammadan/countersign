@@ -129,15 +129,15 @@ export const PHONE_SIGN = {
  * Phone document scanning in the agreement upload. Not shipped yet: false keeps every mention of it off the page.
  * Flip it when "Scan with phone" is live, and check the wording against the shipped feature.
  */
-export const PHONE_SCAN = false;
+export const PHONE_SCAN = true;
 export const PHONE_SCAN_COPY = {
   label: "Scan with phone",
   text: "Only have it on paper? Open a QR code on your computer, photograph the pages with your phone, and they arrive as a PDF in the agreement upload, ready for the field editor.",
 } as const;
 
 /**
- * Voice input in Agreement Studio. Being built: false keeps every mention of it off the page. Flip it when it ships,
- * and check the wording against the shipped feature.
+ * Voice input in Agreement Studio (live: the description box takes dictation, and nothing goes to Claude until the
+ * person stops and checks it). false keeps every mention of it off the page.
  */
 export const VOICE_INPUT = true;
 export const VOICE_INPUT_COPY = {
@@ -177,7 +177,7 @@ export const HOW = {
 
 export const CTA = {
   title: "Your next agreement starts here.",
-  text: "Create a workspace and try it with your own agreements. AI features need a confirmed email address; uploading, signing and the verify page work right away.",
+  text: "Create a workspace and try it with your own agreements. AI features and sending to clients need a confirmed email address; uploading your agreement, test sends to your team and the verify page work right away.",
 } as const;
 
 export const FOOTER = {
