@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Notice, cx } from "./ui";
 import { Icon } from "./icons";
+import { ScanWithPhone } from "./scan/ScanWithPhone";
 
 // Same rules the server enforces (lib/convert.ts, app/api/agreements/upload), checked first so a wrong file
 // fails in a second instead of after the upload.
@@ -163,9 +164,11 @@ export function UploadAgreement({ templateId, compact }: { templateId?: string; 
             </span>
             <p className="mt-3 font-medium">{over ? "Drop to upload" : "Drag your agreement here"}</p>
             <p className="mt-1 text-sm text-muted">PDF or Word (.docx, .doc, .odt, .rtf), up to {MAX_MB} MB. We find where everyone signs, and you check it.</p>
-            <Button className="mt-4" onClick={() => input.current?.click()}>
-              Choose file
-            </Button>
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+              <Button onClick={() => input.current?.click()}>Choose file</Button>
+              {/* a paper agreement: photograph it with a phone instead (new agreements only, desktop widths) */}
+              {!templateId && <ScanWithPhone />}
+            </div>
             {!templateId && (
               <button
                 type="button"
