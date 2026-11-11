@@ -195,11 +195,12 @@ describe("landing page", () => {
       expect(text(fig)).toContain("Scan with your phone's camera. You'll sign there; this page updates when you're done.");
     });
 
-    it("phone scanning and voice input (both shipped) are each shown once", async () => {
-      expect(PHONE_SCAN).toBe(true);
+    it("voice input is shown once; phone scanning stays off the page until it passes a real-phone test", async () => {
+      expect(PHONE_SCAN).toBe(false);
       expect(VOICE_INPUT).toBe(true);
       const t = text(await render());
-      expect(t.split(PHONE_SCAN_COPY.text)).toHaveLength(2);
+      expect(t).not.toContain(PHONE_SCAN_COPY.text);
+      expect(t).not.toContain(PHONE_SCAN_COPY.label);
       expect(t.split(VOICE_INPUT_COPY.text)).toHaveLength(2);
     });
 
