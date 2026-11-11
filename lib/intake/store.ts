@@ -200,6 +200,15 @@ export function threadQuestions(wsId: string, intakeId: string, threadId: string
   );
 }
 
+/** The latest `n` finished turns of a conversation, oldest first (the context a follow-up is answered with). */
+export function latestTurns(wsId: string, intakeId: string, threadId: string, n: number): QuestionRow[] {
+  ensureIntakeSchema();
+  return all<QuestionRow>(
+    `SELECT ${Q_COLS} FROM intake_questions WHERE workspace_id = ? AND intake_id = ? AND thread_id = ? AND mode IN ${DONE} ORDER BY created_at DESC, rowid DESC LIMIT ?`,
+    wsId, intakeId, threadId, n,
+  ).reverse();
+}
+
 /** Conversations about a document, most recent first: first question, turns, who asked, when. */
 export function threadsOf(wsId: string, intakeId: string, limit = 10): { id: string; first: string; turns: number; asked_email: string; last_at: string }[] {
   ensureIntakeSchema();

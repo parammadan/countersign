@@ -22,7 +22,7 @@ import { cleanQuestion, QA_LIMITS, type QaResult, type Turn } from "../qa/answer
 import { answerPages, QA_DAILY, QA_PER_USER_PER_MINUTE } from "../qa/store";
 import { analyzeDocumentWithModel, DOC_LIMITS } from "./ai";
 import { getIntake, latestDocAnalysis, type SessionLike } from "./service";
-import { analysesSince, finishQuestion, getModelPages, insertAnalysis, insertQuestion, ownThread, questionsSince, threadQuestions, threadsOf } from "./store";
+import { analysesSince, finishQuestion, getModelPages, insertAnalysis, insertQuestion, latestTurns, ownThread, questionsSince, threadQuestions, threadsOf } from "./store";
 
 /** A rough cost of one analysis, for deciding up front (each call is reserved at its real size). */
 export const DOC_TYPICAL_USD = estimateUsd(20_000, DOC_LIMITS.maxOutputTokens);
@@ -180,15 +180,14 @@ export async function askIntakeQuestion(
   if (!accepted) return { ok: false, code: "limit" };
 
   const turns: Turn[] = threadId
-    ? threadQuestions(ws, docId, threadId)
-        .slice(-QA_LIMITS.maxHistoryTurns)
-        .map((r) => {
-          const res = JSON.parse(r.result_json) as QaResult;
-          return { question: r.question, answer: res.status === "not_found" ? "Not found in the agreement." : res.answer };
-        })
+    ? latestTurns(ws, docId, threadId, QA_LIMITS.maxHistoryTurns).map((r) => {
+        const res = JSON.parse(r.result_json) as QaResult;
+        return { question: r.question, answer: res.status === "not_found" ? "Not found in the agreement." : res.answer };
+      })
     : [];
   try {
-    const a = await answerPages({ provider: answerer, verifier: checker, question, pages: linesFromText(text.pages), turns, title: g.result.filename ?? "Document", notes });
+    // a generic title: the uploaded file name is the user's text, not the document's, and isn't sent to the model
+    const a = await answerPages({ provider: answerer, verifier: checker, question, pages: linesFromText(text.pages), turns, title: "Document", notes });
     // the limit was reached during the call: say so, not "couldn't answer"
     if (a.mode === "model_failed" && capped()) a.result.warnings = a.result.warnings.map((w) => (FAILED_NOTE.test(w) ? NOTE.spendCap : w));
     finishQuestion(ws, qid, a.mode, a.result);
