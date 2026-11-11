@@ -4,7 +4,7 @@
 import http from "node:http";
 
 export const MOCK_PORT = 2527;
-export type Seen = { apiKey: string | undefined; beta: string | undefined; cached: boolean; question: string; earlierTurns: boolean; /** the second call, which judges an answer */ verifier: boolean };
+export type Seen = { apiKey: string | undefined; beta: string | undefined; cached: boolean; question: string; earlierTurns: boolean; /** the second call, which judges an answer */ verifier: boolean; /** the request's system prompt (which feature is calling) */ system: string };
 
 type Passage = { id: string; text: string };
 export type Script = (q: string, ps: Passage[], seen: Seen) => { status?: number; answer?: Record<string, unknown> };
@@ -30,7 +30,7 @@ export function startMockAnthropic(script: Script, verify: VerifyScript = approv
       // (the Knowledge Hub also names each passage's agreement)
       // the new question is the last one; earlier turns carry their own <question> tags
       const question = [...text.matchAll(/<question>([\s\S]*?)<\/question>/g)].at(-1)?.[1] ?? "";
-      const s: Seen = { apiKey: (req.headers["x-api-key"] as string | undefined) ?? (req.headers.authorization?.replace(/^Bearer\s+/i, "") || undefined), beta: req.headers["anthropic-beta"] as string | undefined, cached: blocks.some((x) => typeof x === "object" && "cache_control" in x && !!x.cache_control), question, earlierTurns: text.includes("<earlier_turns>"), verifier: isVerifier };
+      const s: Seen = { apiKey: (req.headers["x-api-key"] as string | undefined) ?? (req.headers.authorization?.replace(/^Bearer\s+/i, "") || undefined), beta: req.headers["anthropic-beta"] as string | undefined, cached: blocks.some((x) => typeof x === "object" && "cache_control" in x && !!x.cache_control), question, earlierTurns: text.includes("<earlier_turns>"), verifier: isVerifier, system: String(b.system ?? "") };
       seen.push(s);
       // the answer under review: its text, explanation, calculations and notes (the app writes ‹ › for < >)
       // the last <answer> block (earlier turns carry their own)
