@@ -174,6 +174,9 @@ export const SUGGEST_SYSTEM = [
     "Agreement says each party keeps the intellectual property it owned before the agreement, so \"the Consultant keeps",
     "its pre-existing IP\" is already covered; ipOwner only says who owns what the Consultant creates under it.",
   ].join(" "),
+  ...(KINDS.includes("general" as Kind)
+    ? ["Choose general when no specific template can state the agreement faithfully: an agreement type not listed, or one a listed template would misstate (for example a mutual NDA, which the one-way nda template can't express). Never squeeze an agreement into the wrong template. For general, the parties are First Party and Second Party, and agreementTitle is the agreement's name."]
+    : []),
   "Kinds (* = required term; the others are optional):",
   ...kindSpecs().map((k) => `- ${k.kind}: ${k.title}; parties ${k.roles.join(" and ")}; terms ${k.terms.map((t) => `${t.key}${t.required ? "*" : ""}`).join(", ")}.`),
   "Terms:",
