@@ -153,7 +153,7 @@ export const DEMO = {
   text: "A 2½-minute recording of the live product with real Claude: uploading an agreement, Agreement Studio, Document Intelligence, the Knowledge Hub, sending for signature, signing on a phone and verifying the sealed PDF. A fictional firm and synthetic agreements throughout.",
   videoId: "EdTB5sEdRFU",
   length: "2:33",
-  playLabel: "Play the AgreementOS demo video (2 minutes 33 seconds, opens the YouTube player)",
+  playLabel: "Play the AgreementOS demo video, 2:33",
   iframeTitle: "AgreementOS demo video",
   watchOnYouTube: "Watch on YouTube",
 } as const;
