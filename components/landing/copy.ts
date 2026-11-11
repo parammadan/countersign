@@ -55,7 +55,7 @@ export const STUDIO: Feature = {
  * Document Intelligence's wording. The deployed version reads documents with rules only; an AI version is being built
  * separately. Flip this one flag when it ships, and the landing page's section, badge and preview change together.
  */
-export const DOC_INTEL_AI = false;
+export const DOC_INTEL_AI = true;
 
 export const DOC_INTEL_COPY = {
   rules: {

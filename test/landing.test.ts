@@ -123,18 +123,14 @@ describe("landing page", () => {
       expect(h).not.toMatch(DRAFTING);
     });
 
-    it("Document Intelligence follows its one flag: rules-only now, AI wording ready", async () => {
+    it("Document Intelligence follows its one flag: the AI version is live", async () => {
       const h = text(await render());
-      expect(DOC_INTEL_AI).toBe(false);
-      expect(DOC_INTEL).toBe(DOC_INTEL_COPY.rules);
-      expect(h).toContain(DOC_INTEL_COPY.rules.text);
-      expect(h).toContain("Rules only: no AI");
-      expect(h).toContain("Read by rules only: no AI is involved.");
-      expect(h).toMatch(/quarantined/i);
-      expect(h).toMatch(/pre-filled Agreement Studio draft/);
-      expect(h).not.toContain(DOC_INTEL_COPY.ai.text);
-      expect(h).not.toMatch(/AI summary/);
-      // the AI wording, for when it ships: summary, cited key terms, chat with one document, not legal advice
+      expect(DOC_INTEL_AI).toBe(true);
+      expect(DOC_INTEL).toBe(DOC_INTEL_COPY.ai);
+      expect(h).toContain(DOC_INTEL_COPY.ai.text);
+      expect(h).not.toContain("Rules only: no AI");
+      expect(h).toMatch(/AI summary/);
+      // the AI wording: summary, cited key terms, chat with one document, not legal advice
       const ai = [DOC_INTEL_COPY.ai.text, ...DOC_INTEL_COPY.ai.points].join(" ");
       for (const w of [/AI summary/, /key terms/, /cited/, /chat with (that|this) one document/i, /Informational, not legal advice/]) expect(ai).toMatch(w);
       expect(DOC_INTEL_COPY.ai.id).toBe(DOC_INTEL_COPY.rules.id);
