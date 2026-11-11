@@ -432,7 +432,9 @@ export function cleanSuggestion(raw: unknown, description: string, o: { source?:
     if (ok && (key === "feeBasis" || key === "feePeriod") && !(own(BASIS_CUE, t.value) && BASIS_CUE[t.value].test(basisText(description)))) continue;
     if (!accepts(key)) { if (ok) addUnsupported(key, ""); continue; }
     if (!ok) { if (choices && kind) addUnsupported(key, "", t.value); continue; }
-    terms[key] = type === "list" ? items.join("; ").slice(0, 1_200) : t.value.slice(0, 200);
+    // an agreement's name reads as a title ("Event Sponsorship Agreement"); its words were checked against the description above
+    const titled = (v: string) => v.split(" ").map((w, i) => (i > 0 && /^(of|and|the|for|to|in|on|with)$/i.test(w) ? w.toLowerCase() : w.charAt(0).toUpperCase() + w.slice(1))).join(" ");
+    terms[key] = type === "list" ? items.join("; ").slice(0, 1_200) : key === "agreementTitle" ? titled(t.value.trim()).slice(0, 80) : t.value.slice(0, 200);
   }
   // ownership tied to payment, read as Client: the reviewed "Client after payment" wording says exactly that
   const ipOnPayment = kind === "consulting" && PAYMENT_CONDITIONED_IP.test(description);

@@ -64,6 +64,7 @@ const ABBREV = /^(?:(?:[A-Za-z]\.)+|(?:St|Mt|Ft|Ave|Av|Rd|Apt|Ste|Blvd|Dr|Ln|Ct|
 /** Lower-case words a jurisdiction or an address may contain; every other word must be capitalised (a name). */
 const CONNECTORS: Partial<Record<TermKey, Set<string>>> = {
   governingLaw: new Set(["of", "and", "the"]),
+  agreementTitle: new Set(["of", "and", "the", "for", "to", "in", "on", "with"]),
   propertyAddress: new Set(["of", "and", "the", "at", "on", "in", "upon", "de", "la", "le", "du", "del", "da", "van", "von", "der", "den", "ter", "het", "floor", "c/o"]),
 };
 const MAX_WORDS: Partial<Record<TermKey, number>> = { governingLaw: 8, propertyAddress: 16, licensedMaterial: 12 };

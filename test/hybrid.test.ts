@@ -1,6 +1,6 @@
 // Hybrid drafting (behind HYBRID_DRAFTING): the deterministic checks around each model step, and the review gate.
 // A scripted model only; no network, no paid calls.
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -157,5 +157,17 @@ describe("review follow-ups from the real-Claude acceptance run", () => {
       [{ id: "r1", category: "obligations", quote: "The client has 10 business days after delivery to accept", summary: "acceptance" }],
       [{ id: "acc", number: "9", heading: "Acceptance", text: "The Client will accept or reject each delivery within 10 business days." }]);
     expect(got[0].status).toBe("included");
+  });
+  it("the agreement title is title-cased, connectors kept lower-case", async () => {
+    process.env.HYBRID_DRAFTING = "1"; // the kinds on offer are fixed when the module loads, so load a fresh copy
+    try {
+      vi.resetModules();
+      const { cleanSuggestion } = await import("@/lib/drafts/service");
+      const s = cleanSuggestion({ kind: "general", parties: [], terms: [{ key: "agreementTitle", value: "event sponsorship of the festival" }], clarifications: [] }, "An event sponsorship of the festival in July.");
+      expect(s.kind).toBe("general");
+      expect(s.terms.agreementTitle).toBe("Event Sponsorship of the Festival");
+    } finally {
+      delete process.env.HYBRID_DRAFTING;
+    }
   });
 });
