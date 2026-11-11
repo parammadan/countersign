@@ -26,6 +26,8 @@ export const listedScope = (provider: string, what: string): NonNullable<Templat
 export const term = (doc: string, until?: string): TemplateClause => ({
   id: "term", heading: "Term", required: true,
   text: `This ${doc} starts on {{term:startDate}} and continues until ${until ? `${until} or ` : ""}it is ended under clause {{ref:termination}}.`,
+  // with a fixed end date, the end date governs: no "until the services are complete" beside a date that says otherwise
+  alt: { when: "endDate", text: `This ${doc} starts on {{term:startDate}} and continues until the end date in clause {{ref:term_end}}, unless it is ended earlier under clause {{ref:termination}}.` },
 });
 
 /** Optional fixed end date, only when the user gave one. */

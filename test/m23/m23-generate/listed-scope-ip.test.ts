@@ -45,3 +45,18 @@ describe("IP: Client after payment", () => {
     expect(await clause({ ipOwner: "Consultant" }, "ip")).toBe("Each party keeps the intellectual property it owned before this Agreement. Intellectual property that the Consultant creates in performing the services belongs to the Consultant.");
   });
 });
+
+describe("a fixed end date governs the term", () => {
+  it("the Term clause points at the end date instead of saying it runs until the work is done", async () => {
+    const base = { kind: "services" as const, parties: [{ role: "Provider", name: "Vertex Build Co" }, { role: "Client", name: "Granite Freight LLC" }], terms: { fee: "$40,000", paymentDays: 30, startDate: "2027-04-01", noticeDays: 30, governingLaw: "Texas" } };
+    const termOf = async (terms: Record<string, string | number>) => {
+      const r = await generateAgreement({ ...base, terms } as never);
+      if (r.status !== "ok") throw new Error(JSON.stringify(r));
+      return r.draft.clauses.find((c) => c.id === "term")!.text;
+    };
+    const dated = await termOf({ ...base.terms, endDate: "2027-09-30" });
+    expect(dated).toMatch(/continues until the end date in clause \d+, unless it is ended earlier under clause \d+\./);
+    expect(dated).not.toContain("services are complete");
+    expect(await termOf(base.terms)).toContain("continues until the services are complete or it is ended under clause");
+  });
+});
