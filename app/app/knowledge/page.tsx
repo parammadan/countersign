@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { KNOWLEDGE_EXAMPLES } from "@/lib/m3/examples";
 import { requireSession } from "@/lib/auth";
 import { assistantMode, indexStatus, M3_DAILY, recentQuestions } from "@/lib/m3/store";
 import type { M3Citation, M3Status } from "@/lib/m3/answer";
@@ -20,7 +21,7 @@ const STATUS: Record<M3Status, { label: string; tone: "ok" | "warn" | "neutral" 
   partial: { label: "Passages to read", tone: "warn" },
   not_found: { label: "Not found in your agreements", tone: "neutral" },
 };
-const EXAMPLES = ["Which agreements allow early termination?", "When are invoices due?", "What is the liability cap?", "Who owns the work product?"];
+const EXAMPLES = KNOWLEDGE_EXAMPLES;
 const num = (v: string | undefined) => (v && /^\d{1,4}$/.test(v) ? Number(v) : 0);
 
 function Quote({ c, flagged }: { c: M3Citation; flagged?: boolean }) {
@@ -45,11 +46,16 @@ function Quote({ c, flagged }: { c: M3Citation; flagged?: boolean }) {
   );
 }
 
-export default async function Page({ searchParams }: { searchParams: Promise<{ error?: string; q?: string; asked?: string; indexed?: string; unchanged?: string; removed?: string; failed?: string }> }) {
+export default async function Page({ searchParams }: { searchParams: Promise<{ error?: string; q?: string; asked?: string; indexed?: string; unchanged?: string; removed?: string; failed?: string; page?: string }> }) {
   const s = await requireSession();
   const q = await searchParams;
   const status = indexStatus(s.workspaceId);
-  const history = recentQuestions(s);
+  const PAGE = 20;
+  const page = Math.min(num(q.page), 500);
+  // one extra row tells whether there is a next page
+  const rows = recentQuestions(s, PAGE + 1, page * PAGE);
+  const history = rows.slice(0, PAGE);
+  const more = rows.length > PAGE;
   const mode = assistantMode(undefined, s.workspaceId);
   const ran = q.indexed !== undefined;
 
@@ -114,7 +120,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ e
 
       <form action={askAgreementsAction} className="mb-2 rounded-lg border border-line bg-white p-4">
         <label htmlFor="question" className="mb-1 block text-sm font-medium">Your question</label>
-        <textarea id="question" name="question" required minLength={3} maxLength={500} rows={2} defaultValue={q.q?.slice(0, 500) ?? ""} placeholder="e.g. Which agreements allow early termination?" className={inputCls + " h-auto py-2"} />
+        <textarea id="question" name="question" required minLength={3} maxLength={500} rows={2} defaultValue={q.q?.slice(0, 500) ?? ""} placeholder={`e.g. ${KNOWLEDGE_EXAMPLES[0]}`} className={inputCls + " h-auto py-2"} />
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs text-muted">
             {mode.kind === "model" ? `Answered by an AI assistant (${mode.model}) from the quoted passages only, then checked against them.` : (mode.notice ?? "AI answers are off on this server: you'll see the passages that answer your question, quoted as written.")}
@@ -140,6 +146,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ e
                 <p className="font-medium break-words">{h.question}</p>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
                   <Badge tone={STATUS[h.result.status].tone}>{STATUS[h.result.status].label}</Badge>
+                  {h.stale && <Badge tone="warn">An agreement it cites has changed since</Badge>}
                   <span>{h.result.mode === "model" ? `AI assistant (${h.result.model})` : "Passages, no AI model"} · {h.askedBy} · {timeAgo(h.createdAt)}</span>
                 </div>
                 <p className="mt-2 text-sm whitespace-pre-line break-words">{h.result.answer}</p>
@@ -156,6 +163,12 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ e
               </li>
             ))}
           </ol>
+        )}
+        {(page > 0 || more) && (
+          <nav aria-label="Answer pages" className="mt-3 flex items-center justify-between text-sm">
+            {page > 0 ? <Link href={page === 1 ? "?" : `?page=${page - 1}`} className="text-brand underline underline-offset-2">Newer answers</Link> : <span />}
+            {more && <Link href={`?page=${page + 1}`} className="text-brand underline underline-offset-2">Older answers</Link>}
+          </nav>
         )}
       </section>
     </>

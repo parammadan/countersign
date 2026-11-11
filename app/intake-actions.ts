@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth";
 import * as svc from "@/lib/intake/service";
+import { LIMIT_MESSAGE } from "@/lib/intake/limits";
 import { analyzeIntake, askIntakeQuestion, DOC_THREAD_ID, type AnalyzeResult } from "@/lib/intake/ai-service";
 import type { GenerateInput } from "@/lib/m23/m23-generate";
 
@@ -15,7 +16,7 @@ export async function readDocumentAction(form: FormData): Promise<{ ok: true; id
   const text = form.get("text");
   let r: Awaited<ReturnType<typeof svc.runIntake>>;
   if (file instanceof File && file.size > 0) {
-    if (file.size > svc.MAX_INTAKE_UPLOAD) return { ok: false, message: "Files up to 1.9 MB can be read here. Paste the text instead, or save a smaller PDF." };
+    if (file.size > svc.MAX_INTAKE_UPLOAD) return { ok: false, message: LIMIT_MESSAGE.tooLarge };
     r = await svc.runIntake(s, { kind: "upload", data: Buffer.from(await file.arrayBuffer()), filename: file.name || "document.pdf" });
   } else if (typeof text === "string" && text.trim()) {
     const title = form.get("title");

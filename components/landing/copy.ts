@@ -126,8 +126,8 @@ export const PHONE_SIGN = {
 } as const;
 
 /**
- * Phone document scanning in the agreement upload. Not shipped yet: false keeps every mention of it off the page.
- * Flip it when "Scan with phone" is live, and check the wording against the shipped feature.
+ * Phone document scanning in the agreement upload. The feature ships in the app, but the homepage doesn't advertise it
+ * until it has passed a real-phone test (not emulation): false keeps every mention of it off the page.
  */
 export const PHONE_SCAN = false;
 export const PHONE_SCAN_COPY = {
@@ -136,8 +136,8 @@ export const PHONE_SCAN_COPY = {
 } as const;
 
 /**
- * Voice input in Agreement Studio. Being built: false keeps every mention of it off the page. Flip it when it ships,
- * and check the wording against the shipped feature.
+ * Voice input in Agreement Studio (live: the description box takes dictation, and nothing goes to Claude until the
+ * person stops and checks it). false keeps every mention of it off the page.
  */
 export const VOICE_INPUT = true;
 export const VOICE_INPUT_COPY = {
@@ -177,7 +177,7 @@ export const HOW = {
 
 export const CTA = {
   title: "Your next agreement starts here.",
-  text: "Create a workspace and try it with your own agreements. AI features need a confirmed email address; uploading, signing and the verify page work right away.",
+  text: "Create a workspace and try it with your own agreements. AI features and sending to clients need a confirmed email address; uploading your agreement, test sends to your team and the verify page work right away.",
 } as const;
 
 export const FOOTER = {

@@ -145,7 +145,16 @@ export async function answerAcrossAgreements(ctx: AnswerContext, question: strin
   }
 
   // every cited hit with its whole passage; soft-flagged ones are kept apart
-  const items = r.hits.map((h, i) => ({ hit: h, passage: r.passages[i] as IndexedPassage, suspicious: sanitizePassage(r.passages[i]).suspicious }));
+  // the same agreement uploaded twice (or two copies of one text) holds identical passages: the person sees one citation
+  const seen = new Set<string>();
+  const items = r.hits
+    .map((h, i) => ({ hit: h, passage: r.passages[i] as IndexedPassage, suspicious: sanitizePassage(r.passages[i]).suspicious }))
+    .filter((it) => {
+      const key = `${ctx.title(it.hit.citation.documentId) ?? ""}|${it.hit.citation.page}|${normalize(it.hit.citation.quote)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   const cite = (it: (typeof items)[number], n: number, quote = it.hit.citation.quote): M3Citation => ({
     n,
     documentId: it.hit.citation.documentId,

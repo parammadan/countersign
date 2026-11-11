@@ -9,6 +9,7 @@ import { Button, Card, Field, Notice, inputCls, cx } from "@/components/ui";
 import { Icon } from "@/components/icons";
 import { analyzeDocumentAction, readDocumentAction } from "@/app/intake-actions";
 import { SAMPLE_AGREEMENT, SAMPLE_TITLE } from "@/lib/intake/sample";
+import { fileProblem } from "@/lib/intake/limits";
 import { DOC_AI_COPY as C } from "./ai-copy";
 
 type Stage = "idle" | "reading" | "analyzing" | "opening";
@@ -27,8 +28,16 @@ export function ReadDocument({ aiOn }: { aiOn: boolean }) {
   const [, startNav] = useTransition();
   const busy = stage !== "idle";
 
+  // checked here with the server's own limits: a file over the request size limit would otherwise fail without its reason
   function pick(f: File | null | undefined) {
     setError(null);
+    const problem = f ? fileProblem(f) : null;
+    if (f && problem) {
+      setError(`${f.name}: ${problem}`);
+      setFile(null);
+      if (fileRef.current) fileRef.current.value = "";
+      return;
+    }
     setFile(f ?? null);
   }
   function onDrop(e: DragEvent<HTMLLabelElement>) {
@@ -117,9 +126,10 @@ export function ReadDocument({ aiOn }: { aiOn: boolean }) {
               <span className="truncate font-medium text-ink">{file.name}</span>
               <span className="shrink-0 text-xs text-muted">{size(file.size)}</span>
             </span>
-            <Button type="button" variant="ghost" size="sm" icon="x" onClick={clearFile} disabled={busy}>Remove</Button>
+            <Button type="button" variant="ghost" size="sm" icon="x" onClick={clearFile} disabled={busy} aria-label={`Remove ${file.name}`}>Remove</Button>
           </div>
         )}
+        {file && text.trim() && <p className="-mt-3 text-xs text-muted">The file is read, not the pasted text. Remove the file to use the text instead.</p>}
 
         <div className="flex items-center gap-3 text-xs text-muted" aria-hidden>
           <span className="h-px flex-1 bg-line" />

@@ -6,27 +6,47 @@ import Link from "next/link";
 import { acceptInviteAction, loginAction, signupAction, type FormState } from "@/app/actions";
 import { Button, Field, Input, Notice } from "./ui";
 
-export function LoginForm({ next, canReset = true }: { next?: string; canReset?: boolean }) {
+export const AUTH_COPY = {
+  forgot: "Forgot your password?",
+  loginHelp: "Check the email address and password, or",
+  reset: "reset your password",
+  newHere: "New here?",
+  create: "Create a workspace",
+  signupConfirm: "Next, we email you a link to confirm your address (check Spam or Junk if it isn't in your inbox). Uploading and setting up your agreement work right away; AI features and sending to clients start once you confirm.",
+} as const;
+
+export function LoginForm({ next }: { next?: string }) {
   const [st, act, pending] = useActionState<FormState, FormData>(loginAction, undefined);
   return (
     <ActionForm action={act} className="space-y-4">
-      {st?.error && <Notice tone="error"><span id="form-error">{st.error}</span></Notice>}
+      {st?.error && (
+        <Notice tone="error">
+          <span id="form-error" className="font-medium">{st.error}</span>
+          <span className="mt-1 block">
+            {AUTH_COPY.loginHelp} <Link className="font-medium underline" href="/forgot">{AUTH_COPY.reset}</Link>.
+          </span>
+        </Notice>
+      )}
       <input type="hidden" name="next" value={next ?? ""} />
       <Field label="Work email">
         <Input name="email" type="email" autoComplete="email" required autoFocus aria-invalid={st?.error ? true : undefined} aria-describedby={st?.error ? "form-error" : undefined} />
       </Field>
-      <Field label="Password" hint={canReset ? <Link className="text-brand" href="/forgot">Forgot your password?</Link> : undefined}>
-        <Input name="password" type="password" autoComplete="current-password" required aria-invalid={st?.error ? true : undefined} aria-describedby={st?.error ? "form-error" : undefined} />
-      </Field>
+      <div>
+        <div className="mb-1.5 flex items-baseline justify-between gap-3">
+          <label htmlFor="login-password" className="text-[13px] font-medium text-ink-2">Password</label>
+          <Link className="text-[13px] font-medium text-brand hover:underline" href="/forgot">{AUTH_COPY.forgot}</Link>
+        </div>
+        <Input id="login-password" name="password" type="password" autoComplete="current-password" required aria-invalid={st?.error ? true : undefined} aria-describedby={st?.error ? "form-error" : undefined} />
+      </div>
       <Button className="w-full" loading={pending}>{pending ? "Signing in…" : "Sign in"}</Button>
       <p className="text-center text-sm text-muted">
-        New here? <Link className="font-medium text-brand" href="/signup">Create a workspace</Link>
+        {AUTH_COPY.newHere} <Link className="font-medium text-brand" href="/signup">{AUTH_COPY.create}</Link>
       </p>
     </ActionForm>
   );
 }
 
-export function SignupForm() {
+export function SignupForm({ confirmNote = false }: { confirmNote?: boolean }) {
   const [st, act, pending] = useActionState<FormState, FormData>(signupAction, undefined);
   return (
     <ActionForm action={act} className="space-y-4">
@@ -48,6 +68,7 @@ export function SignupForm() {
       <Field label="Password" hint="At least 8 characters.">
         <Input name="password" type="password" required minLength={8} autoComplete="new-password" />
       </Field>
+      {confirmNote && <p className="rounded-lg border border-line bg-subtle px-3 py-2.5 text-[13px] leading-relaxed text-ink-2">{AUTH_COPY.signupConfirm}</p>}
       <Button className="w-full" loading={pending}>{pending ? "Creating…" : "Create workspace"}</Button>
       <p className="text-center text-sm text-muted">
         Already have one? <Link className="font-medium text-brand" href="/login">Sign in</Link>

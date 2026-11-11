@@ -17,6 +17,9 @@ const text = (h: string) =>
   h.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\s+/g, " ");
 const links = (h: string, label: string) => [...h.matchAll(/<a [^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)].filter((m) => text(m[2]).trim() === label).map((m) => m[1]);
 const nav = (h: string) => h.match(/<nav aria-label="Main"[\s\S]*?<\/nav>/)![0];
+/** The phone menu's panel, and the header bar without it. */
+const menu = (h: string) => h.match(/<div id="landing-menu"[\s\S]*?<\/ul>/)![0];
+const bar = (h: string) => nav(h).replace(menu(h), "");
 const footer = (h: string) => h.match(/<footer[\s\S]*<\/footer>/)![0];
 
 const FORBIDDEN =
@@ -59,7 +62,7 @@ describe("landing page", () => {
 
     it("header nav: Features, How it works, Verify document, Sign in, Create workspace", async () => {
       const h = await render();
-      const n = nav(h);
+      const n = bar(h);
       expect(links(n, NAV.features)).toEqual(["#features"]);
       expect(links(n, NAV.how)).toEqual(["#how-it-works"]);
       expect(links(n, "Verify document")).toEqual(["/verify"]);
@@ -67,6 +70,41 @@ describe("landing page", () => {
       expect(links(n, "Create workspace")).toEqual(["/signup"]);
       expect(h).toContain('id="features"');
       expect(h).toContain('id="how-it-works"');
+    });
+
+    it("phone menu: a closed disclosure button listing every section, Verify document and Create workspace", async () => {
+      const h = await render();
+      expect(nav(h)).toMatch(/<button type="button" aria-expanded="false" aria-controls="landing-menu"/);
+      expect(text(nav(h).match(/<button[\s\S]*?<\/button>/)![0]).trim()).toBe("Menu");
+      const m = menu(h);
+      expect(m).toMatch(/<div id="landing-menu" hidden=""/);
+      expect(links(m, NAV.features)).toEqual(["#features"]);
+      for (const f of FEATURES) {
+        expect(links(m, f.eyebrow)).toEqual([`#${f.id}`]);
+        expect(h).toContain(`id="${f.id}"`);
+      }
+      expect(links(m, NAV.how)).toEqual(["#how-it-works"]);
+      expect(links(m, "Verify document")).toEqual(["/verify"]);
+      expect(links(m, "Create workspace")).toEqual(["/signup"]);
+      expect(links(m, "Open app")).toEqual([]);
+      // on phones the header keeps Sign in; the header's Create workspace is hidden below sm (it's in the menu)
+      expect(bar(h)).toMatch(/<span class="ml-1.5 hidden sm:inline-flex"><a [^>]*href="\/signup"/);
+    });
+
+    it("features strip: one link per feature section, under the features heading", async () => {
+      const h = await render();
+      const strip = h.match(/<nav aria-label="Features"[\s\S]*?<\/nav>/)![0];
+      expect(FEATURES.map((f) => links(strip, f.eyebrow)[0])).toEqual(FEATURES.map((f) => `#${f.id}`));
+    });
+
+    it("every in-page link points at a section that exists", async () => {
+      const h = await render();
+      const ids = new Set([...h.matchAll(/ id="([^"]+)"/g)].map((m) => m[1]));
+      const anchors = [...h.matchAll(/href="#([^"]+)"/g)].map((m) => m[1]);
+      expect(anchors.length).toBeGreaterThan(10);
+      for (const a of anchors) expect(ids, `#${a}`).toContain(a);
+      const pages = new Set([...h.matchAll(/href="(\/[^"#]*)"/g)].map((m) => m[1]));
+      expect([...pages].sort()).toEqual(["/", "/login", "/signup", "/verify"]);
     });
 
     it("has no product demo video, nav item or embed", async () => {
@@ -115,7 +153,7 @@ describe("landing page", () => {
       expect(h).toMatch(/agreement and page/);
       expect(h).toMatch(/nothing in your agreements supports an answer/i);
       expect(h).toMatch(/Ask about this agreement/);
-      expect(h).toMatch(/AI features need a confirmed email/);
+      expect(h).toMatch(/AI features and sending to clients need a confirmed email/);
       expect(h).toMatch(/records each signer's consent and an audit trail/i);
       expect(h).toMatch(/automatic countersignature|countersignature is applied automatically/i);
       expect(h).toMatch(/sealed PDF with an audit certificate/);
@@ -157,13 +195,12 @@ describe("landing page", () => {
       expect(text(fig)).toContain("Scan with your phone's camera. You'll sign there; this page updates when you're done.");
     });
 
-    it("phone scanning stays off until it ships; voice input (shipped) is shown once", async () => {
+    it("voice input is shown once; phone scanning stays off the page until it passes a real-phone test", async () => {
       expect(PHONE_SCAN).toBe(false);
       expect(VOICE_INPUT).toBe(true);
-      const h = await render();
-      const t = text(h);
-      for (const x of [PHONE_SCAN_COPY.label, PHONE_SCAN_COPY.text]) expect(t).not.toContain(x);
-      expect(t).not.toMatch(/scan with phone|photograph the pages/i);
+      const t = text(await render());
+      expect(t).not.toContain(PHONE_SCAN_COPY.text);
+      expect(t).not.toContain(PHONE_SCAN_COPY.label);
       expect(t.split(VOICE_INPUT_COPY.text)).toHaveLength(2);
     });
 
@@ -223,10 +260,14 @@ describe("landing page", () => {
       const h = await render();
       expect(links(h, "Open app").length).toBeGreaterThanOrEqual(3);
       expect(new Set(links(h, "Open app"))).toEqual(new Set(["/app"]));
-      const n = nav(h);
+      const n = bar(h);
       expect(links(n, "Open app")).toEqual(["/app"]);
       expect(links(n, "Sign in")).toEqual([]);
       expect(links(n, "Create workspace")).toEqual([]);
+      expect(links(menu(h), "Open app")).toEqual(["/app"]);
+      expect(links(menu(h), "Create workspace")).toEqual([]);
+      const pages = new Set([...h.matchAll(/href="(\/[^"#]*)"/g)].map((m) => m[1]));
+      expect([...pages].sort()).toEqual(["/", "/app", "/login", "/signup", "/verify"]);
       expect(links(h.replace(footer(h), ""), "Create workspace")).toEqual([]);
       expect(text(h)).toContain(HERO.title);
       expect(text(h)).not.toMatch(FORBIDDEN);

@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { apiAuth, ctxOf, handle, readJson } from "@/lib/http";
-import { createFile, fileJson } from "@/lib/files";
+import { AppError, createFile, fileJson } from "@/lib/files";
 import { NewFileBody } from "@/lib/schemas";
-import { all } from "@/lib/db";
+import { all, one } from "@/lib/db";
 import type { FileRow } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -22,9 +22,17 @@ export const GET = handle(async (req: Request) => {
   // a missing or non-numeric limit means the default (Number("abc") is NaN, which SQLite refuses)
   const asked = Number.parseInt(u.searchParams.get("limit") ?? "", 10);
   const limit = Number.isFinite(asked) ? Math.min(100, Math.max(1, asked)) : 50;
+  // cursor paging: pass the last id of the previous page as starting_after (ids from another workspace are refused)
+  const after = u.searchParams.get("starting_after");
+  let cur: { created_at: string; id: string } | null = null;
+  if (after) {
+    cur = one<{ created_at: string; id: string }>("SELECT created_at, id FROM files WHERE workspace_id = ? AND id = ?", ws.id, after) ?? null;
+    if (!cur) throw new AppError("starting_after: no file with that id in this workspace.", 404);
+  }
   const rows = all<FileRow>(
-    `SELECT * FROM files WHERE workspace_id = ? AND (? IS NULL OR status = ?) AND (? IS NULL OR ref = ?) ORDER BY created_at DESC LIMIT ?`,
-    ws.id, status, status, ref, ref, limit,
+    `SELECT * FROM files WHERE workspace_id = ? AND (? IS NULL OR status = ?) AND (? IS NULL OR ref = ?)
+       AND (? IS NULL OR created_at < ? OR (created_at = ? AND id < ?)) ORDER BY created_at DESC, id DESC LIMIT ?`,
+    ws.id, status, status, ref, ref, cur?.created_at ?? null, cur?.created_at ?? null, cur?.created_at ?? null, cur?.id ?? null, limit + 1,
   );
-  return NextResponse.json({ data: rows.map(fileJson) });
+  return NextResponse.json({ data: rows.slice(0, limit).map(fileJson), has_more: rows.length > limit });
 });

@@ -26,7 +26,8 @@ export function startMockAnthropic(script: Script, verify: VerifyScript = approv
       const content = b.messages?.[0]?.content;
       const blocks = typeof content === "string" ? [{ type: "text", text: content }] : content ?? [];
       const text = blocks.map((x) => x.text).join("\n");
-      const ps = [...text.matchAll(/<passage id="([^"]+)" page="\d+">([\s\S]*?)<\/passage>/g)].map((m) => ({ id: m[1], text: m[2] }));
+      const ps = [...text.matchAll(/<passage id="([^"]+)"(?: agreement="[^"]*")? page="\d+">([\s\S]*?)<\/passage>/g)].map((m) => ({ id: m[1], text: m[2] }));
+      // (the Knowledge Hub also names each passage's agreement)
       // the new question is the last one; earlier turns carry their own <question> tags
       const question = [...text.matchAll(/<question>([\s\S]*?)<\/question>/g)].at(-1)?.[1] ?? "";
       const s: Seen = { apiKey: (req.headers["x-api-key"] as string | undefined) ?? (req.headers.authorization?.replace(/^Bearer\s+/i, "") || undefined), beta: req.headers["anthropic-beta"] as string | undefined, cached: blocks.some((x) => typeof x === "object" && "cache_control" in x && !!x.cache_control), question, earlierTurns: text.includes("<earlier_turns>"), verifier: isVerifier };

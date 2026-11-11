@@ -10,6 +10,7 @@
 import { ACCEPTED, ConvertError, toPdf } from "../convert";
 import { extractPdf } from "../pdf/extract";
 import { id as newId, sha256 } from "../util";
+import { LIMIT_MESSAGE, MAX_INTAKE_UPLOAD, MAX_PASTE_CHARS } from "./limits";
 import { analyzeDocument, pagesForModel } from "./intake";
 import { pagesFromExtraction } from "./pages";
 import { getResult, insertResult, latestAnalysisRow, listResults, markDraftStarted, runsSince, type IntakeResult, type IntakeRow } from "./store";
@@ -27,9 +28,7 @@ import type { DocAnalysis, DocDraft, DraftSource } from "./ai";
 
 export type SessionLike = { userId: string; workspaceId: string; role: "owner" | "admin" | "staff" };
 
-/** Server actions accept request bodies up to 2 MB (next.config.ts, owner-reserved), so uploads here stop below that. */
-export const MAX_INTAKE_UPLOAD = 1_900_000;
-export const MAX_PASTE_CHARS = 200_000;
+export { MAX_INTAKE_UPLOAD, MAX_PASTE_CHARS } from "./limits";
 export const RUNS_PER_HOUR = 30;
 
 export type Failure = { ok: false; code: "forbidden" | "invalid" | "too_large" | "limit" | "unreadable"; message: string };
@@ -70,19 +69,21 @@ async function readAndStore(s: SessionLike, input: IntakeInput): Promise<{ ok: t
   if (input?.kind === "paste") {
     source = "paste";
     if (typeof input.text !== "string" || !input.text.trim()) return fail("invalid", "Paste the document's text first.");
-    if (input.text.length > MAX_PASTE_CHARS) return fail("too_large", `Paste up to ${MAX_PASTE_CHARS.toLocaleString("en-US")} characters, or upload the file instead.`);
+    // a browser sends a form's line breaks as CRLF, so a paste the box accepted can arrive longer: count it as typed
+    const text = input.text.replace(/\r\n?/g, "\n");
+    if (text.length > MAX_PASTE_CHARS) return fail("too_large", `Paste up to ${MAX_PASTE_CHARS.toLocaleString("en-US")} characters, or upload the file instead.`);
     // a form feed separates pages, as in text exported from a PDF
-    pages = input.text.split("\f");
+    pages = text.split("\f");
     const t = typeof input.title === "string" ? input.title.trim().slice(0, 200) : "";
     filename = t || null;
   } else if (input?.kind === "upload") {
     source = "upload";
     const name = typeof input.filename === "string" ? input.filename.slice(0, 200) : "";
-    if (!Buffer.isBuffer(input.data) || input.data.length === 0) return fail("invalid", "That file is empty.");
-    if (input.data.length > MAX_INTAKE_UPLOAD) return fail("too_large", "Files up to 1.9 MB can be read here. Paste the text instead, or save a smaller PDF.");
+    if (!Buffer.isBuffer(input.data) || input.data.length === 0) return fail("invalid", LIMIT_MESSAGE.empty);
+    if (input.data.length > MAX_INTAKE_UPLOAD) return fail("too_large", LIMIT_MESSAGE.tooLarge);
     const ext = (name.match(/\.[A-Za-z0-9]+$/)?.[0] ?? "").toLowerCase();
     const isPdf = input.data.subarray(0, 5).toString("latin1") === "%PDF-";
-    if (!isPdf && !ACCEPTED.includes(ext)) return fail("invalid", "Upload a PDF or Word document (.pdf, .docx, .doc, .odt, .rtf).");
+    if (!isPdf && !ACCEPTED.includes(ext)) return fail("invalid", LIMIT_MESSAGE.wrongType);
     filename = name || "document";
     let pdf: Buffer;
     try {

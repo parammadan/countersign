@@ -3,15 +3,16 @@
 // "Speak instead" for the AI panel's description box. The browser's speech recognition (where it exists) turns speech
 // into text, which is added after what is already in the box for the person to check. It never submits: the person
 // presses "Fill details with AI" themselves. No audio is recorded, stored or uploaded by AgreementOS.
-import { useEffect, useReducer, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useReducer, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 import { Button, Notice, cx } from "@/components/ui";
 import { VOICE_COPY } from "./ai-state";
-import { VOICE_IDLE, VOICE_MAX_MS, clock, mergeTranscript, recognitionCtor, startVoiceSession, voiceBusy, voiceReducer, type VoiceSession, type VoiceState } from "./voice-state";
+import { VOICE_IDLE, VOICE_MAX_MS, clock, mergeTranscript, micPermission, recognitionCtor, repeatsFinals, startVoiceSession, voiceBusy, voiceReducer, type MicPermission, type VoiceSession, type VoiceState } from "./voice-state";
 
 export type VoiceSupport = "unknown" | "supported" | "unsupported";
 
 const noSubscribe = () => () => {};
-// the server (and the first client render, during hydration) doesn't know: nothing is shown until the client checks
+// the server (and the first client render, during hydration) doesn't know: nothing is shown until the client checks.
+// Unsupported also covers an insecure (http) page, where recognition can't work.
 const clientSupport = (): VoiceSupport => (recognitionCtor() ? "supported" : "unsupported");
 const serverSupport = (): VoiceSupport => "unknown";
 
@@ -24,17 +25,40 @@ function MicGlyph({ size = 16 }: { size?: number }) {
   );
 }
 
+/**
+ * Focus a text box with the cursor after its last character, scrolled to show it — but only if focus is nowhere in
+ * particular (the page body) or on the voice control itself (`scope`): never take it from another field.
+ */
+export function focusAtEnd(box: HTMLTextAreaElement | null | undefined, scope?: Node | null) {
+  if (!box) return;
+  const doc = box.ownerDocument;
+  const active = doc?.activeElement;
+  if (active && active !== doc.body && active !== box && !(scope && scope.contains(active))) return;
+  box.focus();
+  const end = box.value.length;
+  box.setSelectionRange(end, end);
+  box.scrollTop = box.scrollHeight;
+}
+
 /** What the voice control shows for a given state. Pure rendering, so the server-side markup can be tested. */
-export function VoicePanel({ support, state, elapsed, disabled, onStart, onStop }: { support: VoiceSupport; state: VoiceState; elapsed: number; disabled?: boolean; onStart: () => void; onStop: () => void }) {
+export function VoicePanel({ support, state, elapsed, disabled, permission = "unknown", onStart, onStop }: { support: VoiceSupport; state: VoiceState; elapsed: number; disabled?: boolean; permission?: MicPermission; onStart: () => void; onStop: () => void }) {
   if (support === "unknown") return null;
   if (support === "unsupported") return <p data-testid="voice-unsupported" className="mt-2 text-xs text-muted">{VOICE_COPY.unsupported}</p>;
   const { status } = state;
   const active = status === "requesting" || status === "listening";
+  // the browser says the microphone is blocked for this site: say so up front, with no button that can only fail
+  // (checked again when the page regains focus, e.g. after changing the site settings)
+  if (permission === "denied" && !active && status !== "processing")
+    return (
+      <div data-testid="voice-blocked" className="mt-2">
+        <p role="status" aria-live="polite" className="text-xs text-muted">{VOICE_COPY.blocked}</p>
+      </div>
+    );
   const status_text =
     status === "requesting" ? VOICE_COPY.requesting
     : status === "listening" ? `${VOICE_COPY.listening} ${clock(elapsed)} of ${clock(VOICE_MAX_MS)}`
     : status === "processing" ? VOICE_COPY.processing
-    : status === "done" ? [VOICE_COPY.done, state.autoStopped && VOICE_COPY.autoStopped, state.truncated && VOICE_COPY.truncated].filter(Boolean).join(" ")
+    : status === "done" ? [state.stoppedEarly && VOICE_COPY.stoppedEarly.replace("{reason}", VOICE_COPY.reasons[state.stoppedEarly]), VOICE_COPY.done, state.autoStopped && VOICE_COPY.autoStopped, state.truncated && VOICE_COPY.truncated].filter(Boolean).join(" ")
     : status === "error" && state.error ? VOICE_COPY.errors[state.error]
     : "";
   return (
@@ -91,8 +115,10 @@ export function VoicePanel({ support, state, elapsed, disabled, onStart, onStop 
  * `onChange` only. It has no other effect, so it can't submit or send anything. `onBusyChange` says when a session is
  * under way (the box may still change), so the panel can hold off sending the box until it ends.
  */
-export function VoiceInput({ value, onChange, maxLength, disabled, onBusyChange }: { value: string; onChange: (next: string) => void; maxLength: number; disabled?: boolean; onBusyChange?: (busy: boolean) => void }) {
+export function VoiceInput({ value, onChange, maxLength, disabled, onBusyChange, target }: { value: string; onChange: (next: string) => void; maxLength: number; disabled?: boolean; onBusyChange?: (busy: boolean) => void; target?: RefObject<HTMLTextAreaElement | null> }) {
   const support = useSyncExternalStore(noSubscribe, clientSupport, serverSupport);
+  const [permission, setPermission] = useState<MicPermission>("unknown");
+  const root = useRef<HTMLDivElement>(null);
   const [state, dispatch] = useReducer(voiceReducer, VOICE_IDLE);
   const [now, setNow] = useState(0);
   const session = useRef<VoiceSession | null>(null);
@@ -126,6 +152,42 @@ export function VoiceInput({ value, onChange, maxLength, disabled, onBusyChange 
   // not busy any more once the control goes away
   useEffect(() => () => busyCb.current?.(false), []);
 
+  // where the browser can tell, know up front whether the microphone is blocked; check again on focus
+  useEffect(() => {
+    if (support !== "supported") return;
+    const perms = typeof navigator !== "undefined" ? navigator.permissions : undefined;
+    if (!perms?.query) return;
+    let alive = true;
+    let watched: PermissionStatus | null = null;
+    const check = () => {
+      perms.query({ name: "microphone" as PermissionName }).then(
+        (st) => {
+          if (!alive) return;
+          setPermission(micPermission(st.state));
+          if (!watched) {
+            watched = st;
+            st.onchange = () => alive && setPermission(micPermission(st.state));
+          }
+        },
+        () => {
+          /* the browser can't say (e.g. no "microphone" permission name): offer the button and let it ask */
+        },
+      );
+    };
+    check();
+    window.addEventListener("focus", check);
+    return () => {
+      alive = false;
+      window.removeEventListener("focus", check);
+      if (watched) watched.onchange = null;
+    };
+  }, [support]);
+
+  // when text was added, put the cursor at its end so the person can edit straight away
+  useEffect(() => {
+    if (state.status === "done") focusAtEnd(target?.current ?? root.current?.closest("section, form")?.querySelector("textarea"), root.current);
+  }, [state.status, target]);
+
   const listening = state.status === "listening";
   useEffect(() => {
     if (!listening) return;
@@ -140,6 +202,7 @@ export function VoiceInput({ value, onChange, maxLength, disabled, onBusyChange 
     setNow(Date.now());
     session.current = startVoiceSession(Ctor, {
       lang: (typeof navigator !== "undefined" && navigator.language) || "en-US",
+      dropRepeats: repeatsFinals(typeof navigator !== "undefined" ? navigator.userAgent : undefined),
       dispatch,
       append: (text) => {
         const { value: v, onChange: set, maxLength: max } = latest.current;
@@ -153,5 +216,9 @@ export function VoiceInput({ value, onChange, maxLength, disabled, onBusyChange 
   const stop = () => session.current?.stop();
 
   const elapsed = state.startedAt ? Math.max(0, now - state.startedAt) : 0;
-  return <VoicePanel support={support} state={state} elapsed={elapsed} disabled={disabled} onStart={start} onStop={stop} />;
+  return (
+    <div ref={root} className="contents">
+      <VoicePanel support={support} state={state} elapsed={elapsed} disabled={disabled} permission={permission} onStart={start} onStop={stop} />
+    </div>
+  );
 }
