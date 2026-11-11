@@ -291,8 +291,11 @@ const BASIS_CUE: Record<string, RegExp> = {
   quarter: /\b(?:per|a|each|every)\s+quarter\b|\bquarterly\b/i,
   year: /\b(?:per|a|each|every)\s+(?:year|annum)\b|\b(?:yearly|annually|annual)\b|\bper\s+annum\b/i,
 };
+/** Where the suggested values were read from: the person's description (Studio) or a read document (Document Intelligence). */
+export type SuggestionSource = "description" | "document";
+const SOURCE_TEXT: Record<SuggestionSource, string> = { description: "your description", document: "the document" };
 /** What happens instead, for something the description states that the template can't include. */
-function insteadText(kind: Kind | null, key: string, said: string, unmatched: boolean): string {
+function insteadText(kind: Kind | null, key: string, said: string, unmatched: boolean, source: SuggestionSource = "description"): string {
   if (!kind) return "None of the templates can include this, so it won't be in the agreement.";
   const t = TEMPLATES[kind];
   if (kind === "retainer" && key === "feePeriod" && ONE_OFF.test(said))
@@ -300,7 +303,7 @@ function insteadText(kind: Kind | null, key: string, said: string, unmatched: bo
   const accepted = own(TERM_TYPES, key) && kindSpecs().find((k) => k.kind === kind)!.terms.some((x) => x.key === key);
   if (!accepted) return `The ${t.title} template can't include this, so it won't be in the agreement.`;
   const required = t.requiredTerms.includes(key as TermKey);
-  const why = unmatched ? "Claude couldn't match what your description says to one of this template's options." : "None of this template's options says that.";
+  const why = unmatched ? `Claude couldn't match what ${SOURCE_TEXT[source]} says to one of this template's options.` : "None of this template's options says that.";
   return required ? `${why} Choose one below.` : `${why} Choose one below, or leave it out.`;
 }
 
@@ -314,7 +317,8 @@ const templateRole = (kind: Kind, role: string) => TEMPLATES[kind].roles.find((r
  * chosen kind accepts. Then sorts what the person should know into needed / optional / unsupported: what is needed
  * and what is optional is worked out here from the template (never from the model), and nothing is ever filled in.
  */
-export function cleanSuggestion(raw: unknown, description: string): Suggestion {
+export function cleanSuggestion(raw: unknown, description: string, o: { source?: SuggestionSource } = {}): Suggestion {
+  const source = o.source ?? "description";
   const r = (typeof raw === "object" && raw !== null && !Array.isArray(raw) ? raw : {}) as Record<string, unknown>;
   const desc = tokens(description);
   const dates = datesIn(description);
@@ -333,7 +337,7 @@ export function cleanSuggestion(raw: unknown, description: string): Suggestion {
   const unsupported: Clarification[] = [];
   const addUnsupported = (key: string, note: string, value?: string) => {
     if (key !== "other" && unsupported.some((u) => u.key === key)) return;
-    const text = [note, insteadText(kind, key, `${note} ${value ?? ""}`, value !== undefined)].filter(Boolean).join(" ");
+    const text = [note, insteadText(kind, key, `${note} ${value ?? ""}`, value !== undefined, source)].filter(Boolean).join(" ");
     unsupported.push({ key, label: termName(key), text });
   };
   const terms: Partial<Record<TermKey, string>> = {};
@@ -361,7 +365,7 @@ export function cleanSuggestion(raw: unknown, description: string): Suggestion {
     if (typeof it === "string") {
       // one naming a term is about that term, which the template check below covers; otherwise keep it, in plain words
       const note = plainNote(it);
-      if (note && !RAW_TERM_KEYS.some((k) => new RegExp(`\\b${k}\\b`, "i").test(it))) notes.push({ key: "other", label: "Also not in your description", text: note });
+      if (note && !RAW_TERM_KEYS.some((k) => new RegExp(`\\b${k}\\b`, "i").test(it))) notes.push({ key: "other", label: `Also not in ${SOURCE_TEXT[source]}`, text: note });
       continue;
     }
     if (typeof it !== "object" || it === null) continue;
@@ -378,7 +382,7 @@ export function cleanSuggestion(raw: unknown, description: string): Suggestion {
 
   const needed: Clarification[] = [];
   const optional: Clarification[] = [];
-  if (!kind) needed.push({ key: "kind", label: "Type of agreement", text: "Your description doesn't say which of the templates fits. Choose one below." });
+  if (!kind) needed.push({ key: "kind", label: "Type of agreement", text: `${SOURCE_TEXT[source][0].toUpperCase()}${SOURCE_TEXT[source].slice(1)} doesn't say which of the templates fits. Choose one below.` });
   else {
     const named = new Map<string, string>();
     for (const p of parties) {
