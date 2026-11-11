@@ -164,7 +164,7 @@ export const FEATURES_INTRO = {
 export const FEATURES: Feature[] = [STUDIO, DOC_INTEL, KNOWLEDGE, SIGN, CLAUSES];
 
 export const STEPS = [
-  { title: "Create", icon: "spark", text: "Describe an agreement in everyday language and Claude fills in a reviewed template." },
+  { title: "Create", icon: "spark", text: "Upload the agreement you already use, or describe a new one in Agreement Studio." },
   { title: "Understand & Review", icon: "agreement", text: "Read incoming documents, ask questions with cited answers, and check every detail of the draft." },
   { title: "Approve", icon: "checkCircle", text: "A second admin approves new agreements and clause changes before they're used." },
   { title: "Sign & Manage", icon: "pen", text: "Your client signs on any device. Countersignature, the sealed PDF and the audit certificate follow automatically." },
