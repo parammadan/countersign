@@ -3,8 +3,10 @@
 // M4 Document Intelligence actions. Every action takes the server session (never an id, role or workspace from the
 // request) and goes through lib/intake/service, which authorizes it and scopes it to the workspace.
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth";
 import * as svc from "@/lib/intake/service";
+import { analyzeIntake, askIntakeQuestion, DOC_THREAD_ID, type AnalyzeResult } from "@/lib/intake/ai-service";
 import type { GenerateInput } from "@/lib/m23/m23-generate";
 
 export async function readDocumentAction(form: FormData): Promise<{ ok: true; id: string } | { ok: false; message: string }> {
@@ -41,4 +43,31 @@ export async function startDraftAction(intakeId: string, input: GenerateInput, c
     revalidatePath(`/app/documents/${encodeURIComponent(text(intakeId, 100))}`);
   }
   return r;
+}
+
+/** Claude's analysis of a read document (checked against the document before it's stored). Any member may run it. */
+export async function analyzeDocumentAction(intakeId: string): Promise<AnalyzeResult> {
+  const s = await requireSession();
+  const id = text(intakeId, 100);
+  const r = await analyzeIntake(s, id);
+  if (r.ok) revalidatePath(`/app/documents/${encodeURIComponent(id)}`);
+  return r;
+}
+
+/** A question about one read document, or a follow-up in one of your own conversations about it. Errors travel as codes. */
+export async function askDocumentAction(fd: FormData) {
+  const s = await requireSession();
+  const str = (k: string, max: number) => (typeof fd.get(k) === "string" ? (fd.get(k) as string).slice(0, max) : "");
+  const id = str("intakeId", 100);
+  const thread = str("threadId", 60);
+  const threadId = DOC_THREAD_ID.test(thread) ? thread : null;
+  const base = `/app/documents/${encodeURIComponent(id)}`;
+  const r = await askIntakeQuestion(s, id, str("question", 2000), threadId);
+  if (!r.ok) {
+    if (r.code === "notfound" || r.code === "forbidden") redirect("/app/documents");
+    redirect(`${base}?chat_error=${r.code}${threadId ? `&thread=${threadId}` : ""}#chat`);
+  }
+  // a follow-up lands on the same URL with a new #anchor, which on its own doesn't re-render the page
+  revalidatePath(base);
+  redirect(`${base}?thread=${encodeURIComponent(r.threadId)}#${r.id}`);
 }

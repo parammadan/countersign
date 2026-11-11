@@ -34,3 +34,31 @@ export function aiBadge(ai: StudioAi): { tone: "ok" | "neutral" | "warn"; text: 
   if (st.reason === "spend_cap") return { tone: "warn", text: "AI paused: daily limit reached" };
   return { tone: "neutral", text: "AI off: templates only" };
 }
+
+/**
+ * Voice input for the AI panel's description box. The browser's own speech recognition turns speech into text; the
+ * text is added to the box for the person to check, and nothing is sent until they press the AI button themselves.
+ * AgreementOS never receives, records or stores audio.
+ */
+export const VOICE_COPY = {
+  start: "Speak instead",
+  stop: "Stop",
+  retry: "Retry",
+  requesting: "Waiting for microphone permission…",
+  listening: "Listening… speak now.",
+  processing: "Turning your speech into text…",
+  done: "Added to the box above — check it, then press Fill details with AI",
+  truncated: "Some of what you said didn't fit: the box holds up to 4,000 characters, so the rest was left out.",
+  autoStopped: "Stopped after 60 seconds.",
+  unsupported: "Voice input isn't supported in this browser — type instead.",
+  privacy: "Your browser may send your voice to its maker's speech service (for example Google, in Chrome) to turn it into text. AgreementOS never receives audio, only the text you choose to send.",
+  heard: "Heard so far",
+  errors: {
+    "not-allowed": "Microphone access was blocked. Allow it in your browser's site settings, or type instead.",
+    "no-speech": "No speech was heard. Check your microphone and try again, or type instead.",
+    "audio-capture": "No microphone was found. Connect one and try again, or type instead.",
+    network: "Your browser's speech service couldn't be reached. Check your connection and try again, or type instead.",
+    aborted: "Voice input stopped before anything was added. Try again, or type instead.",
+    other: "Voice input didn't work this time. Try again, or type instead.",
+  },
+} as const;
