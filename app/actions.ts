@@ -20,6 +20,8 @@ import { escapeHtml } from "@/lib/util";
 import { checkWebhookUrl } from "@/lib/ssrf";
 import { confirmEmail, sendVerification, userVerified, verificationRequired, workspaceVerified } from "@/lib/emailverify";
 import { BRAND } from "@/lib/brand";
+import { EMAIL_HELP } from "@/lib/email-guidance";
+import { verifyResendRefusal } from "@/lib/verify-resend";
 import { printProblem } from "@/lib/pdf/printable";
 
 export type FormState = { error?: string; ok?: string; secret?: string } | undefined;
@@ -152,12 +154,16 @@ export async function acceptInviteAction(_: FormState, fd: FormData): Promise<Fo
 export async function resendVerificationAction(): Promise<FormState> {
   try {
     await throttle("verify-resend", 3);
+    // always the signed-in user's own address: nothing in the form is read, so it can't probe other accounts
     const sess = await requireSession();
-    if (userVerified(sess.userId)) return { ok: "Your email is already confirmed." };
+    if (userVerified(sess.userId)) return { ok: EMAIL_HELP.alreadyVerified };
+    // checked and issued with no await in between (sendVerification records the link before it sends)
+    const refusal = verifyResendRefusal(sess.userId);
+    if (refusal) return { error: refusal };
     const u = one<{ id: string; email: string; name: string }>("SELECT id, email, name FROM users WHERE id = ?", sess.userId)!;
     const r = await sendVerification(u, sess.workspaceId);
     if (!r.delivered) return { error: `We couldn't send the email${r.error ? ` (${r.error})` : ""}. Try again in a minute.` };
-    return { ok: `Sent to ${u.email}. Check your inbox (and spam).` };
+    return { ok: EMAIL_HELP.resent(u.email) };
   } catch (e) {
     return fail(e);
   }
