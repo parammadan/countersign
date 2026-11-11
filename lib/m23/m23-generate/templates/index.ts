@@ -6,6 +6,7 @@ import { retainer } from "./retainer";
 import { engagement } from "./engagement";
 import { consulting } from "./consulting";
 import { licence } from "./licence";
+import { general } from "./general";
 
-export const TEMPLATES: Record<Kind, AgreementTemplate> = { services, nda, lease, retainer, engagement, consulting, licence };
+export const TEMPLATES: Record<Kind, AgreementTemplate> = { services, nda, lease, retainer, engagement, consulting, licence, general };
 export const KINDS = Object.keys(TEMPLATES) as Kind[];

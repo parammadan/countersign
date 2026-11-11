@@ -10,7 +10,7 @@ export const TERM_TYPES: Record<TermKey, TermType> = {
   licensedMaterial: "text", territory: "territory",
   exclusivity: "choice", ipOwner: "choice", licensedUse: "choice", licenceTransfer: "choice", feePeriod: "choice",
   feeBasis: "choice", rentSchedule: "choice", premisesUse: "choice", subletting: "choice", lateFeePeriod: "choice",
-  services: "list",
+  services: "list", agreementTitle: "text",
 };
 
 /**

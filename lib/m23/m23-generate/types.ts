@@ -1,11 +1,11 @@
 import type { DraftDocument, ModelProvider } from "../shared/agreement-model";
 
-export type Kind = "services" | "nda" | "lease" | "retainer" | "engagement" | "consulting" | "licence";
+export type Kind = "services" | "nda" | "lease" | "retainer" | "engagement" | "consulting" | "licence" | "general";
 export type TermKey =
   | "fee" | "paymentDays" | "startDate" | "endDate" | "noticeDays" | "governingLaw"
   | "lateFeePercent" | "rent" | "deposit" | "confidentialityYears" | "propertyAddress"
   | "licensedMaterial" | "territory" | "exclusivity" | "ipOwner" | "licensedUse" | "licenceTransfer" | "feePeriod"
-  | "feeBasis" | "rentSchedule" | "premisesUse" | "subletting" | "lateFeePeriod" | "services";
+  | "feeBasis" | "rentSchedule" | "premisesUse" | "subletting" | "lateFeePeriod" | "services" | "agreementTitle";
 
 /**
  * money: "$5,000" / "USD 5,000.00" (a currency is required; bare numbers are rejected); date: YYYY-MM-DD; int;
@@ -44,6 +44,8 @@ export type TemplateClause = {
 export type AgreementTemplate = {
   kind: Kind;
   title: string;
+  /** A text term whose value is the document's title instead of `title` (the general agreement: "Event Sponsorship Agreement"). */
+  titleTerm?: TermKey;
   roles: [string, string];
   requiredTerms: TermKey[];
   clauses: TemplateClause[];
