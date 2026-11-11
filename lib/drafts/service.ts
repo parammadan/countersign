@@ -294,6 +294,19 @@ const BASIS_CUE: Record<string, RegExp> = {
   quarter: /\b(?:per|a|each|every)\s+quarter\b|\bquarterly\b/i,
   year: /\b(?:per|a|each|every)\s+(?:year|annum)\b|\b(?:yearly|annually|annual)\b|\bper\s+annum\b/i,
 };
+/**
+ * The description with the parts that can't be about the fee's basis taken out: a sentence about a late fee or
+ * interest ("1.5% per month"), a "fixed term/period/date" (a duration, not a fee), and a notice period ("a month's notice").
+ */
+function basisText(description: string): string {
+  return description
+    .split(/[;\n]|\.(?=\s|$)/)
+    .filter((sentence) => !/\b(?:late|overdue|interest|penalt\w*|default)\b/i.test(sentence))
+    .join(". ")
+    .replace(/\bfixed[- ](?:term|period|date|length|duration|schedule)\b/gi, " ")
+    .replace(/\b(?:a|one|1|each|every)\s+(?:month|quarter|year)(?:['’]s?)?\s+(?:written\s+)?notice\b/gi, " ")
+    .replace(/\bnotice\s+(?:of|period of)\s+(?:a|one|1)\s+(?:month|quarter|year)\b/gi, " ");
+}
 /** Where the suggested values were read from: the person's description (Studio) or a read document (Document Intelligence). */
 export type SuggestionSource = "description" | "document";
 const SOURCE_TEXT: Record<SuggestionSource, string> = { description: "your description", document: "the document" };
@@ -351,7 +364,7 @@ export function cleanSuggestion(raw: unknown, description: string, o: { source?:
     const type = TERM_TYPES[key];
     const ok = choices ? own(choices, t.value) : type === "date" ? dates.has(t.value) : said(t.value);
     // a stated value this kind has no place for, or a choice none of the options means: say so, never coerce it
-    if (ok && (key === "feeBasis" || key === "feePeriod") && !(own(BASIS_CUE, t.value) && BASIS_CUE[t.value].test(description))) continue;
+    if (ok && (key === "feeBasis" || key === "feePeriod") && !(own(BASIS_CUE, t.value) && BASIS_CUE[t.value].test(basisText(description)))) continue;
     if (!accepts(key)) { if (ok) addUnsupported(key, ""); continue; }
     if (!ok) { if (choices && kind) addUnsupported(key, "", t.value); continue; }
     terms[key] = t.value.slice(0, 200);

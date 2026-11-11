@@ -16,3 +16,17 @@ describe("dates written the way people write them", () => {
     expect(run("Starts Jan 2027.", [["startDate", "2027-01-01"]]).terms.startDate).toBeUndefined();
   });
 });
+
+describe("fee basis is kept only when the description says it about the fee", () => {
+  it("a late-fee 'per month' does not make a one-time fee monthly", () => {
+    expect(run("$12,000 one-time. Late fee 1.5% per month.", [["fee", "$12,000"], ["feeBasis", "month"]]).terms.feeBasis).toBeUndefined();
+    expect(run("$12,000 flat fee. Late fee 1.5% per month.", [["feeBasis", "fixed"]]).terms.feeBasis).toBe("fixed");
+  });
+  it("'a fixed term of 6 months' is not a fixed fee", () => {
+    expect(run("$12,000 for a fixed term of 6 months", [["feeBasis", "fixed"]]).terms.feeBasis).toBeUndefined();
+  });
+  it("a month's notice is not a monthly fee", () => {
+    expect(run("$5,000 total, give a month's notice", [["feeBasis", "month"]]).terms.feeBasis).toBeUndefined();
+    expect(run("$5,000 a month, one month's notice", [["feeBasis", "month"]]).terms.feeBasis).toBe("month");
+  });
+});
