@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import { ctxOf, handle, rateLimit, readForm, readJson } from "@/lib/http";
 import { AppError, createFile, fileJson } from "@/lib/files";
 import { NewFileBody } from "@/lib/schemas";
-import { one } from "@/lib/db";
-import type { Workspace } from "@/lib/types";
+import { workspaceByInboundToken } from "@/lib/inbound";
 
 export const runtime = "nodejs";
 
@@ -11,7 +10,7 @@ export const runtime = "nodejs";
 export const POST = handle(async (req: Request, ctx: { params: Promise<{ token: string }> }) => {
   rateLimit(req, "inbound", 60);
   const { token } = await ctx.params;
-  const ws = one<Workspace>("SELECT * FROM workspaces WHERE inbound_token = ?", token);
+  const ws = workspaceByInboundToken(token);
   if (!ws) throw new AppError("Unknown inbound URL.", 404);
   let body: unknown;
   const ct = req.headers.get("content-type") || "";

@@ -4,11 +4,11 @@ import { all } from "@/lib/db";
 import { getWorkspace } from "@/lib/files";
 import { appUrl } from "@/lib/paths";
 import { WEBHOOK_EVENTS } from "@/lib/webhooks";
-import { rotateInboundAction } from "@/app/actions";
-import { Button, Badge, PageHeader } from "@/components/ui";
+import { legacyInboundToken } from "@/lib/inbound";
+import { Badge, PageHeader } from "@/components/ui";
 import { Code, Empty, List, Row, Section, StatusPill } from "@/components/developers/parts";
 import { CopyButton } from "@/components/FileActions";
-import { DeleteWebhook, NewKeyForm, NewWebhookForm, RevokeKey } from "@/components/DevForms";
+import { DeleteWebhook, NewKeyForm, NewWebhookForm, RevokeKey, RotateInboundForm } from "@/components/DevForms";
 
 export const metadata = { title: "Integrations & API" };
 
@@ -16,7 +16,8 @@ export default async function Page() {
   const s = await requireAdmin();
   const ws = getWorkspace(s.workspaceId);
   const base = appUrl();
-  const inbound = `${base}/api/inbound/${ws.inbound_token}`;
+  const legacy = legacyInboundToken(ws);
+  const inbound = `${base}/api/inbound/${legacy ?? "<your-token>"}`;
   const keys = all<{ id: string; name: string; prefix: string; created_at: string; last_used_at: string | null; revoked_at: string | null }>("SELECT * FROM api_keys WHERE workspace_id = ? ORDER BY created_at DESC", ws.id);
   const hooks = all<{ id: string; url: string; events: string; created_at: string }>("SELECT * FROM webhooks WHERE workspace_id = ? AND active = 1 ORDER BY created_at DESC", ws.id);
   const agreements = all<{ id: string; name: string; is_default: number; live: number }>(
@@ -65,11 +66,11 @@ curl -X POST ${base}/api/v1/files/{id}/void   -H "Authorization: Bearer cs_live_
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <code aria-label="Inbound address" className="min-w-0 flex-1 break-all rounded-lg border border-line bg-subtle px-3 py-2 font-mono text-xs">{inbound}</code>
             <div className="flex gap-2">
-              <CopyButton text={inbound} />
-              <form action={rotateInboundAction}><Button variant="ghost">Rotate</Button></form>
+              {legacy && <CopyButton text={inbound} />}
+              <RotateInboundForm />
             </div>
           </div>
-          <p className="text-xs text-muted">Rotating gives a new URL and stops the old one working, so update your automation straight after.</p>
+          <p className="text-xs text-muted">Only a hash of the token is stored, so the full URL is shown once, when you rotate. Rotating stops the old URL working, so update your automation straight after.</p>
           <Code label="Inbound webhook example">{`curl -X POST ${inbound} \\
   -H "Content-Type: application/json" \\
   -d '{"client_name":"Jordan Sample","client_email":"jordan@example.com","ref":"2026-0142"}'`}</Code>
