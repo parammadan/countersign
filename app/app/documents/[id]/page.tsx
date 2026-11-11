@@ -63,7 +63,8 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   // no model call: whether AI would run for this document now, and Claude's latest analysis of it
   const ai = documentAi(s, result.id);
   const latest = latestDocAnalysis(s.workspaceId, result.id);
-  const aiError = q.ai && Object.hasOwn(ANALYZE_MESSAGE, q.ai) && !latest ? ANALYZE_MESSAGE[q.ai as AnalyzeCode] : null;
+  // why the analysis after reading didn't run (once; the unavailable notice below already says the standing reason)
+  const aiError = q.ai && Object.hasOwn(ANALYZE_MESSAGE, q.ai) && !latest && (ai.available || q.ai !== ai.reason) ? ANALYZE_MESSAGE[q.ai as AnalyzeCode] : null;
   const threadId = q.thread && DOC_THREAD_ID.test(q.thread) ? q.thread : undefined;
   const turns = threadId ? documentConversation(s, result.id, threadId) : [];
   const mine = turns.length > 0 && turns[0].askedById === s.userId;
