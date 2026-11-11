@@ -8,6 +8,7 @@ import { Badge, Card, CardHeader, cx, EmptyState, LinkButton, Notice, PageHeader
 import { Icon, type IconName } from "@/components/icons";
 import { FileTable } from "@/components/FileTable";
 import { ExploreAi } from "@/components/ExploreAi";
+import { StartHere } from "@/components/StartHere";
 import { aiState } from "@/lib/ai/budget";
 import { verificationRequired } from "@/lib/emailverify";
 import { configuredProvider } from "@/lib/ai/anthropic";
@@ -89,6 +90,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ e
       <div className="space-y-6">
         {error === "admin" && <Notice tone="warn">That page is for workspace admins.</Notice>}
         {confirmed && <Notice tone="ok">Email confirmed. You can now send agreements to clients.</Notice>}
+
+        {ags.length === 0 && m.total === 0 && <StartHere ai={ai} admin={admin} />}
 
         <NextStep next={next} steps={setupLeft > 0 ? steps : null} admin={admin} />
 

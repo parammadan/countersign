@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireSession } from "@/lib/auth";
 import { all, one } from "@/lib/db";
 import type { FileRow } from "@/lib/types";
+import { agreements } from "@/lib/dashboard";
 import { Card, LinkButton, PageHeader, inputCls } from "@/components/ui";
 import { FilesTabs } from "@/components/files/FilesTabs";
 import { FilesEmpty } from "@/components/files/FilesEmpty";
@@ -72,7 +73,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ s
         )}
       </p>
       <Card>
-        <FileTable files={files} empty={<FilesEmpty q={q} tabLabel={tab.label} hasAny={hasAny} />} />
+        <FileTable files={files} empty={<FilesEmpty q={q} tabLabel={tab.label} hasAny={hasAny} canOpen={hasAny || agreements(s.workspaceId).some((a) => a.liveVersion != null)} admin={s.role !== "staff"} />} />
       </Card>
       <details className="mt-6 rounded-xl border border-line bg-white p-4">
         <summary className="cursor-pointer text-sm font-medium">Import a backlog of files from CSV</summary>
