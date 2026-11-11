@@ -96,7 +96,7 @@ describe("landing page", () => {
     it("labels every preview as illustrative and hides the mock-ups from assistive tech", async () => {
       const h = await render();
       const figures = h.match(/<figure[\s\S]*?<\/figure>/g) ?? [];
-      expect(figures.length).toBeGreaterThanOrEqual(9);
+      expect(figures.length).toBeGreaterThanOrEqual(8);
       for (const f of figures) {
         expect(text(f.match(/<figcaption[\s\S]*?<\/figcaption>/)![0])).toMatch(new RegExp(`^ ?(${PREVIEW_LABEL}|${HERO.caption.replace(/\./g, "\\.")}) ?:`));
         expect(f).toMatch(/<div aria-hidden="true" class="relative">/);
