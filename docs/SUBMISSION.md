@@ -83,5 +83,6 @@ Create a workspace at `/signup`, upload an agreement (or use "Try a sample one")
 - Voice input needs a browser with speech recognition; elsewhere the control is not offered.
 - AI is capped daily, so it can be unavailable for the rest of the day once the cap is reached.
 - Clause Library compares user ids, so one person with two accounts in a workspace could approve their own text. It is recorded in the audit log.
+- Outbound webhooks are built and tested but external delivery is turned off in production for this submission.
 - Email goes to the Email log unless SMTP or Resend is configured.
 - Some paths have no automated test (see the README's Tests column), and visual baselines exist only on macOS.
