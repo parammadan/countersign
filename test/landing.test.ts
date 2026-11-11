@@ -51,6 +51,13 @@ describe("landing page", () => {
       expect(h).toContain("One connected workflow: Create · Understand · Approve · Sign");
     });
 
+    it("hero: Create workspace and Explore features side by side", async () => {
+      const h = await render();
+      const hero = h.match(/<section aria-labelledby="hero-heading"[\s\S]*?<\/section>/)![0];
+      expect(links(hero, NAV.create)).toEqual(["/signup"]);
+      expect(links(hero, NAV.explore)).toEqual(["#features"]);
+      expect(text(hero)).not.toContain("See how it works");
+    });
     it("Create workspace goes to /signup and Sign in to /login; no Open app", async () => {
       const h = await render();
       expect(links(h, "Create workspace").length).toBeGreaterThanOrEqual(4);

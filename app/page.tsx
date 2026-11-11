@@ -168,7 +168,7 @@ export default async function Home() {
             <p className="lp-rise lp-d2 mx-auto mt-6 max-w-2xl text-[17px] leading-relaxed text-pretty text-ink-2 sm:text-xl">{HERO.subtitle}</p>
             <div className="lp-rise lp-d3 mt-9 flex flex-wrap items-center justify-center gap-3">
               {primary}
-              <LinkButton href="#how-it-works" size="lg" variant="secondary">See how it works</LinkButton>
+              <LinkButton href="#features" size="lg" variant="secondary">{NAV.explore}</LinkButton>
             </div>
           </div>
           <div className={cx(wrap, "lp-rise lp-d4 relative max-w-5xl pb-6")}>

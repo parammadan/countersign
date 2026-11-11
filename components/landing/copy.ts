@@ -23,6 +23,7 @@ export const NAV = {
   verify: "Verify document",
   signIn: "Sign in",
   create: "Create workspace",
+  explore: "Explore features",
   openApp: "Open app",
 } as const;
 
