@@ -227,7 +227,7 @@ function DocumentAiPreview() {
   return (
     <Preview describe="Document Intelligence's AI analysis of an uploaded consulting agreement: a plain-English summary with its source page, key terms each quoted with their page, a chat question about this document answered with a quoted passage, and a button to start an Agreement Studio draft. Marked informational, not legal advice.">
       <Window title="Document Intelligence" right={<Badge tone="ok" icon="spark" className="hidden sm:inline-flex">AI on</Badge>}>
-        <DocHeader sub="Consulting agreement · 4 pages · analyzed by Claude" badge={<Badge tone="neutral" className="hidden text-[11px] sm:inline-flex">{DOC_INTEL.badge}</Badge>} />
+        <DocHeader sub="Consulting agreement · 4 pages · analyzed by Claude" />
         <div className="border-b border-line bg-brand/[0.035] px-4 py-3">
           <div className={cx(sectionLabel, "flex items-center gap-1.5 text-brand")}><Icon name="spark" size={12} />In plain English</div>
           <p className="mt-1.5 text-[13px] leading-relaxed text-ink">Northwind Advisory LLC will provide consulting services to Acme Widgets Inc for a one-time fixed fee of $12,000, under Delaware law.</p>
@@ -251,7 +251,7 @@ function DocumentAiPreview() {
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-4 py-3">
           <FakeButton icon="agreement" variant="secondary">Start a draft in Agreement Studio</FakeButton>
-          <span className="text-[11px] text-muted sm:hidden">{DOC_INTEL.badge}</span>
+          <span className="text-[11px] text-muted">{DOC_INTEL.badge}</span>
         </div>
       </Window>
     </Preview>
@@ -478,8 +478,8 @@ export function PhoneSignPreview() {
     <Preview dark glow={false} describe="the client's signing page on a computer with the “Sign on your phone” dialog open, showing a QR code of the same signing link and a Copy link button, and next to it the phone that opened it, with a “Review and sign” button.">
       <div className="relative pb-4 sm:pr-24">
         <Window title="Consulting Agreement · Northwind Advisory LLC">
-          <div className="relative bg-bg px-4 py-5 sm:px-6">
-            <div className="space-y-2 rounded-lg border border-line bg-white p-4 opacity-60">
+          <div className="relative isolate bg-bg px-4 py-6 sm:px-6">
+            <div className="absolute inset-4 -z-10 space-y-2 rounded-lg border border-line bg-white p-4 opacity-60">
               <div className="h-2 w-1/3 rounded bg-line-strong" />
               <div className="h-1.5 w-full rounded bg-line" />
               <div className="h-1.5 w-11/12 rounded bg-line" />
@@ -487,7 +487,8 @@ export function PhoneSignPreview() {
               <div className="h-1.5 w-full rounded bg-line" />
               <div className="h-1.5 w-2/3 rounded bg-line" />
             </div>
-            <div className="absolute inset-0 grid place-items-center bg-ink/25 p-4">
+            <div className="absolute inset-0 -z-10 bg-ink/25" />
+            <div className="flex justify-center">
               <div className="w-full max-w-[300px] rounded-xl border border-line bg-white p-4 text-center shadow-3">
                 <div className="text-[14px] font-semibold text-ink">Sign on your phone</div>
                 <div className="mt-3 flex justify-center"><FakeQr /></div>
