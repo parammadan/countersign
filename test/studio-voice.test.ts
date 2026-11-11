@@ -13,7 +13,7 @@ import { NewAgreement } from "@/components/studio/NewAgreement";
 import { VoicePanel, focusAtEnd } from "@/components/studio/VoiceInput";
 import { AI_COPY, VOICE_COPY } from "@/components/studio/ai-state";
 import {
-  VOICE_IDLE, VOICE_START_GRACE_MS, VOICE_STOP_GRACE_MS, clock, joinFinals, mergeTranscript, micPermission, readResults, recognitionCtor, startVoiceSession, tidyChunk, voiceBusy, voiceError, voiceReducer,
+  VOICE_IDLE, VOICE_START_GRACE_MS, VOICE_STOP_GRACE_MS, clock, joinFinals, mergeTranscript, micPermission, readResults, recognitionCtor, startVoiceSession, tidyDictation, voiceBusy, voiceError, voiceReducer,
   type RecognitionLike, type RecognitionResultList, type VoiceAction, type VoiceState,
 } from "@/components/studio/voice-state";
 import type { KindSpec, StudioAi } from "@/lib/drafts/service";
@@ -80,29 +80,34 @@ describe("readResults: final vs interim", () => {
   });
 });
 
-describe("tidyChunk: capital first letter, a full stop only where punctuation is missing, nothing else changed", () => {
-  it("capitalises and ends a bare chunk", () => {
-    expect(tidyChunk("i need a consulting agreement")).toBe("I need a consulting agreement.");
-    expect(tidyChunk("  between acme and northwind  ")).toBe("Between acme and northwind.");
+describe("tidyDictation: the whole dictation once — capital first letter, one full stop if missing, nothing else", () => {
+  it("joins Chrome's pause-split chunks with single spaces and tidies only the ends", () => {
+    expect(tidyDictation(["a consulting agreement for $12,000", "under delaware law", "thirty days"])).toBe("A consulting agreement for $12,000 under delaware law thirty days.");
+    expect(tidyDictation(["  i need  ", "", " an nda "])).toBe("I need an nda.");
+    expect(tidyDictation([])).toBe("");
+  });
+  it("capitalises and ends bare text", () => {
+    expect(tidyDictation("i need a consulting agreement")).toBe("I need a consulting agreement.");
+    expect(tidyDictation("  between acme and northwind  ")).toBe("Between acme and northwind.");
   });
   it("leaves punctuation that's there", () => {
-    expect(tidyChunk("is that all?")).toBe("Is that all?");
-    expect(tidyChunk("Delaware law applies.")).toBe("Delaware law applies.");
-    expect(tidyChunk("terms: net 30,")).toBe("Terms: net 30,");
-    expect(tidyChunk('"Acme"')).toBe('"Acme"');
+    expect(tidyDictation("is that all?")).toBe("Is that all?");
+    expect(tidyDictation("Delaware law applies.")).toBe("Delaware law applies.");
+    expect(tidyDictation("terms: net 30,")).toBe("Terms: net 30,");
+    expect(tidyDictation('"Acme"')).toBe('"Acme"');
   });
   it("never changes digits, amounts or names", () => {
-    expect(tidyChunk("$12,000 per month")).toBe("$12,000 per month.");
-    expect(tidyChunk("for 12000")).toBe("For 12000.");
-    expect(tidyChunk("McDonald's and iPhone LLC")).toBe("McDonald's and iPhone LLC.");
-    expect(tidyChunk("eBay inc")).toBe("EBay inc."); // only the first letter, as asked
-    expect(tidyChunk("30%")).toBe("30%");
-    expect(tidyChunk("")).toBe("");
+    expect(tidyDictation("$12,000 per month")).toBe("$12,000 per month.");
+    expect(tidyDictation("for 12000")).toBe("For 12000.");
+    expect(tidyDictation("McDonald's and iPhone LLC")).toBe("McDonald's and iPhone LLC.");
+    expect(tidyDictation("eBay inc")).toBe("EBay inc."); // only the first letter, as asked
+    expect(tidyDictation("30%")).toBe("30%");
+    expect(tidyDictation("")).toBe("");
   });
   it("other scripts: no stray full stop where the language doesn't use one", () => {
-    expect(tidyChunk("咨询协议", "zh-CN")).toBe("咨询协议");
-    expect(tidyChunk("договор", "ru-RU")).toBe("Договор.");
-    expect(tidyChunk("élan", "fr-FR")).toBe("Élan.");
+    expect(tidyDictation("咨询协议", "zh-CN")).toBe("咨询协议");
+    expect(tidyDictation("договор", "ru-RU")).toBe("Договор.");
+    expect(tidyDictation("élan", "fr-FR")).toBe("Élan.");
   });
 });
 
@@ -325,9 +330,9 @@ describe("startVoiceSession: shows interim text live, adds final text once at th
     expect(rec.aborted).toBe(1);
     expect(rec.onend).toBeNull(); // a late end event can't add it twice
     expect(st).toMatchObject({ status: "done" });
-    expect(box).toBe("Typed. Acme Inc. And Northwind.");
+    expect(box).toBe("Typed. Acme Inc and Northwind.");
     vi.advanceTimersByTime(120_000); // the 60-second timer was cleared too
-    expect(box).toBe("Typed. Acme Inc. And Northwind.");
+    expect(box).toBe("Typed. Acme Inc and Northwind.");
   });
   it("the grace timer is cleared when the browser does end the session", () => {
     vi.useFakeTimers();
@@ -361,7 +366,7 @@ describe("startVoiceSession: shows interim text live, adds final text once at th
     // the third run hears nothing: silence ends the dictation
     third.onend?.({});
     expect(t.state().status).toBe("done");
-    expect(t.box()).toBe("Typed. I need a consulting agreement. Between acme and northwind.");
+    expect(t.box()).toBe("Typed. I need a consulting agreement between acme and northwind.");
     expect(t.box().match(/consulting/g)).toHaveLength(1);
   });
   it("restarts are capped, and never past the 60 seconds", () => {
@@ -376,7 +381,7 @@ describe("startVoiceSession: shows interim text live, adds final text once at th
       Fake.last!.onend?.({});
     }
     expect(Fake.all.length - before).toBe(3); // the first run and 2 restarts
-    expect(box).toBe("Phrase 0. Phrase 1. Phrase 2.");
+    expect(box).toBe("Phrase 0 phrase 1 phrase 2.");
     // past the limit: no restart even under the cap
     st = VOICE_IDLE;
     box = "";

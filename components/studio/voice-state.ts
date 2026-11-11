@@ -124,12 +124,13 @@ export function readResults(list: RecognitionResultList): { finals: string[]; fi
 }
 
 /**
- * Tidies one spoken chunk: Chrome gives lowercase text without punctuation. Capitalises the first letter (only if it
- * is lowercase) and adds a full stop only when the chunk ends in a letter or digit with no punctuation. Nothing else
- * changes: digits, amounts, names and the rest of the casing stay exactly as heard.
+ * Tidies a whole dictation once, when it ends: Chrome gives lowercase text without punctuation, split at short pauses,
+ * so the chunks are joined with single spaces, the first letter is capitalised (only if it is lowercase), and one full
+ * stop is added only when the text ends in a letter or digit. Nothing else changes: digits, amounts, names and the
+ * rest of the casing stay exactly as heard, and no punctuation is added between chunks.
  */
-export function tidyChunk(chunk: string, lang = "en-US"): string {
-  const c = chunk.trim();
+export function tidyDictation(chunks: string[] | string, lang = "en-US"): string {
+  const c = (Array.isArray(chunks) ? chunks.join(" ") : chunks).replace(/\s+/g, " ").trim();
   if (!c) return "";
   const first = String.fromCodePoint(c.codePointAt(0)!);
   let out = first !== first.toLocaleUpperCase(lang) && first === first.toLocaleLowerCase(lang) ? first.toLocaleUpperCase(lang) + c.slice(first.length) : c;
@@ -221,14 +222,14 @@ export function startVoiceSession(Ctor: RecognitionCtor, o: VoiceSessionOptions)
     }
   };
   const chunks = (withInterim: boolean) => joinFinals([...kept, ...finals, ...(withInterim && interim ? [interim] : [])]);
-  const text = (withInterim: boolean) => chunks(withInterim).map((c) => tidyChunk(c, o.lang)).join(" ");
+  const text = (withInterim: boolean) => tidyDictation(chunks(withInterim), o.lang);
 
   const finish = () => {
     if (over) return;
     over = true;
     clearTimers();
     detach(rec);
-    // a run the browser ended itself may leave unfinalised words (Safari rarely marks results final): keep them too
+    // the whole dictation is tidied once, here. A run the browser ended itself may leave unfinalised words (Safari rarely marks results final): keep them too
     const t = text(true);
     // silence or a lost connection after something was heard: keep what was heard
     if (err && !(t.trim() && (err === "no-speech" || err === "aborted"))) return o.dispatch({ type: "error", code: err });

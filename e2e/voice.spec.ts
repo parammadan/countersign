@@ -172,7 +172,8 @@ test("Chrome-style dictation over many result events: added once, tidied, cursor
 
   await page.getByRole("button", { name: "Stop" }).click(); // stop finalises the interim tail
   await expect(status(page)).toContainText("Added to the box above — check it, then press Fill details with AI");
-  const expected = "Between Acme Widgets Inc and Northwind Advisory LLC. A consulting agreement for $12,000. Under delaware law. Thirty days.";
+  // tidied once for the whole dictation: one capital, one full stop, nothing between Chrome's pause-split chunks
+  const expected = "Between Acme Widgets Inc and Northwind Advisory LLC. A consulting agreement for $12,000 under delaware law thirty days.";
   await expect(box(page)).toHaveValue(expected);
   // ready to edit: focused, cursor after the last character
   await expect(box(page)).toBeFocused();
@@ -203,7 +204,7 @@ test("Safari-style: the browser ends the run after each phrase; it listens on, a
   await expect.poll(() => page.evaluate(() => window.__voice.runs)).toBe(3);
   await last(page).browserEnd(); // a run that hears nothing: silence ends the dictation
   await expect(status(page)).toContainText("Added to the box above");
-  await expect(box(page)).toHaveValue("I need a consulting agreement. Between acme and northwind.");
+  await expect(box(page)).toHaveValue("I need a consulting agreement between acme and northwind.");
   expect(calls.actions).toBe(0);
 });
 
