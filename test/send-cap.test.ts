@@ -141,6 +141,22 @@ describe("CSV import", () => {
   });
 });
 
+describe("reminders can't bypass the cap", () => {
+  it("refuses a reminder on a draft or an expired file and sends nothing", async () => {
+    process.env.INVITE_CAP_PER_DAY = "1";
+    const ws = files.getWorkspace("ws_a");
+    await files.createFile(ws, input(1), actor, {});
+    const draft = await files.createFile(ws, input(2), actor, {}, false);
+    outbox.length = 0;
+    await expect(files.sendFile(draft, ws, "reminder", actor, {})).rejects.toMatchObject({ status: 409 });
+    expect(files.getFile(ws.id, draft.id).status).toBe("draft");
+    db.run("UPDATE files SET status = 'expired' WHERE id = ?", draft.id);
+    await expect(files.sendFile(files.getFile(ws.id, draft.id), ws, "reminder", actor, {})).rejects.toMatchObject({ status: 409 });
+    expect(files.getFile(ws.id, draft.id).status).toBe("expired");
+    expect(outbox).toHaveLength(0);
+  });
+});
+
 describe("inbound webhook", () => {
   it("answers 429 over the cap and creates nothing; send:false still works", async () => {
     process.env.INVITE_CAP_PER_DAY = "1";

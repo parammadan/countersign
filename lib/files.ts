@@ -220,6 +220,9 @@ function sealProblem(n: SealNames, events: { actor: string }[]): { what: string;
 export async function sendFile(f: FileRow, ws: Workspace, kind: "invite" | "resend" | "reminder", actor: Actor, ctx: Ctx): Promise<FileRow> {
   if (["completed", "voided", "signed"].includes(f.status)) throw new AppError(`This file is ${f.status}; it can't be sent again.`, 409);
   if (f.status === "declined" && kind !== "resend") throw new AppError("This file was declined. Use Send again.", 409);
+  // a reminder only nudges a client who already has the link; it must never act as an (uncapped) first send or resend
+  if (kind === "reminder" && f.status !== "sent" && f.status !== "viewed")
+    throw new AppError(`This file is ${f.status}; only a sent file can get a reminder.`, 409);
   assertCanSendTo(ws.id, f.client_email);
   if (kind !== "reminder") assertInviteCap(ws.id); // reminders are exempt (see lib/sendcap.ts)
   // the link first (the token never changes): if it can't be built, e.g. APP_SECRET missing or changed, nothing is
