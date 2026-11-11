@@ -259,7 +259,15 @@ function shorthandAmounts(description: string): Set<string> {
 }
 const moneyKey = (v: string) => v.trim().replace(/^(usd|eur|gbp|cad)\s?/i, (c) => c.trim().toUpperCase()).replace(/,/g, "").replace(/\s/g, "");
 
-/** The name appears in the description as a complete name: not with another capitalised word right before or after it. */
+/**
+ * Capitalised words that start a sentence or label a party ("Between Harborline…", "Provider Harborline…"). One of
+ * these right before a name doesn't make it part of a longer name; any other capitalised word still does.
+ */
+const NOT_PART_OF_A_NAME = new Set(["between", "among", "for", "with", "from", "to", "and", "by", "of", "the", "this", "that", "our", "we", "i", "my", "hire", "hired", "engage", "engages", "engaging", "party", "parties", "client", "clients", "customer", "provider", "service", "services", "consultant", "contractor", "vendor", "supplier", "firm", "company", "landlord", "tenant", "licensor", "licensee", "discloser", "recipient", "agreement", "create", "draft", "make", "prepare", "need", "want", "new"]);
+/**
+ * The name appears in the description as a complete name: not with another capitalised word right before or after it
+ * on the same line. A line break ends a name (lists put each party on its own line, "Provider: …" then "Client: …").
+ */
 function wholeName(description: string, name: string): boolean {
   const esc = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
   for (const m of description.matchAll(new RegExp(`(?<![\\p{L}\\p{N}])${esc}(?![\\p{L}\\p{N}])`, "giu"))) {
@@ -267,17 +275,22 @@ function wholeName(description: string, name: string): boolean {
     // walk by code point (an astral capital such as "𝐀" counts), skipping whitespace first
     const prev = (j: number) => (j > 0 && /[\udc00-\udfff]/.test(description[j]) && /[\ud800-\udbff]/.test(description[j - 1]) ? j - 1 : j);
     let i = m.index! - 1;
-    while (i >= 0 && /\s/u.test(description[i])) i--;
-    let before = false;
+    while (i >= 0 && /[^\S\r\n]/u.test(description[i])) i--; // spaces and tabs only: a line break ends the name
+    let word = "";
+    let capital = false;
     for (let steps = 0; i >= 0; steps++) {
       const at = prev(i);
       const ch = String.fromCodePoint(description.codePointAt(at)!);
       if (!/[\p{L}&.'-]/u.test(ch)) break;
-      // a capital in the adjacent word, or a run too long to be a word: not a complete name (fail closed)
-      if (/\p{Lu}/u.test(ch) || steps >= 120) { before = true; break; }
+      // a run too long to be a word: not a complete name (fail closed)
+      if (steps >= 120) { capital = true; word = ""; break; }
+      if (/\p{Lu}/u.test(ch)) capital = true;
+      word = ch + word;
       i = at - 1;
     }
-    const AFTER = /\s*\p{Lu}/uy;
+    // a capital in the adjacent word means a longer name, unless that word opens a sentence or labels a party
+    const before = capital && !NOT_PART_OF_A_NAME.has(word.toLowerCase().replace(/[.'-]+$/, ""));
+    const AFTER = /[^\S\r\n]*\p{Lu}/uy;
     AFTER.lastIndex = m.index! + m[0].length;
     const after = AFTER.test(description);
     if (!before && !after) return true;
