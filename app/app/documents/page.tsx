@@ -28,10 +28,10 @@ export default async function Page() {
           ai.available ? <Badge tone="ok" icon="spark">AI on</Badge> : <Badge tone={ai.reason === "off" ? "neutral" : "warn"}>{ai.reason === "off" ? "AI off: rules only" : "AI paused: rules only"}</Badge>
         }
       />
-      <p className="-mt-4 mb-5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-muted">
-        <Icon name="info" size={14} className="shrink-0" />
-        <span>{C.scope}</span>
-        <Link href="/app/knowledge" className="text-brand underline underline-offset-2">Open the Knowledge Hub</Link>
+      <p className="-mt-4 mb-5 text-[13px] leading-relaxed text-muted">
+        <Icon name="info" size={14} className="mr-1.5 inline-block align-[-2px]" />
+        {C.scope}{" "}
+        <Link href="/app/knowledge" className="whitespace-nowrap text-brand underline underline-offset-2">Open the Knowledge Hub</Link>
       </p>
       {!ai.available && (
         <div className="mb-5">
