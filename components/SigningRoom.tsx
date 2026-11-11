@@ -8,6 +8,7 @@ import { CONSENT_FULL, CONSENT_SUMMARY, SIGN_INTENT } from "@/lib/consent";
 import type { Field, PageSize } from "@/lib/fields";
 import { BRAND } from "@/lib/brand";
 import { EMAIL_HELP } from "@/lib/email-guidance";
+import { SignOnPhone } from "./SignOnPhone";
 import { autoCompleteFor, fieldError, fieldName, mustComplete, progressText, remainingAnnouncement } from "@/lib/sign-fields";
 
 export type SignerField = Field & { value?: string };
@@ -26,6 +27,9 @@ type Props = {
   requireOtp: boolean;
   otpVerified: boolean;
   consented: boolean;
+  /** the signing link as emailed, and its QR code (made on the server), for "Sign on your phone" */
+  signUrl: string;
+  qr: string;
 };
 
 export function SigningRoom(p: Props) {
@@ -162,8 +166,19 @@ export function SigningRoom(p: Props) {
     }
   }
 
+  // desktop-sized screens only (the button hides itself below lg), and not once this device has signed
+  const phone = (className?: string) => (
+    <SignOnPhone token={p.token} firm={p.firm} signUrl={p.signUrl} qr={p.qr} requireOtp={p.requireOtp} paused={busy || declining} className={className} />
+  );
+
   if (stage === "done") return <Done token={p.token} firm={p.firm} email={p.clientEmail} status={doneStatus} />;
-  if (stage === "otp") return <Otp token={p.token} email={p.clientEmail} onOk={() => location.reload()} />;
+  if (stage === "otp")
+    return (
+      <>
+        <Otp token={p.token} email={p.clientEmail} onOk={() => location.reload()} />
+        <div className="flex justify-center lg:-mt-6 lg:pb-12">{phone()}</div>
+      </>
+    );
 
   if (stage === "intro")
     return (
@@ -200,6 +215,7 @@ export function SigningRoom(p: Props) {
           <button className="mt-3 w-full text-center text-xs text-muted hover:text-ink" onClick={() => setDeclining(true)}>I don&apos;t want to sign this</button>
         </div>
         <p className="mt-4 text-center text-xs text-muted">Sent to {p.clientEmail}. Secured by {BRAND.name}.</p>
+        <div className="flex justify-center lg:mt-5">{phone()}</div>
         {showDisclosure && <Disclosure onClose={() => setShowDisclosure(false)} />}
         {declining && <Decline token={p.token} onClose={() => setDeclining(false)} onDeclined={forgetDraft} />}
       </div>
@@ -229,6 +245,7 @@ export function SigningRoom(p: Props) {
               <span className="shrink-0 text-[11px] font-medium text-muted" aria-hidden="true">{progressText(doneCount, required.length, optionalLeft.length)}</span>
             </div>
           </div>
+          {phone("shrink-0")}
           {remaining.length > 0 ? (
             <Button onClick={() => goTo(remaining[0])}>Next field</Button>
           ) : (

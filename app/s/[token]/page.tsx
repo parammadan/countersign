@@ -4,6 +4,8 @@ import { signerVerified } from "@/lib/signer";
 import { readableBrand } from "@/lib/brand-color";
 import { one } from "@/lib/db";
 import { now } from "@/lib/util";
+import { appUrl } from "@/lib/paths";
+import { qrDataUrl } from "@/lib/qr";
 import { SigningRoom, VerifyThenDownload, type SignerField } from "@/components/SigningRoom";
 
 export const metadata: Metadata = { title: "Review and sign", robots: { index: false, follow: false } };
@@ -71,6 +73,9 @@ export default async function Page({ params }: { params: Promise<{ token: string
   // Until the emailed code is verified in this browser, send nothing about the agreement's contents.
   const verified = await signerVerified(file, ws);
   const pre = verified ? prefillValues(file, ws, fields) : new Map();
+  // "Sign on your phone": a QR code of this same link, made here (never by a third-party service)
+  const signUrl = `${appUrl()}/s/${token}`;
+  const qr = await qrDataUrl(signUrl);
   const signerFields: SignerField[] = fields.map((f) => {
     const v = pre.get(f.id);
     return { ...f, reason: undefined, confidence: undefined, value: v?.kind === "text" ? v.text : v?.kind === "check" && v.on ? "✓" : undefined };
@@ -90,6 +95,8 @@ export default async function Page({ params }: { params: Promise<{ token: string
       requireOtp={!!ws.require_otp}
       otpVerified={verified}
       consented={!!file.consent_at}
+      signUrl={signUrl}
+      qr={qr}
     />,
   );
 }

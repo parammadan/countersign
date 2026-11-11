@@ -28,6 +28,7 @@ const paths = {
   pen: <><path d="m14.5 5.5 4 4" /><path d="M4 20l1-4.5L16.5 4a1.5 1.5 0 0 1 2.1 0l1.4 1.4a1.5 1.5 0 0 1 0 2.1L8.5 19z" /></>,
   arrowRight: <path d="M5 12h14M13 6l6 6-6 6" />,
   external: <><path d="M14 4.5h5.5V10M19.5 4.5 11 13" /><path d="M18 14v3.5a2 2 0 0 1-2 2H6.5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2H10" /></>,
+  phone: <><rect x="6.5" y="2.5" width="11" height="19" rx="2.5" /><path d="M10.5 18.5h3" /></>,
   spark: <path d="M12 3.5v4M12 16.5v4M3.5 12h4M16.5 12h4M6 6l2.6 2.6M15.4 15.4 18 18M6 18l2.6-2.6M15.4 8.6 18 6" />,
 } as const;
 
