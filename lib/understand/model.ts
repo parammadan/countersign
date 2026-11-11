@@ -39,9 +39,32 @@ export interface ModelProvider {
 
 export const LIMITS = { maxInputChars: 120_000, maxOutputTokens: 4_000, timeoutMs: 60_000 };
 
-export class AnalysisError extends Error {}
+/** Why a model call failed, decided from the error's type and HTTP status only, never its text (which can echo the request). */
+export type FailureKind = "timeout" | "cut_off" | "refused" | "unreadable" | "busy" | "unavailable" | "failed";
+const KINDS = new Set<FailureKind>(["timeout", "cut_off", "refused", "unreadable", "busy", "unavailable", "failed"]);
+export function failureKind(e: unknown): FailureKind {
+  if (e && typeof e === "object") {
+    const k = (e as { kind?: unknown }).kind;
+    if (typeof k === "string" && KINDS.has(k as FailureKind)) return k as FailureKind;
+    const status = (e as { status?: unknown }).status;
+    if (status === 429 || status === 529 || (typeof status === "number" && status >= 500)) return "busy";
+    if (status === 401 || status === 403 || status === 404) return "unavailable";
+    if ((e as { name?: unknown }).name === "AbortError") return "timeout";
+  }
+  return "failed";
+}
+
+export class AnalysisError extends Error {
+  constructor(message?: string, readonly kind: FailureKind = "failed") {
+    super(message);
+  }
+}
 /** Only this one is ours to pass on; anything an adapter throws is replaced by a fixed message. */
-class DeadlineError extends AnalysisError {}
+class DeadlineError extends AnalysisError {
+  constructor(message: string) {
+    super(message, "timeout");
+  }
+}
 
 export const SYSTEM_PROMPT = [
   "You read business agreements and report what they say, for a person who will check every point.",
@@ -124,7 +147,7 @@ export async function callModel(provider: ModelProvider, req: Omit<ModelRequest,
     return await Promise.race([provider.complete({ ...req, signal: ctl.signal }), deadline]);
   } catch (e) {
     if (e instanceof DeadlineError) throw e;
-    throw new AnalysisError("The analysis service didn't answer. Try again later.");
+    throw new AnalysisError("The analysis service didn't answer. Try again later.", failureKind(e));
   } finally {
     clearTimeout(timer);
   }
