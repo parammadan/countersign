@@ -77,15 +77,15 @@ const GROUPS = [
   { key: "unsupported", title: "Claude understood, but this template can't include it", tone: "info" },
 ] as const;
 
-/** Claude's clarifications in three separate groups, human labels only. */
-export function ClarificationGroups({ groups }: { groups: Clarifications }) {
+/** Claude's clarifications in three separate groups, human labels only. `titles` rewords a group's heading (a document, not a description). */
+export function ClarificationGroups({ groups, titles }: { groups: Clarifications; titles?: Partial<Record<keyof Clarifications, string>> }) {
   if (!GROUPS.some((g) => groups[g.key].length)) return null;
   return (
     <div data-testid="ai-clarifications" className="mt-3 space-y-3">
       {GROUPS.filter((g) => groups[g.key].length).map((g) => (
-        <section key={g.key} aria-label={g.title}>
+        <section key={g.key} aria-label={titles?.[g.key] ?? g.title}>
           <Notice tone={g.tone}>
-            <p className="font-medium text-ink">{g.title}</p>
+            <p className="font-medium text-ink">{titles?.[g.key] ?? g.title}</p>
             <ul className="mt-1 list-disc space-y-0.5 pl-5">
               {groups[g.key].map((x, i) => (
                 <li key={`${x.key}-${i}`}>
