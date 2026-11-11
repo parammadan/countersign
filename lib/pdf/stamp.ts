@@ -68,6 +68,41 @@ function fitText(font: PDFFont, text: string, w: number, h: number) {
   return size;
 }
 
+// One line when it fits (the usual case: the same size and position as always). Otherwise wrap into the box when
+// it is tall enough for lines at a readable size, else shrink further; a value never runs outside its field.
+// Words wider than the box are hard-broken; every character is kept, only the line breaks are added.
+function layoutText(font: PDFFont, text: string, w: number, h: number): { size: number; lines: string[] } {
+  const one = fitText(font, text, w, h);
+  if (font.widthOfTextAtSize(text, one) <= w - 2) return { size: one, lines: [text] };
+  const avail = w - 2;
+  const wrapAt = (size: number) => {
+    const lines: string[] = [];
+    let cur = "";
+    for (const word of text.split(" ")) {
+      let rest = word;
+      while (rest.length > 1 && font.widthOfTextAtSize(rest, size) > avail) {
+        let n = rest.length - 1;
+        while (n > 1 && font.widthOfTextAtSize(rest.slice(0, n), size) > avail) n--;
+        if (cur) { lines.push(cur); cur = ""; }
+        lines.push(rest.slice(0, n));
+        rest = rest.slice(n);
+      }
+      const t = cur ? `${cur} ${rest}` : rest;
+      if (cur && font.widthOfTextAtSize(t, size) > avail) { lines.push(cur); cur = rest; } else cur = t;
+    }
+    if (cur) lines.push(cur);
+    return lines;
+  };
+  for (let size = 8; size >= 3; size -= 0.5) {
+    const lines = wrapAt(size);
+    if (lines.length * size * 1.15 <= h + 1) return { size, lines };
+  }
+  // cannot fit even at 3pt: one line shrunk to the width
+  let size = one;
+  while (size > 2 && font.widthOfTextAtSize(text, size) > avail) size -= 0.25;
+  return { size, lines: [text] };
+}
+
 export async function stampFields(pdfBytes: Uint8Array, fields: Field[], values: Map<string, StampValue>, audience: StampAudience = "firm"): Promise<Uint8Array> {
   const doc = await PDFDocument.load(pdfBytes);
   const font = await doc.embedFont(StandardFonts.Helvetica);
@@ -82,9 +117,13 @@ export async function stampFields(pdfBytes: Uint8Array, fields: Field[], values:
     if (v.kind === "text") {
       const text = pdfText(v.text, audience).trim();
       if (!text) continue;
-      const size = fitText(font, text, f.w, f.h);
-      const [x, y] = pt(f.x + 1, f.y + f.h - Math.max(3, (f.h - size) / 2 + 1));
-      page.drawText(text, { x, y, size, font, color: INK, rotate });
+      const { size, lines } = layoutText(font, text, f.w, f.h);
+      const lead = size * 1.15;
+      const top = lines.length === 1 ? f.y + f.h - Math.max(3, (f.h - size) / 2 + 1) : f.y + size + (f.h - lead * (lines.length - 1) - size) / 2;
+      lines.forEach((ln, i) => {
+        const [x, y] = pt(f.x + 1, top + i * lead);
+        page.drawText(ln, { x, y, size, font, color: INK, rotate });
+      });
     } else if (v.kind === "check") {
       if (!v.on) continue;
       const size = Math.min(f.w, f.h) * 0.9;
@@ -143,8 +182,20 @@ export async function appendCertificate(pdfBytes: Uint8Array, info: CertInfo, au
       y -= size + 4;
       cur = "";
     };
-    for (const w of words) {
-      const t = cur ? cur + " " + w : w;
+    // a single token wider than the line (long email, hash, name) is hard-broken at the line width, never clipped
+    const pieces: { t: string; cont: boolean }[] = []; // cont: continues the previous piece, no space between
+    for (const word of words) {
+      let rest = word;
+      while (rest.length > 1 && f.widthOfTextAtSize(rest, size) > maxW) {
+        let n = rest.length - 1;
+        while (n > 1 && f.widthOfTextAtSize(rest.slice(0, n), size) > maxW) n--;
+        pieces.push({ t: rest.slice(0, n), cont: pieces.length > 0 && rest !== word });
+        rest = rest.slice(n);
+      }
+      pieces.push({ t: rest, cont: rest !== word });
+    }
+    for (const { t: w, cont } of pieces) {
+      const t = cur ? cur + (cont ? "" : " ") + w : w;
       if (f.widthOfTextAtSize(t, size) > maxW && cur) {
         flush();
         cur = w;
