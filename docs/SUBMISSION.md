@@ -14,6 +14,7 @@ AgreementOS is a multi-tenant web app (Next.js 16, SQLite through `node:sqlite`)
 - New files from the app, CSV, REST API (`app/api/v1/`) or an inbound webhook URL: `lib/files.ts`, `app/actions.ts`.
 - Client signing room with consent, draw or type signature, decline, optional emailed code: `app/s/[token]/page.tsx`, `components/SigningRoom.tsx`, `lib/signer.ts`.
 - "Sign on your phone": on a desktop-sized screen the signing room shows a QR code of the same signing link, made on the server (`lib/qr.ts`). The page polls a status route until the phone finishes: `components/SignOnPhone.tsx`, `app/api/sign/[token]/status/route.ts`.
+- "Scan with phone": the upload screen shows a QR code; the phone photographs one or more pages (JPEG only), and the desktop receives them as one PDF that goes into the normal field review. Nothing is published or sent automatically: `lib/scan.ts`, `app/api/scan/`, `components/scan/`.
 - Countersign (automatic by default, manual button if turned off): `lib/files.ts` (`countersign`). Reminders and expiry: `lib/worker.ts`.
 - Sealed PDF with a certificate of completion, SHA-256 hashes and an append-only audit log: `lib/pdf/stamp.ts`, `lib/audit.ts`, `lib/db.ts` (triggers). Any copy can be checked at `/verify`: `app/verify/page.tsx`.
 
