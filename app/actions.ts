@@ -463,7 +463,7 @@ export async function webhookAction(_: FormState, fd: FormData): Promise<FormSta
   }
 }
 
-export async function rotateInboundAction(_?: FormState, __?: FormData): Promise<FormState> {
+export async function rotateInboundAction(..._args: [FormState?, FormData?]): Promise<FormState> {
   try {
     const sess = await requireAdmin();
     const t = rotateInboundToken(sess.workspaceId);

@@ -5,7 +5,7 @@ import { getWorkspace } from "@/lib/files";
 import { appUrl } from "@/lib/paths";
 import { WEBHOOK_EVENTS } from "@/lib/webhooks";
 import { legacyInboundToken } from "@/lib/inbound";
-import { Button, Badge, PageHeader } from "@/components/ui";
+import { Badge, PageHeader } from "@/components/ui";
 import { Code, Empty, List, Row, Section, StatusPill } from "@/components/developers/parts";
 import { CopyButton } from "@/components/FileActions";
 import { DeleteWebhook, NewKeyForm, NewWebhookForm, RevokeKey, RotateInboundForm } from "@/components/DevForms";
