@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import { DRAFTS_DDL_IF_NOT_EXISTS } from "./drafts/schema";
 import fs from "node:fs";
 import path from "node:path";
 import { dataDir } from "./paths";
@@ -265,6 +266,40 @@ const MIGRATIONS: string[] = [
   ALTER TABLE qa_answers ADD COLUMN cost_microusd INTEGER NOT NULL DEFAULT 0;
   CREATE INDEX qa_answers_thread ON qa_answers(workspace_id, thread_id, created_at);
   CREATE INDEX qa_answers_cost ON qa_answers(created_at, cost_microusd);
+  `,
+  // 8: M2.3 drafts (lib/drafts/schema.ts). IF NOT EXISTS: Agreement Studio may already have created these tables at
+  // first use; a plain CREATE TABLE would fail here and take every db() call down.
+  DRAFTS_DDL_IF_NOT_EXISTS,
+  // 9: M3 knowledge search index (the sandbox's M3_INDEX_DDL, verbatim, so its openIndexOnDatabase schema check
+  // accepts it). Not user-facing until the M3 evidence checks are validated.
+  `
+CREATE TABLE IF NOT EXISTS m3_versions (
+  workspace_id TEXT NOT NULL,
+  document_id  TEXT NOT NULL,
+  version_id   TEXT NOT NULL,
+  status       TEXT NOT NULL CHECK (status IN ('active','superseded')),
+  binding      INTEGER NOT NULL CHECK (binding IN (0,1)),
+  created_at   TEXT NOT NULL,
+  PRIMARY KEY (workspace_id, document_id, version_id)
+) STRICT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS m3_one_active
+  ON m3_versions (workspace_id, document_id) WHERE status = 'active';
+
+CREATE TABLE IF NOT EXISTS m3_passages (
+  workspace_id TEXT NOT NULL,
+  document_id  TEXT NOT NULL,
+  version_id   TEXT NOT NULL,
+  passage_id   TEXT NOT NULL,
+  ord          INTEGER NOT NULL,
+  page         INTEGER NOT NULL CHECK (page >= 1),
+  text         TEXT NOT NULL,
+  binding      INTEGER NOT NULL CHECK (binding IN (0,1)),
+  flags        TEXT NOT NULL,
+  PRIMARY KEY (workspace_id, document_id, version_id, passage_id),
+  FOREIGN KEY (workspace_id, document_id, version_id)
+    REFERENCES m3_versions (workspace_id, document_id, version_id) ON DELETE CASCADE
+) STRICT;
   `,
 ];
 
