@@ -21,7 +21,8 @@ export const DEFAULT_DAILY_USD = 5;
 /** Tokens assumed per call beyond its text (message framing, schema): a margin, not a measurement. */
 const OVERHEAD_TOKENS = 1_000;
 
-export type Feature = "qa" | "m3" | "studio_suggest" | "studio_draft";
+/** doc_intel / doc_qa: Document Intelligence's analysis of one read document, and questions about it (lib/intake). */
+export type Feature = "qa" | "m3" | "studio_suggest" | "studio_draft" | "doc_intel" | "doc_qa";
 export type Usage = ModelUsage;
 
 export const MESSAGES = {
