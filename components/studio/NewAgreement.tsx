@@ -18,6 +18,10 @@ const SUGGEST_FAILED: Record<SuggestFailure, string> = {
   limit: "Too many suggestions this hour; fill in the form below.",
   invalid: "Describe the agreement in up to 4,000 characters.",
   failed: "Claude didn't answer. Try again, or fill in the form below.",
+  cut_off: "Claude's answer was cut off before it finished, so nothing was filled in. Try again, or shorten the description, or fill in the form below.",
+  timeout: "Claude took too long to answer, so nothing was filled in. Try again, or fill in the form below.",
+  busy: "Claude is busy right now. Wait a minute and try again, or fill in the form below.",
+  unavailable: "AI isn't available on this server right now, so fill in the form below.",
 };
 const label = (k: string) => TERM_LABEL[k] ?? k;
 // numbers are typed as text (with a numeric keypad): a number input reports "" for "30 days", which then read as missing
