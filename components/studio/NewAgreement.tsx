@@ -8,6 +8,7 @@ import { createDraftAction, suggestAction } from "@/app/studio-actions";
 import type { Clarification, Clarifications, KindSpec, StudioAi, SuggestFailure, Suggestion } from "@/lib/drafts/service";
 import { TERM_LABEL, humanIssue } from "@/lib/drafts/labels";
 import { AI_COPY, AI_UNAVAILABLE } from "./ai-state";
+import { VoiceInput } from "./VoiceInput";
 
 const SUGGEST_FAILED: Record<SuggestFailure, string> = {
   ai_off: "AI isn't configured on this server, so fill in the form below.",
@@ -185,6 +186,8 @@ export function NewAgreement({ kinds, ai }: { kinds: KindSpec[]; ai: StudioAi })
                 placeholder={AI_COPY.placeholder}
               />
             </Field>
+            {/* speech becomes text in the box above, for the person to check; it never presses the button below */}
+            <VoiceInput value={description} onChange={setDescription} maxLength={4000} disabled={suggesting || pending} />
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <Button type="button" icon="spark" onClick={() => suggest()} loading={suggesting} disabled={!description.trim() || pending}>
                 {AI_COPY.button}
