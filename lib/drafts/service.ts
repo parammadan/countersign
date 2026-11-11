@@ -274,12 +274,23 @@ function plainNote(s: unknown): string {
   let t = s.normalize("NFKC").replace(/<[^<>]{0,40}>/g, "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/[{}<>`\\[\]#*_|~^=]/g, "").replace(/\s+/g, " ").trim();
   t = withTermNames(t).replace(/\b(?:term|party):/g, "").trim();
   if (!t || scanInjection(t).length || disguisedCharacters(t).length) return "";
-  if (t.length > 160) t = `${t.slice(0, 157).replace(/\s+\S*$/, "")}…`;
+  if ([...t].length > 160) t = `${[...t].slice(0, 157).join("").replace(/\s+\S*$/, "")}…`;
   t = t[0].toUpperCase() + t.slice(1);
   return /[.!?…]$/.test(t) ? t : `${t}.`;
 }
 
 const ONE_OFF = /\bone[- ]?(?:time|off)\b|\bsingle\b|\blump[- ]?sum\b|\bfixed\b|\bflat\b/i;
+/**
+ * How a fee is charged changes what's owed (a fee "per month" is twelve times one "per year"), so a fee basis or
+ * period is kept only when the description itself says it; a model's guess is dropped and the term is listed as
+ * not stated instead.
+ */
+const BASIS_CUE: Record<string, RegExp> = {
+  fixed: ONE_OFF,
+  month: /\b(?:per|a|each|every)\s+month\b|\bmonthly\b|\/\s?(?:mo|month)\b/i,
+  quarter: /\b(?:per|a|each|every)\s+quarter\b|\bquarterly\b/i,
+  year: /\b(?:per|a|each|every)\s+(?:year|annum)\b|\b(?:yearly|annually|annual)\b|\bper\s+annum\b/i,
+};
 /** What happens instead, for something the description states that the template can't include. */
 function insteadText(kind: Kind | null, key: string, said: string, unmatched: boolean): string {
   if (!kind) return "None of the templates can include this, so it won't be in the agreement.";
@@ -333,6 +344,7 @@ export function cleanSuggestion(raw: unknown, description: string): Suggestion {
     const type = TERM_TYPES[key];
     const ok = choices ? own(choices, t.value) : type === "date" ? dates.has(t.value) : said(t.value);
     // a stated value this kind has no place for, or a choice none of the options means: say so, never coerce it
+    if (ok && (key === "feeBasis" || key === "feePeriod") && !(own(BASIS_CUE, t.value) && BASIS_CUE[t.value].test(description))) continue;
     if (!accepts(key)) { if (ok) addUnsupported(key, ""); continue; }
     if (!ok) { if (choices && kind) addUnsupported(key, "", t.value); continue; }
     terms[key] = t.value.slice(0, 200);

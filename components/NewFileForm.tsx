@@ -5,7 +5,7 @@ import { useActionState, useState } from "react";
 import { createFileAction, type FormState } from "@/app/actions";
 import { Button, Field, Input, Notice, Select } from "./ui";
 
-type T = { id: string; name: string; version: number; isDefault: boolean; prefill: { key: string; label: string }[] };
+type T = { id: string; name: string; version: number; versionId: string; isDefault: boolean; prefill: { key: string; label: string }[] };
 
 /** How an agreement is named in the picker and the summary: its name, the published version it sends, and whether it is the default. */
 export const agreementLabel = (t: Pick<T, "name" | "version" | "isDefault">) => `${t.name} · version ${t.version}${t.isDefault ? " (default)" : ""}`;
@@ -24,6 +24,7 @@ export function NewFileForm({ templates, initial }: { templates: T[]; initial?: 
           ))}
         </Select>
       </Field>
+      <input type="hidden" name="templateVersionId" value={t.versionId} />
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Client full name">
           <Input name="clientName" required placeholder="Jordan Sample" autoComplete="off" />

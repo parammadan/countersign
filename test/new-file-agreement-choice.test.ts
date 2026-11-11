@@ -56,9 +56,9 @@ describe("choosing the agreement for a new client file", () => {
   it("the picker lists every published agreement with its version and the default, preselects the one asked for, and says what's being sent", async () => {
     const { NewFileForm, agreementLabel } = await import("@/components/NewFileForm");
     const templates = [
-      { id: "tpl_a", name: "Engagement Letter", version: 2, isDefault: true, prefill: [] },
-      { id: "tpl_b", name: "Consulting Agreement", version: 1, isDefault: false, prefill: [] },
-      { id: "tpl_c", name: "Mutual NDA", version: 3, isDefault: false, prefill: [] },
+      { id: "tpl_a", name: "Engagement Letter", version: 2, versionId: "tv_a", isDefault: true, prefill: [] },
+      { id: "tpl_b", name: "Consulting Agreement", version: 1, versionId: "tv_b", isDefault: false, prefill: [] },
+      { id: "tpl_c", name: "Mutual NDA", version: 3, versionId: "tv_c", isDefault: false, prefill: [] },
     ];
     const h = renderToStaticMarkup(createElement(NewFileForm, { templates, initial: "tpl_b" }));
     expect(h).toContain('name="templateId"');
@@ -66,6 +66,7 @@ describe("choosing the agreement for a new client file", () => {
     for (const t of templates) expect(h).toContain(agreementLabel(t).replace(/'/g, "&#x27;"));
     expect(agreementLabel(templates[0])).toBe("Engagement Letter · version 2 (default)");
     expect(h).toMatch(/<option value="tpl_b" selected="">/);
+    expect(h).toContain('name="templateVersionId" value="tv_b"');
     expect(h).toMatch(/You&#x27;re sending <span[^>]*>Consulting Agreement<\/span>, version 1/);
     // with one published agreement the picker still shows which one is sent
     const one = renderToStaticMarkup(createElement(NewFileForm, { templates: [templates[0]] }));

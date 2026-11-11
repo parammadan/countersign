@@ -231,3 +231,32 @@ describe("the form: three separate groups, human labels only", () => {
     expect(AI_COPY.example).toMatch(/Northwind Advisory LLC.*Acme Widgets Inc.*one-time fixed fee of \$12,000.*2027-01-15.*30 days' notice.*Delaware.*pre-existing IP/);
   });
 });
+
+describe("review of #70: a fee basis or period is kept only when the description says it", () => {
+  const raw = (basis: string, extra: Record<string, string> = {}) => ({
+    kind: "consulting",
+    parties: [{ role: "Consultant", name: "Northwind Advisory LLC" }, { role: "Client", name: "Acme Widgets Inc" }],
+    terms: [{ key: "fee", value: "$12,000" }, { key: "feeBasis", value: basis }, ...Object.entries(extra).map(([key, value]) => ({ key, value }))],
+    clarifications: [],
+  });
+  const plain = "Consulting agreement between Northwind Advisory LLC (consultant) and Acme Widgets Inc (client). The fee is $12,000.";
+  it("a guessed 'per month' on a description that states no basis is dropped, and offered as optional", () => {
+    const s = cleanSuggestion(raw("month"), plain);
+    expect(s.terms.feeBasis).toBeUndefined();
+    expect(s.terms.fee).toBe("$12,000");
+    expect(s.clarifications.optional.map((o) => o.key)).toContain("feeBasis");
+  });
+  it("each basis is kept when the description states it", () => {
+    expect(cleanSuggestion(raw("month"), `${plain} It is billed monthly.`).terms.feeBasis).toBe("month");
+    expect(cleanSuggestion(raw("quarter"), `${plain} Paid per quarter.`).terms.feeBasis).toBe("quarter");
+    expect(cleanSuggestion(raw("year"), `${plain} Charged annually.`).terms.feeBasis).toBe("year");
+    expect(cleanSuggestion(raw("fixed"), `${plain} It is a one-time fixed fee.`).terms.feeBasis).toBe("fixed");
+    expect(cleanSuggestion(raw("fixed"), `${plain} Billed monthly.`).terms.feeBasis).toBeUndefined(); // stated basis is monthly, not fixed
+  });
+  it("a retainer period nobody stated is dropped too (it's required, so it shows as needed)", () => {
+    const r = { kind: "retainer", parties: [], terms: [{ key: "fee", value: "$2,000" }, { key: "feePeriod", value: "month" }], clarifications: [] };
+    const s = cleanSuggestion(r, "A retainer with Acme Widgets Inc for $2,000.");
+    expect(s.terms.feePeriod).toBeUndefined();
+    expect(s.clarifications.needed.map((n) => n.key)).toContain("feePeriod");
+  });
+});

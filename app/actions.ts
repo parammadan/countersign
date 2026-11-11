@@ -6,7 +6,7 @@ import { headers } from "next/headers";
 import { z } from "zod";
 import { one, run, tx } from "@/lib/db";
 import { createSession, destroySession, hashPassword, requireAdmin, requireSession, verifyPassword } from "@/lib/auth";
-import { AppError, countersign, createFile, getFile, getWorkspace, resendSignedCopy, sendFile, sendOnce, voidFile } from "@/lib/files";
+import { AppError, countersign, createFile, getFile, getWorkspace, resendSignedCopy, resolveTemplate, sendFile, sendOnce, voidFile } from "@/lib/files";
 import { ctxFromHeaders } from "@/lib/http";
 import { id, now, sha256, token } from "@/lib/util";
 import { audit } from "@/lib/audit";
@@ -199,6 +199,10 @@ export async function createFileAction(_: FormState, fd: FormData): Promise<Form
       prefill,
     });
     const send = fd.get("intent") !== "draft";
+    // the form shows which published version it sends; if the agreement was republished since, don't send a different one
+    const shown = s(fd.get("templateVersionId"));
+    if (shown && b.templateId && resolveTemplate(ws.id, b.templateId).version.id !== shown)
+      throw new AppError("This agreement has a newer published version than the one shown. Reload the page to see it, then send.", 409);
     const f = await createFile(ws, b, { kind: "user", label: sess.userEmail, userId: sess.userId }, await ctxFromHeaders(), send);
     fid = f.id;
   } catch (e) {
